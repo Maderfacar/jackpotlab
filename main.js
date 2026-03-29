@@ -44,7 +44,7 @@ window.crs = () => { try { cStr = eval(cStr).toString(); document.getElementById
 // LIFF 登入
 async function initLIFF() {
     try {
-        await liff.init({ liffId: "你的_LIFF_ID" });
+        await liff.init({ liffId: "2009636686-ec6thLNX" });
         if (liff.isLoggedIn()) {
             const profile = await liff.getProfile();
             document.getElementById('userName').innerText = profile.displayName;
