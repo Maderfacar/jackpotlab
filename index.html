@@ -14,131 +14,91 @@
     <link rel="stylesheet" href="style.css">
     <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
 </head>
-<body class="h-screen flex flex-col lg:flex-row overflow-hidden">
+<body class="h-screen flex flex-col lg:flex-row overflow-hidden bg-lab-bg">
 
     <header class="lg:hidden h-14 bg-lab-card border-b border-lab-border px-4 flex items-center justify-between sticky top-0 z-40">
-        <button id="menuBtn" class="p-2 bg-cyan-500 rounded-lg text-black font-bold text-xs">選單</button>
-        <div class="font-black text-xs tracking-tighter uppercase">The Jackpot Lab</div>
-        <button id="themeBtnMobile" class="text-xs p-2">🌓</button>
+        <button onclick="toggleSidebar()" class="p-2 bg-cyan-500 rounded-lg text-black font-bold text-xs">選單</button>
+        <div class="font-black text-xs tracking-tighter uppercase text-lab-text">The Jackpot Lab</div>
+        <button onclick="toggleTheme()" class="text-xs p-2">🌓</button>
     </header>
 
-    <aside id="sidebar" class="fixed inset-y-0 left-0 w-72 bg-lab-card border-r border-lab-border z-50 flex flex-col -translate-x-full lg:translate-x-0 lg:relative lg:flex shrink-0 shadow-2xl lg:shadow-none transition-transform duration-300">
+    <aside id="sidebar" class="fixed inset-y-0 left-0 w-72 bg-lab-card border-r border-lab-border z-50 flex flex-col -translate-x-full lg:translate-x-0 lg:relative lg:flex shrink-0 transition-transform duration-300">
         <div class="p-6 border-b border-lab-border flex justify-between items-center">
-            <div class="flex items-center gap-2">
-                <div class="w-6 h-6 bg-cyan-500 rounded text-black font-black text-center leading-6 text-xs">R</div>
-                <h1 class="font-black tracking-tighter text-lg uppercase text-lab-text">Resonance Lab</h1>
-            </div>
-            <button id="closeSidebar" class="lg:hidden p-2 text-slate-500">✕</button>
+            <h1 class="font-black tracking-tighter text-lg uppercase text-lab-text italic">JACKPOT LAB</h1>
+            <button onclick="toggleSidebar()" class="lg:hidden p-2 text-slate-500">✕</button>
         </div>
-        <div class="flex-1 overflow-y-auto p-4 space-y-8 no-scrollbar">
-            <section>
-                <div class="flex justify-between items-center mb-4 px-2">
-                    <h3 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">物理行為規則 (12)</h3>
+        <div class="flex-1 overflow-y-auto p-4 space-y-4 no-scrollbar">
+            <label class="flex items-center justify-between p-4 bg-lab-bg rounded-2xl border border-lab-border">
+                <div class="flex flex-col">
+                    <span class="text-[10px] text-cyan-500 font-mono">#FN-001</span>
+                    <span class="text-sm font-semibold text-lab-text">1-1 座標位移規律</span>
                 </div>
-                <div class="space-y-2">
-                    <label class="flex items-center justify-between p-3 bg-lab-bg/50 rounded-xl border border-lab-border cursor-pointer hover:border-slate-500 transition group">
-                        <div class="flex flex-col">
-                            <span class="text-[10px] text-cyan-500 font-mono">#FN-001</span>
-                            <span class="text-sm font-semibold text-lab-text">1-1 座標位移規律</span>
-                        </div>
-                        <input type="checkbox" checked class="w-4 h-4 rounded accent-cyan-500">
-                    </label>
-                </div>
-            </section>
+                <input type="checkbox" checked class="w-5 h-5 rounded-full accent-cyan-500">
+            </label>
         </div>
     </aside>
 
     <main class="flex-1 flex flex-col min-w-0">
-        <header class="hidden lg:flex h-16 bg-lab-card/80 backdrop-blur border-b border-lab-border px-6 items-center justify-between sticky top-0 z-20">
-            <div class="flex items-center gap-8">
-                <div class="flex items-center gap-3 bg-lab-bg px-3 py-1.5 rounded-full border border-lab-border">
-                    <span class="text-[10px] font-bold">字體 A</span>
-                    <input type="range" min="12" max="22" value="16" id="fontSizeSlider" class="w-24 h-1 bg-slate-400 rounded-lg appearance-none cursor-pointer accent-cyan-500">
-                    <span class="text-lg font-bold text-lab-text">A</span>
-                </div>
-                <button id="themeBtn" class="p-2 hover:bg-lab-bg rounded-lg transition text-sm font-bold">🌓 主題</button>
+        <header class="hidden lg:flex h-20 bg-lab-card border-b border-lab-border px-8 items-center justify-between">
+            <div class="flex items-center gap-6">
+                <button onclick="toggleTheme()" class="text-sm font-bold px-4 py-2 bg-lab-bg rounded-xl border border-lab-border hover:bg-slate-200 transition">🌓 主題切換</button>
             </div>
             
-            <div class="flex items-center gap-4 cursor-pointer" id="liffLoginBtn">
+            <div id="liffLoginBtn" class="flex items-center gap-4 cursor-pointer hover:opacity-80 transition">
                 <div class="text-right">
-                    <div id="userName" class="text-sm font-black text-lab-text">點擊 LINE 登入</div>
-                    <div id="userId" class="text-[9px] font-mono text-slate-400">GUEST_MODE</div>
+                    <div id="userName" class="text-sm font-black text-lab-text uppercase">Guest Login</div>
+                    <div id="userId" class="text-[9px] font-mono text-cyan-500 tracking-tighter">WAITING_FOR_AUTH</div>
                 </div>
-                <div class="w-10 h-10 bg-slate-200 dark:bg-slate-800 rounded-full border-2 border-cyan-500 overflow-hidden shadow-lg">
-                    <img id="userPicture" src="https://via.placeholder.com/40" class="w-full h-full object-cover">
+                <div class="w-12 h-12 rounded-full border-2 border-cyan-500 overflow-hidden bg-slate-100 shadow-inner">
+                    <img id="userPicture" src="https://api.dicebear.com/7.x/bottts/svg?seed=Jackpot" class="w-full h-full object-cover">
                 </div>
             </div>
         </header>
 
-        <div class="flex-1 overflow-y-auto p-4 lg:p-6 space-y-6 no-scrollbar pb-32">
-            <section class="bg-lab-card p-8 rounded-[2.5rem] border border-lab-border shadow-2xl relative overflow-hidden">
-                <div class="absolute top-4 right-6 bg-cyan-500/10 text-cyan-500 px-3 py-1 rounded-full text-[10px] font-black tracking-widest">莊家破壞者</div>
-                <h2 class="text-xs font-bold text-cyan-500 mb-8 uppercase tracking-[0.2em]">最強共振號碼建議</h2>
-                <div class="flex flex-col items-center gap-4">
-                    <div class="w-28 h-28 lg:w-32 lg:h-32 rounded-full bg-lab-bg border-4 border-cyan-500 flex items-center justify-center text-5xl lg:text-6xl font-black text-cyan-500 font-mono resonance-pulse">18</div>
-                    <div class="text-center">
-                        <div class="text-2xl font-black italic text-lab-text">88.5%</div>
-                        <div class="text-[10px] text-slate-500 font-bold tracking-tighter uppercase">Resonance Match</div>
-                    </div>
-                </div>
-            </section>
-
-            <section class="bg-lab-card rounded-3xl border border-lab-border shadow-xl overflow-hidden">
-                <div class="overflow-x-auto">
-                    <table class="w-full text-left min-w-[400px]">
-                        <thead class="text-[10px] text-slate-500 uppercase bg-lab-bg/20">
-                            <tr>
-                                <th class="px-6 py-3">規則 ID 與 名稱</th>
-                                <th class="px-6 py-3">近期趨勢</th>
-                                <th class="px-6 py-3 text-right">建議指向</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y border-lab-border text-lab-text">
-                            <tr class="hover:bg-cyan-500/5 transition">
-                                <td class="px-6 py-4 font-bold text-sm">#001 1-1座標規律</td>
-                                <td class="px-6 py-4"><div class="w-20 h-4 bg-cyan-500/20 rounded"></div></td>
-                                <td class="px-6 py-4 text-right font-mono font-bold text-cyan-500">18, 05, 12</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
+        <div class="p-4 lg:p-8 space-y-6 overflow-y-auto no-scrollbar pb-32">
+            <section class="bg-lab-card p-10 rounded-[3rem] border border-lab-border shadow-2xl text-center relative overflow-hidden">
+                <div class="absolute top-6 right-8 bg-cyan-500 text-black px-4 py-1 rounded-full text-[10px] font-black italic">WINNER MODE</div>
+                <h2 class="text-xs font-bold text-slate-400 mb-8 tracking-[0.3em] uppercase">Current Match Suggestion</h2>
+                <div class="w-32 h-32 rounded-full bg-lab-bg border-[6px] border-cyan-500 mx-auto flex items-center justify-center text-6xl font-black text-cyan-500 font-mono shadow-[0_0_50px_rgba(6,182,212,0.2)] resonance-pulse">18</div>
+                <div class="mt-6 text-2xl font-black italic text-lab-text">88.5% <span class="text-xs not-italic text-slate-400">Match</span></div>
             </section>
         </div>
     </main>
 
-    <div id="toolbox" class="fixed bottom-6 right-4 left-4 sm:left-auto sm:w-80 glass-widget rounded-[2rem] z-50 flex flex-col overflow-hidden">
-        <div class="flex items-center justify-between px-5 py-3 border-b border-black/5 bg-black/5 cursor-pointer" onclick="minimizeToolbox()">
-            <span class="text-[11px] font-black widget-text tracking-widest uppercase text-cyan-600">TACTICAL SUITE</span>
-            <span class="text-[10px] opacity-50 widget-text">➖ 縮小</span>
+    <div id="toolbox" class="fixed bottom-6 right-6 w-80 glass-widget rounded-[2.5rem] z-50 flex flex-col overflow-hidden border border-white/20 shadow-2xl transition-all duration-500">
+        <div class="flex items-center justify-between px-6 py-4 bg-white/10 border-b border-white/10 cursor-pointer" onclick="minimizeToolbox()">
+            <span class="text-[11px] font-black tracking-widest text-cyan-500 uppercase">Tactical Suite</span>
+            <span class="text-[18px] text-cyan-500">−</span>
         </div>
-        <div class="flex border-b border-black/5">
-            <button id="tabNotes" class="flex-1 py-3 text-[10px] font-bold text-cyan-500 border-b-2 border-cyan-500 uppercase">便條紙</button>
-            <button id="tabCalc" class="flex-1 py-3 text-[10px] font-bold text-slate-400 uppercase">計算機</button>
+        <div class="flex border-b border-white/10">
+            <button id="tabNotes" class="flex-1 py-3 text-[10px] font-bold text-cyan-500 border-b-2 border-cyan-500">NOTES</button>
+            <button id="tabCalc" class="flex-1 py-3 text-[10px] font-bold text-slate-400">CALC</button>
         </div>
-        <div id="p-notes" class="p-5 h-56 block">
-            <textarea id="note-txt" placeholder="在此輸入分析筆記..." class="w-full h-full bg-transparent border-none text-sm widget-text outline-none resize-none leading-relaxed"></textarea>
+        <div id="p-notes" class="p-6 h-64 block">
+            <textarea id="note-txt" placeholder="Input analysis notes..." class="w-full h-full bg-transparent border-none text-sm outline-none resize-none leading-relaxed text-lab-text font-medium"></textarea>
         </div>
-        <div id="p-calc" class="p-5 h-56 hidden flex flex-col">
-            <div id="disp" class="bg-white/60 dark:bg-black/40 p-3 rounded-xl text-right font-mono text-2xl mb-3 widget-text shadow-inner">0</div>
-            <div class="grid grid-cols-4 gap-1.5 flex-1">
-                <button onclick="cin('7')" class="bg-white/50 rounded-lg text-xs font-bold widget-text">7</button>
-                <button onclick="cin('8')" class="bg-white/50 rounded-lg text-xs font-bold widget-text">8</button>
-                <button onclick="cin('9')" class="bg-white/50 rounded-lg text-xs font-bold widget-text">9</button>
-                <button onclick="cin('/')" class="bg-cyan-500/10 text-cyan-600 rounded-lg text-xs font-bold">÷</button>
-                <button onclick="cin('4')" class="bg-white/50 rounded-lg text-xs font-bold widget-text">4</button>
-                <button onclick="cin('5')" class="bg-white/50 rounded-lg text-xs font-bold widget-text">5</button>
-                <button onclick="cin('6')" class="bg-white/50 rounded-lg text-xs font-bold widget-text">6</button>
-                <button onclick="cin('*')" class="bg-cyan-500/10 text-cyan-600 rounded-lg text-xs font-bold">×</button>
-                <button onclick="ccr()" class="bg-red-500/10 text-red-500 rounded-lg text-xs font-bold">C</button>
-                <button onclick="cin('0')" class="bg-white/50 rounded-lg text-xs font-bold widget-text">0</button>
-                <button onclick="crs()" class="bg-cyan-500 text-white rounded-lg text-xs font-black">=</button>
-                <button onclick="cin('+')" class="bg-cyan-500/10 text-cyan-600 rounded-lg text-xs font-bold">+</button>
+        <div id="p-calc" class="p-6 h-64 hidden flex flex-col">
+            <div id="disp" class="bg-black/10 p-4 rounded-2xl text-right font-mono text-3xl mb-4 text-lab-text shadow-inner overflow-hidden">0</div>
+            <div class="grid grid-cols-4 gap-2 flex-1">
+                <button onclick="cin('7')" class="bg-white/20 hover:bg-white/40 rounded-xl text-sm font-bold text-lab-text transition">7</button>
+                <button onclick="cin('8')" class="bg-white/20 hover:bg-white/40 rounded-xl text-sm font-bold text-lab-text transition">8</button>
+                <button onclick="cin('9')" class="bg-white/20 hover:bg-white/40 rounded-xl text-sm font-bold text-lab-text transition">9</button>
+                <button onclick="cin('/')" class="bg-cyan-500/20 text-cyan-600 rounded-xl font-bold">÷</button>
+                <button onclick="cin('4')" class="bg-white/20 hover:bg-white/40 rounded-xl text-sm font-bold text-lab-text transition">4</button>
+                <button onclick="cin('5')" class="bg-white/20 hover:bg-white/40 rounded-xl text-sm font-bold text-lab-text transition">5</button>
+                <button onclick="cin('6')" class="bg-white/20 hover:bg-white/40 rounded-xl text-sm font-bold text-lab-text transition">6</button>
+                <button onclick="cin('*')" class="bg-cyan-500/20 text-cyan-600 rounded-xl font-bold">×</button>
+                <button onclick="ccr()" class="bg-red-500/10 text-red-500 rounded-xl font-bold">C</button>
+                <button onclick="cin('0')" class="bg-white/20 hover:bg-white/40 rounded-xl text-sm font-bold text-lab-text transition">0</button>
+                <button onclick="crs()" class="bg-cyan-500 text-white rounded-xl font-black">=</button>
+                <button onclick="cin('+')" class="bg-cyan-500/20 text-cyan-600 rounded-xl font-bold">+</button>
             </div>
         </div>
     </div>
 
-    <div id="dot" class="fixed bottom-6 right-6 w-12 h-12 rounded-full bg-cyan-500 items-center justify-center text-white font-black text-[10px] shadow-lg z-50 cursor-pointer hidden" onclick="restoreToolbox()">工具</div>
-    <div id="overlay" class="fixed inset-0 bg-black/50 z-40 hidden opacity-0 transition-opacity lg:hidden"></div>
+    <div id="dot" class="fixed bottom-8 right-8 w-14 h-14 rounded-full bg-cyan-500 items-center justify-center text-black font-black text-xs shadow-2xl z-50 cursor-pointer hidden transition-all hover:scale-110" onclick="restoreToolbox()">工具</div>
+    
+    <div id="overlay" class="fixed inset-0 bg-black/50 z-40 hidden opacity-0 transition-opacity lg:hidden" onclick="toggleSidebar()"></div>
 
     <script src="main.js"></script>
 </body>
