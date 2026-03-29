@@ -21,114 +21,96 @@
 </head>
 <body class="h-screen flex flex-col lg:flex-row overflow-hidden bg-lab-bg text-lab-text">
 
-    <header class="lg:hidden h-16 bg-lab-card/80 backdrop-blur-md border-b border-lab-border px-4 flex items-center justify-between sticky top-0 z-40">
-        <button onclick="toggleSidebar()" class="w-10 h-10 flex items-center justify-center bg-cyan-500/10 rounded-xl text-cyan-500">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" /></svg>
+    <header class="lg:hidden h-14 bg-lab-card border-b border-lab-border px-4 flex items-center justify-between sticky top-0 z-40">
+        <button onclick="toggleSidebar()" class="p-2 text-cyan-500">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
         </button>
-        <div class="font-black tracking-tighter uppercase italic">Jackpot Lab</div>
-        <div id="mobileUserImg" class="w-8 h-8 rounded-full border border-cyan-500 overflow-hidden bg-slate-800">
-            <img id="userPictureMobile" src="" class="hidden w-full h-full object-cover">
+        <div class="font-bold text-sm tracking-tighter uppercase">The Jackpot Lab</div>
+        <div id="mobileUser" class="w-8 h-8 rounded-full bg-slate-200 overflow-hidden">
+            <img id="userPictureMobile" src="" class="w-full h-full object-cover hidden">
         </div>
     </header>
 
     <aside id="sidebar" class="fixed inset-y-0 left-0 w-72 bg-lab-card border-r border-lab-border z-50 flex flex-col -translate-x-full lg:translate-x-0 lg:relative lg:flex shrink-0 transition-transform duration-300">
-        <div class="p-8 border-b border-lab-border flex justify-between items-center">
-            <h1 class="font-black tracking-tighter text-xl uppercase italic">JACKPOT LAB</h1>
-            <button onclick="toggleSidebar()" class="lg:hidden text-slate-500">✕</button>
+        <div class="p-6 border-b border-lab-border flex justify-between items-center">
+            <h1 class="font-black tracking-tighter text-lg uppercase italic">JACKPOT LAB</h1>
+            <button onclick="toggleSidebar()" class="lg:hidden text-slate-400">✕</button>
         </div>
-        <nav class="flex-1 overflow-y-auto p-4 space-y-3 no-scrollbar">
-            <p class="px-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Analysis Models</p>
-            <label class="flex items-center justify-between p-4 bg-lab-bg rounded-2xl border border-lab-border hover:border-cyan-500/50 transition-colors cursor-pointer group">
+        <div class="flex-1 overflow-y-auto p-4 space-y-2 no-scrollbar">
+            <div class="px-2 pb-2 text-[10px] font-bold text-slate-500 tracking-widest uppercase">功能模組控制</div>
+            <label class="flex items-center justify-between p-4 bg-lab-bg rounded-xl border border-lab-border cursor-pointer transition hover:border-cyan-500">
                 <div class="flex flex-col">
-                    <span class="text-[10px] text-cyan-500 font-mono group-hover:animate-pulse">#FN-001</span>
-                    <span class="text-sm font-bold">1-1 座標位移規律</span>
+                    <span class="text-[10px] text-cyan-500 font-mono">#FN-001</span>
+                    <span class="text-sm font-semibold">1-1 座標位移規律</span>
                 </div>
                 <input type="checkbox" checked class="w-5 h-5 rounded-full accent-cyan-500">
             </label>
-            </nav>
-        <div class="p-6 border-t border-lab-border">
-            <button onclick="toggleTheme()" class="w-full py-3 bg-lab-bg border border-lab-border rounded-xl text-xs font-bold flex items-center justify-center gap-2 hover:bg-cyan-500/10 transition">🌓 切換主題模式</button>
+        </div>
+        <div class="p-4 border-t border-lab-border">
+            <button onclick="toggleTheme()" class="w-full py-2 bg-lab-bg border border-lab-border rounded-lg text-xs font-bold transition hover:bg-slate-100 dark:hover:bg-slate-800">🌓 切換主題模式</button>
         </div>
     </aside>
 
-    <main class="flex-1 flex flex-col min-w-0 relative">
-        <header class="hidden lg:flex h-20 bg-lab-card/50 backdrop-blur-md border-b border-lab-border px-8 items-center justify-end">
-            <div id="liffLoginBtn" class="flex items-center gap-4 cursor-pointer group">
+    <main class="flex-1 flex flex-col min-w-0">
+        <header class="hidden lg:flex h-20 bg-lab-card border-b border-lab-border px-8 items-center justify-end">
+            <div id="liffLoginBtn" class="flex items-center gap-4 cursor-pointer">
                 <div class="text-right">
-                    <div id="userName" class="text-sm font-black uppercase">Guest Login</div>
-                    <div id="userId" class="text-[9px] font-mono text-cyan-500 tracking-tighter opacity-60">WAITING_FOR_AUTH</div>
+                    <div id="userName" class="text-sm font-bold">Guest Login</div>
+                    <div id="userId" class="text-[9px] font-mono text-cyan-500 tracking-tighter opacity-60 uppercase">Wait Authorization</div>
                 </div>
-                <div class="relative">
-                    <div class="w-12 h-12 rounded-2xl border-2 border-cyan-500 overflow-hidden bg-slate-800 rotate-3 group-hover:rotate-0 transition-transform duration-300">
-                        <img id="userPicture" src="" class="w-full h-full object-cover opacity-0 transition-opacity">
-                    </div>
-                    <div class="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 border-2 border-lab-card rounded-full"></div>
+                <div class="w-12 h-12 rounded-xl border border-lab-border overflow-hidden bg-slate-100 shadow-sm">
+                    <img id="userPicture" src="" class="w-full h-full object-cover opacity-0 transition-opacity duration-300">
                 </div>
             </div>
         </header>
 
-        <div class="flex-1 p-4 lg:p-8 space-y-6 overflow-y-auto no-scrollbar pb-32">
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <section class="md:col-span-2 bg-lab-card p-10 rounded-[2.5rem] border border-lab-border shadow-xl text-center relative overflow-hidden group">
-                    <div class="absolute top-6 right-8 bg-cyan-500 text-black px-4 py-1 rounded-full text-[10px] font-black italic">WINNER MODE</div>
-                    <h2 class="text-xs font-bold text-slate-400 mb-8 tracking-[0.3em] uppercase">Current Match Suggestion</h2>
-                    <div class="w-40 h-40 rounded-full bg-lab-bg border-[8px] border-cyan-500 mx-auto flex items-center justify-center text-7xl font-black text-cyan-500 font-mono shadow-[0_0_60px_rgba(6,182,212,0.15)] resonance-pulse">18</div>
-                    <div class="mt-8 text-3xl font-black italic">88.5% <span class="text-xs not-italic text-slate-400 uppercase tracking-tighter">Match Probability</span></div>
-                </section>
-                
-                <div class="bg-gradient-to-br from-cyan-600 to-blue-700 p-8 rounded-[2.5rem] text-white flex flex-col justify-between shadow-xl">
-                    <div class="text-xs font-bold tracking-widest opacity-80 uppercase font-mono">System Status</div>
-                    <div class="text-4xl font-black italic">LIVE<br>ANALYSIS</div>
-                    <div class="text-[10px] opacity-60 leading-relaxed font-mono">SECURE_LINK: STABLE<br>DATA_FLOW: OPTIMIZED</div>
-                </div>
-            </div>
+        <div class="p-4 lg:p-8 space-y-6 overflow-y-auto no-scrollbar pb-32">
+            <section class="bg-lab-card p-10 rounded-3xl border border-lab-border shadow-sm text-center relative">
+                <div class="absolute top-6 right-8 bg-cyan-500 text-black px-3 py-1 rounded text-[10px] font-black italic">ANALYSIS</div>
+                <h2 class="text-xs font-bold text-slate-400 mb-6 tracking-widest uppercase">Match Suggestion</h2>
+                <div id="mainDisplay" class="w-32 h-32 rounded-full border-4 border-cyan-500 mx-auto flex items-center justify-center text-5xl font-mono font-bold text-cyan-500 resonance-pulse">18</div>
+                <div class="mt-6 text-xl font-bold italic">Confidence: 88.5%</div>
+            </section>
         </div>
     </main>
 
-    <div id="toolbox" class="fixed bottom-6 right-6 w-[320px] glass-widget rounded-[2rem] z-50 flex flex-col overflow-hidden border border-white/20 shadow-2xl transition-all duration-500">
-        <div class="flex items-center justify-between px-6 py-4 bg-white/5 border-b border-white/10 cursor-pointer" onclick="minimizeToolbox()">
-            <span class="text-[10px] font-black tracking-[0.2em] text-cyan-500 uppercase">Tactical Suite</span>
-            <span class="text-cyan-500">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M20 12H4" /></svg>
-            </span>
+    <div id="toolbox" class="fixed bottom-6 right-6 w-80 glass-widget rounded-2xl z-50 flex flex-col overflow-hidden border border-lab-border shadow-2xl transition-all duration-500">
+        <div class="flex items-center justify-between px-6 py-4 bg-lab-card border-b border-lab-border cursor-pointer" onclick="minimizeToolbox()">
+            <span class="text-[11px] font-black tracking-widest text-cyan-500">TACTICAL SUITE</span>
+            <span class="text-lg">−</span>
         </div>
-        <div class="flex p-2 gap-2">
-            <button id="tabNotes" class="flex-1 py-2 text-[10px] font-bold rounded-xl transition-all bg-cyan-500 text-black">NOTES</button>
-            <button id="tabCalc" class="flex-1 py-2 text-[10px] font-bold rounded-xl transition-all text-slate-400 hover:bg-white/5">CALC</button>
+        <div class="flex border-b border-lab-border">
+            <button id="tabNotes" class="flex-1 py-3 text-[10px] font-bold border-b-2 border-cyan-500 text-cyan-500">NOTES</button>
+            <button id="tabCalc" class="flex-1 py-3 text-[10px] font-bold text-slate-400">CALCULATOR</button>
         </div>
-        
-        <div id="p-notes" class="p-6 h-80 block">
-            <textarea id="note-txt" placeholder="在此輸入分析筆記..." class="w-full h-full bg-transparent border-none text-sm outline-none resize-none leading-relaxed font-medium placeholder:opacity-30"></textarea>
+        <div id="p-notes" class="p-4 h-72 block">
+            <textarea id="note-txt" placeholder="在此輸入分析記錄..." class="w-full h-full bg-transparent border-none text-sm outline-none resize-none leading-relaxed"></textarea>
         </div>
-
-        <div id="p-calc" class="p-6 h-80 hidden flex flex-col">
-            <div id="disp" class="bg-black/20 p-4 rounded-2xl text-right font-mono text-3xl mb-4 h-16 flex items-center justify-end overflow-hidden">0</div>
+        <div id="p-calc" class="p-4 h-72 hidden flex flex-col">
+            <div id="disp" class="bg-black/5 dark:bg-black/20 p-4 rounded-xl text-right font-mono text-2xl mb-4 h-14 flex items-center justify-end">0</div>
             <div class="grid grid-cols-4 gap-2 flex-1">
-                <button onclick="cin('7')" class="calc-btn">7</button>
-                <button onclick="cin('8')" class="calc-btn">8</button>
-                <button onclick="cin('9')" class="calc-btn">9</button>
+                <button onclick="cin('7')" class="calc-key">7</button>
+                <button onclick="cin('8')" class="calc-key">8</button>
+                <button onclick="cin('9')" class="calc-key">9</button>
                 <button onclick="cin('/')" class="calc-op">÷</button>
-                <button onclick="cin('4')" class="calc-btn">4</button>
-                <button onclick="cin('5')" class="calc-btn">5</button>
-                <button onclick="cin('6')" class="calc-btn">6</button>
+                <button onclick="cin('4')" class="calc-key">4</button>
+                <button onclick="cin('5')" class="calc-key">5</button>
+                <button onclick="cin('6')" class="calc-key">6</button>
                 <button onclick="cin('*')" class="calc-op">×</button>
-                <button onclick="cin('1')" class="calc-btn">1</button>
-                <button onclick="cin('2')" class="calc-btn">2</button>
-                <button onclick="cin('3')" class="calc-btn">3</button>
-                <button onclick="cin('-')" class="calc-op">−</button>
-                <button onclick="ccr()" class="calc-special">C</button>
-                <button onclick="cin('0')" class="calc-btn">0</button>
-                <button onclick="crs()" class="calc-equal">=</button>
+                <button onclick="cin('1')" class="calc-key">1</button>
+                <button onclick="cin('2')" class="calc-key">2</button>
+                <button onclick="cin('3')" class="calc-key">3</button>
+                <button onclick="cin('-')" class="calc-op">-</button>
+                <button onclick="ccr()" class="calc-key text-red-500">C</button>
+                <button onclick="cin('0')" class="calc-key">0</button>
+                <button onclick="crs()" class="calc-key bg-cyan-500 text-white font-bold">=</button>
                 <button onclick="cin('+')" class="calc-op">+</button>
             </div>
         </div>
     </div>
 
-    <div id="dot" class="fixed bottom-8 right-8 w-14 h-14 rounded-2xl bg-cyan-500 items-center justify-center text-black shadow-[0_0_20px_rgba(6,182,212,0.5)] z-50 cursor-pointer hidden hover:scale-110 transition-transform" onclick="restoreToolbox()">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" /></svg>
-    </div>
-    
-    <div id="overlay" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 hidden opacity-0 transition-opacity" onclick="toggleSidebar()"></div>
+    <div id="dot" class="fixed bottom-8 right-8 w-14 h-14 rounded-full bg-cyan-500 items-center justify-center text-black font-black text-xs shadow-2xl z-50 cursor-pointer hidden" onclick="restoreToolbox()">工具</div>
+    <div id="overlay" class="fixed inset-0 bg-black/50 z-40 hidden opacity-0 transition-opacity lg:hidden" onclick="toggleSidebar()"></div>
 
     <script src="main.js"></script>
 </body>
