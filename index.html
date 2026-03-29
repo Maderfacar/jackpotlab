@@ -1,59 +1,105 @@
-// UI 切換
-function toggleSidebar() {
-    const sb = document.getElementById('sidebar');
-    const ov = document.getElementById('overlay');
-    sb.classList.toggle('-translate-x-full');
-    ov.classList.toggle('hidden');
-    setTimeout(() => ov.classList.toggle('opacity-100'), 10);
-}
-
-function toggleTheme() { document.documentElement.classList.toggle('dark'); }
-
-// 小工具控制
-window.minimizeToolbox = () => { 
-    document.getElementById('toolbox').classList.add('translate-y-[120%]', 'opacity-0');
-    setTimeout(() => {
-        document.getElementById('toolbox').classList.add('hidden');
-        document.getElementById('dot').classList.replace('hidden', 'flex');
-    }, 500);
-};
-
-window.restoreToolbox = () => { 
-    document.getElementById('toolbox').classList.remove('hidden');
-    setTimeout(() => {
-        document.getElementById('toolbox').classList.remove('translate-y-[120%]', 'opacity-0');
-        document.getElementById('dot').classList.replace('flex', 'hidden');
-    }, 10);
-};
-
-document.getElementById('tabNotes').onclick = () => {
-    document.getElementById('p-notes').style.display = 'block';
-    document.getElementById('p-calc').style.display = 'none';
-};
-document.getElementById('tabCalc').onclick = () => {
-    document.getElementById('p-notes').style.display = 'none';
-    document.getElementById('p-calc').style.display = 'flex';
-};
-
-// 計算機
-let cStr = "";
-window.cin = (v) => { cStr += v; document.getElementById('disp').innerText = cStr; };
-window.ccr = () => { cStr = ""; document.getElementById('disp').innerText = "0"; };
-window.crs = () => { try { cStr = eval(cStr).toString(); document.getElementById('disp').innerText = cStr; } catch { document.getElementById('disp').innerText = "ERR"; cStr = ""; } };
-
-// LIFF 登入
-async function initLIFF() {
-    try {
-        await liff.init({ liffId: "你的_LIFF_ID" });
-        if (liff.isLoggedIn()) {
-            const profile = await liff.getProfile();
-            document.getElementById('userName').innerText = profile.displayName;
-            document.getElementById('userId').innerText = `ID: ${profile.userId.substring(0,12)}...`;
-            document.getElementById('userPicture').src = profile.pictureUrl;
-            document.getElementById('liffLoginBtn').onclick = null;
-        } else {
-            document.getElementById('liffLoginBtn').onclick = () => liff.login();
+<!DOCTYPE html>
+<html lang="zh-TW"> <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>傑克帕德．萊勃 The Jackpot Lab</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: { extend: { colors: { 'lab-bg': 'var(--bg-color)', 'lab-card': 'var(--card-color)', 'lab-border': 'var(--border-color)', 'lab-text': 'var(--text-main)', } } }
         }
-    } catch (e) { console.error(e); }
-}
-initLIFF();
+    </script>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+</head>
+<body class="h-screen flex flex-col lg:flex-row overflow-hidden bg-lab-bg">
+
+    <header class="lg:hidden h-14 bg-lab-card border-b border-lab-border px-4 flex items-center justify-between sticky top-0 z-40">
+        <button onclick="toggleSidebar()" class="p-2 bg-cyan-500 rounded-lg text-black font-bold text-xs">選單</button>
+        <div class="font-black text-xs tracking-tighter uppercase text-lab-text">The Jackpot Lab</div>
+        <button onclick="toggleTheme()" class="text-xs p-2">🌓</button>
+    </header>
+
+    <aside id="sidebar" class="fixed inset-y-0 left-0 w-72 bg-lab-card border-r border-lab-border z-50 flex flex-col -translate-x-full lg:translate-x-0 lg:relative lg:flex shrink-0 transition-transform duration-300">
+        <div class="p-6 border-b border-lab-border flex justify-between items-center">
+            <h1 class="font-black tracking-tighter text-lg uppercase text-lab-text italic">JACKPOT LAB</h1>
+            <button onclick="toggleSidebar()" class="lg:hidden p-2 text-slate-500">✕</button>
+        </div>
+        <div class="flex-1 overflow-y-auto p-4 space-y-4 no-scrollbar">
+            <label class="flex items-center justify-between p-4 bg-lab-bg rounded-2xl border border-lab-border">
+                <div class="flex flex-col">
+                    <span class="text-[10px] text-cyan-500 font-mono">#FN-001</span>
+                    <span class="text-sm font-semibold text-lab-text">1-1 座標位移規律</span>
+                </div>
+                <input type="checkbox" checked class="w-5 h-5 rounded-full accent-cyan-500">
+            </label>
+        </div>
+    </aside>
+
+    <main class="flex-1 flex flex-col min-w-0">
+        <header class="hidden lg:flex h-20 bg-lab-card border-b border-lab-border px-8 items-center justify-between">
+            <div class="flex items-center gap-6">
+                <button onclick="toggleTheme()" class="text-sm font-bold px-4 py-2 bg-lab-bg rounded-xl border border-lab-border hover:bg-slate-200 transition">🌓 主題切換</button>
+            </div>
+            
+            <div id="liffLoginBtn" class="flex items-center gap-4 cursor-pointer hover:opacity-80 transition">
+                <div class="text-right">
+                    <div id="userName" class="text-sm font-black text-lab-text uppercase">Guest Login</div>
+                    <div id="userId" class="text-[9px] font-mono text-cyan-500 tracking-tighter">WAITING_FOR_AUTH</div>
+                </div>
+                <div class="w-12 h-12 rounded-full border-2 border-cyan-500 overflow-hidden bg-slate-100 shadow-inner">
+                    <img id="userPicture" src="https://api.dicebear.com/7.x/bottts/svg?seed=Jackpot" class="w-full h-full object-cover">
+                </div>
+            </div>
+        </header>
+
+        <div class="p-4 lg:p-8 space-y-6 overflow-y-auto no-scrollbar pb-32">
+            <section class="bg-lab-card p-10 rounded-[3rem] border border-lab-border shadow-2xl text-center relative overflow-hidden">
+                <div class="absolute top-6 right-8 bg-cyan-500 text-black px-4 py-1 rounded-full text-[10px] font-black italic">WINNER MODE</div>
+                <h2 class="text-xs font-bold text-slate-400 mb-8 tracking-[0.3em] uppercase">Current Match Suggestion</h2>
+                <div class="w-32 h-32 rounded-full bg-lab-bg border-[6px] border-cyan-500 mx-auto flex items-center justify-center text-6xl font-black text-cyan-500 font-mono shadow-[0_0_50px_rgba(6,182,212,0.2)] resonance-pulse">18</div>
+                <div class="mt-6 text-2xl font-black italic text-lab-text">88.5% <span class="text-xs not-italic text-slate-400">Match</span></div>
+            </section>
+        </div>
+    </main>
+
+    <div id="toolbox" class="fixed bottom-6 right-6 w-80 glass-widget rounded-[2.5rem] z-50 flex flex-col overflow-hidden border border-white/20 shadow-2xl transition-all duration-500">
+        <div class="flex items-center justify-between px-6 py-4 bg-white/10 border-b border-white/10 cursor-pointer" onclick="minimizeToolbox()">
+            <span class="text-[11px] font-black tracking-widest text-cyan-500 uppercase">Tactical Suite</span>
+            <span class="text-[18px] text-cyan-500">−</span>
+        </div>
+        <div class="flex border-b border-white/10">
+            <button id="tabNotes" class="flex-1 py-3 text-[10px] font-bold text-cyan-500 border-b-2 border-cyan-500">NOTES</button>
+            <button id="tabCalc" class="flex-1 py-3 text-[10px] font-bold text-slate-400">CALC</button>
+        </div>
+        <div id="p-notes" class="p-6 h-64 block">
+            <textarea id="note-txt" placeholder="Input analysis notes..." class="w-full h-full bg-transparent border-none text-sm outline-none resize-none leading-relaxed text-lab-text font-medium"></textarea>
+        </div>
+        <div id="p-calc" class="p-6 h-64 hidden flex flex-col">
+            <div id="disp" class="bg-black/10 p-4 rounded-2xl text-right font-mono text-3xl mb-4 text-lab-text shadow-inner overflow-hidden">0</div>
+            <div class="grid grid-cols-4 gap-2 flex-1">
+                <button onclick="cin('7')" class="bg-white/20 hover:bg-white/40 rounded-xl text-sm font-bold text-lab-text transition">7</button>
+                <button onclick="cin('8')" class="bg-white/20 hover:bg-white/40 rounded-xl text-sm font-bold text-lab-text transition">8</button>
+                <button onclick="cin('9')" class="bg-white/20 hover:bg-white/40 rounded-xl text-sm font-bold text-lab-text transition">9</button>
+                <button onclick="cin('/')" class="bg-cyan-500/20 text-cyan-600 rounded-xl font-bold">÷</button>
+                <button onclick="cin('4')" class="bg-white/20 hover:bg-white/40 rounded-xl text-sm font-bold text-lab-text transition">4</button>
+                <button onclick="cin('5')" class="bg-white/20 hover:bg-white/40 rounded-xl text-sm font-bold text-lab-text transition">5</button>
+                <button onclick="cin('6')" class="bg-white/20 hover:bg-white/40 rounded-xl text-sm font-bold text-lab-text transition">6</button>
+                <button onclick="cin('*')" class="bg-cyan-500/20 text-cyan-600 rounded-xl font-bold">×</button>
+                <button onclick="ccr()" class="bg-red-500/10 text-red-500 rounded-xl font-bold">C</button>
+                <button onclick="cin('0')" class="bg-white/20 hover:bg-white/40 rounded-xl text-sm font-bold text-lab-text transition">0</button>
+                <button onclick="crs()" class="bg-cyan-500 text-white rounded-xl font-black">=</button>
+                <button onclick="cin('+')" class="bg-cyan-500/20 text-cyan-600 rounded-xl font-bold">+</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="dot" class="fixed bottom-8 right-8 w-14 h-14 rounded-full bg-cyan-500 items-center justify-center text-black font-black text-xs shadow-2xl z-50 cursor-pointer hidden transition-all hover:scale-110" onclick="restoreToolbox()">工具</div>
+    
+    <div id="overlay" class="fixed inset-0 bg-black/50 z-40 hidden opacity-0 transition-opacity lg:hidden" onclick="toggleSidebar()"></div>
+
+    <script src="main.js"></script>
+</body>
+</html>
