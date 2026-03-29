@@ -1,6 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-TW" class="">
-<head>
+<html lang="zh-TW"> <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>傑克帕德．萊勃 The Jackpot Lab</title>
@@ -17,9 +16,9 @@
 </head>
 <body class="h-screen flex flex-col lg:flex-row overflow-hidden">
 
-    <header class="lg:hidden h-14 bg-lab-card/80 backdrop-blur border-b border-lab-border px-4 flex items-center justify-between sticky top-0 z-40">
-        <button id="menuBtn" class="p-2 bg-cyan-500 rounded-lg text-black font-bold text-xs shadow-lg">選單</button>
-        <div class="font-black text-xs tracking-tighter uppercase text-lab-text">The Jackpot Lab</div>
+    <header class="lg:hidden h-14 bg-lab-card border-b border-lab-border px-4 flex items-center justify-between sticky top-0 z-40">
+        <button id="menuBtn" class="p-2 bg-cyan-500 rounded-lg text-black font-bold text-xs">選單</button>
+        <div class="font-black text-xs tracking-tighter uppercase">The Jackpot Lab</div>
         <button id="themeBtnMobile" class="text-xs p-2">🌓</button>
     </header>
 
@@ -27,7 +26,7 @@
         <div class="p-6 border-b border-lab-border flex justify-between items-center">
             <div class="flex items-center gap-2">
                 <div class="w-6 h-6 bg-cyan-500 rounded text-black font-black text-center leading-6 text-xs">R</div>
-                <h1 class="font-black tracking-tighter text-lg uppercase">Resonance Lab</h1>
+                <h1 class="font-black tracking-tighter text-lg uppercase text-lab-text">Resonance Lab</h1>
             </div>
             <button id="closeSidebar" class="lg:hidden p-2 text-slate-500">✕</button>
         </div>
@@ -47,16 +46,6 @@
                 </div>
             </section>
         </div>
-        <div class="p-4 border-t border-lab-border bg-black/5">
-            <div id="userArea" class="flex items-center gap-3">
-                <img id="userPicture" src="https://via.placeholder.com/40" class="w-10 h-10 rounded-full border border-cyan-500">
-                <div class="overflow-hidden">
-                    <p id="userName" class="text-xs font-bold truncate text-lab-text">未登入</p>
-                    <p id="userId" class="text-[8px] opacity-50 truncate">ID: Guest</p>
-                </div>
-            </div>
-            <button id="liffLoginBtn" class="mt-3 w-full py-2 bg-green-600 text-white text-[10px] font-bold rounded-lg hover:bg-green-500 transition">LINE 登入</button>
-        </div>
     </aside>
 
     <main class="flex-1 flex flex-col min-w-0">
@@ -64,22 +53,19 @@
             <div class="flex items-center gap-8">
                 <div class="flex items-center gap-3 bg-lab-bg px-3 py-1.5 rounded-full border border-lab-border">
                     <span class="text-[10px] font-bold">字體 A</span>
-                    <input type="range" min="12" max="22" value="16" id="fontSizeSlider" class="w-24 h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-cyan-500">
+                    <input type="range" min="12" max="22" value="16" id="fontSizeSlider" class="w-24 h-1 bg-slate-400 rounded-lg appearance-none cursor-pointer accent-cyan-500">
                     <span class="text-lg font-bold text-lab-text">A</span>
                 </div>
-                <div class="h-6 w-px bg-lab-border"></div>
-                <div class="flex gap-4">
-                    <button id="themeBtn" class="p-2 hover:bg-lab-bg rounded-lg transition text-sm font-bold">🌓 主題</button>
-                    <button class="p-2 hover:bg-lab-bg rounded-lg transition text-sm font-bold text-slate-500">📊 歷史</button>
-                </div>
+                <button id="themeBtn" class="p-2 hover:bg-lab-bg rounded-lg transition text-sm font-bold">🌓 主題</button>
             </div>
-            <div class="flex items-center gap-4 text-lab-text">
+            
+            <div class="flex items-center gap-4 cursor-pointer" id="liffLoginBtn">
                 <div class="text-right">
-                    <div class="text-[10px] text-slate-500 font-bold tracking-widest">DATA STREAMING</div>
-                    <div class="text-xs font-mono font-bold text-green-500">LIVE: 539_TW_2026</div>
+                    <div id="userName" class="text-sm font-black text-lab-text">點擊 LINE 登入</div>
+                    <div id="userId" class="text-[9px] font-mono text-slate-400">GUEST_MODE</div>
                 </div>
-                <div id="pcUserImg" class="w-10 h-10 bg-slate-800 rounded-full border border-lab-border flex items-center justify-center text-xs overflow-hidden">
-                    <img id="userPicturePC" src="" class="w-full h-full object-cover">
+                <div class="w-10 h-10 bg-slate-200 dark:bg-slate-800 rounded-full border-2 border-cyan-500 overflow-hidden shadow-lg">
+                    <img id="userPicture" src="https://via.placeholder.com/40" class="w-full h-full object-cover">
                 </div>
             </div>
         </header>
@@ -121,11 +107,11 @@
     </main>
 
     <div id="toolbox" class="fixed bottom-6 right-4 left-4 sm:left-auto sm:w-80 glass-widget rounded-[2rem] z-50 flex flex-col overflow-hidden">
-        <div class="flex items-center justify-between px-5 py-3 border-b border-black/5 dark:border-white/5 bg-black/5 cursor-pointer" onclick="minimizeToolbox()">
-            <span class="text-[11px] font-black widget-text tracking-widest uppercase text-cyan-600 dark:text-cyan-400">TACTICAL SUITE</span>
+        <div class="flex items-center justify-between px-5 py-3 border-b border-black/5 bg-black/5 cursor-pointer" onclick="minimizeToolbox()">
+            <span class="text-[11px] font-black widget-text tracking-widest uppercase text-cyan-600">TACTICAL SUITE</span>
             <span class="text-[10px] opacity-50 widget-text">➖ 縮小</span>
         </div>
-        <div class="flex border-b border-black/5 dark:border-white/5">
+        <div class="flex border-b border-black/5">
             <button id="tabNotes" class="flex-1 py-3 text-[10px] font-bold text-cyan-500 border-b-2 border-cyan-500 uppercase">便條紙</button>
             <button id="tabCalc" class="flex-1 py-3 text-[10px] font-bold text-slate-400 uppercase">計算機</button>
         </div>
@@ -133,18 +119,18 @@
             <textarea id="note-txt" placeholder="在此輸入分析筆記..." class="w-full h-full bg-transparent border-none text-sm widget-text outline-none resize-none leading-relaxed"></textarea>
         </div>
         <div id="p-calc" class="p-5 h-56 hidden flex flex-col">
-            <div id="disp" class="bg-white/40 dark:bg-black/40 p-3 rounded-xl text-right font-mono text-2xl mb-3 widget-text shadow-inner overflow-hidden">0</div>
+            <div id="disp" class="bg-white/60 dark:bg-black/40 p-3 rounded-xl text-right font-mono text-2xl mb-3 widget-text shadow-inner">0</div>
             <div class="grid grid-cols-4 gap-1.5 flex-1">
-                <button onclick="cin('7')" class="bg-black/5 dark:bg-white/5 rounded-lg text-xs font-bold widget-text">7</button>
-                <button onclick="cin('8')" class="bg-black/5 dark:bg-white/5 rounded-lg text-xs font-bold widget-text">8</button>
-                <button onclick="cin('9')" class="bg-black/5 dark:bg-white/5 rounded-lg text-xs font-bold widget-text">9</button>
+                <button onclick="cin('7')" class="bg-white/50 rounded-lg text-xs font-bold widget-text">7</button>
+                <button onclick="cin('8')" class="bg-white/50 rounded-lg text-xs font-bold widget-text">8</button>
+                <button onclick="cin('9')" class="bg-white/50 rounded-lg text-xs font-bold widget-text">9</button>
                 <button onclick="cin('/')" class="bg-cyan-500/10 text-cyan-600 rounded-lg text-xs font-bold">÷</button>
-                <button onclick="cin('4')" class="bg-black/5 dark:bg-white/5 rounded-lg text-xs font-bold widget-text">4</button>
-                <button onclick="cin('5')" class="bg-black/5 dark:bg-white/5 rounded-lg text-xs font-bold widget-text">5</button>
-                <button onclick="cin('6')" class="bg-black/5 dark:bg-white/5 rounded-lg text-xs font-bold widget-text">6</button>
+                <button onclick="cin('4')" class="bg-white/50 rounded-lg text-xs font-bold widget-text">4</button>
+                <button onclick="cin('5')" class="bg-white/50 rounded-lg text-xs font-bold widget-text">5</button>
+                <button onclick="cin('6')" class="bg-white/50 rounded-lg text-xs font-bold widget-text">6</button>
                 <button onclick="cin('*')" class="bg-cyan-500/10 text-cyan-600 rounded-lg text-xs font-bold">×</button>
                 <button onclick="ccr()" class="bg-red-500/10 text-red-500 rounded-lg text-xs font-bold">C</button>
-                <button onclick="cin('0')" class="bg-black/5 dark:bg-white/5 rounded-lg text-xs font-bold widget-text">0</button>
+                <button onclick="cin('0')" class="bg-white/50 rounded-lg text-xs font-bold widget-text">0</button>
                 <button onclick="crs()" class="bg-cyan-500 text-white rounded-lg text-xs font-black">=</button>
                 <button onclick="cin('+')" class="bg-cyan-500/10 text-cyan-600 rounded-lg text-xs font-bold">+</button>
             </div>
