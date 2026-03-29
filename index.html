@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="zh-TW" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RQL v2.1 - 539 逆向工程專業面板</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        'lab-bg': 'var(--bg-color)',
+                        'lab-card': 'var(--card-color)',
+                        'lab-border': 'var(--border-color)',
+                        'lab-text': 'var(--text-main)',
+                    }
+                }
+            }
+        }
+    </script>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #f1f5f9;
+            --card-color: #ffffff;
+            --border-color: #e2e8f0;
+            --text-main: #1e293b;
+            --base-font-size: 16px;
+        }
+        .dark {
+            --bg-color: #0b0e14;
+            --card-color: #151921;
+            --border-color: #262c36;
+            --text-main: #cbd5e1;
+        }
+        body { 
+            font-family: 'Inter', sans-serif; 
+            background-color: var(--bg-color); 
+            color: var(--text-main); 
+            font-size: var(--base-font-size);
+            transition: background-color 0.3s, color 0.3s;
+        }
+        .font-mono { font-family: 'JetBrains Mono', monospace; }
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
+        
+        .resonance-pulse {
+            box-shadow: 0 0 0 0 rgba(6, 182, 212, 0.4);
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(6, 182, 212, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 20px rgba(6, 182, 212, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(6, 182, 212, 0); }
+        }
+
+        /* --- 浮動小工具專屬樣式 --- */
+        .glass-widget {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(15px) saturate(150%);
+            border: 1px solid rgba(255, 255, 255, 0.4);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        }
+        .dark .glass-widget {
+            background: rgba(30, 41, 59, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 10px 40px rgba(0,0,0,0.4);
+        }
+        .widget-text { color: #0f172a; font-weight: 600; }
+        .dark .widget-text { color: #f1f5f9; }
+        
+        .min-dot {
+            width: 48px; height: 48px; border-radius: 24px;
+            display: none; align-items: center; justify-content: center;
+            cursor: pointer; background: #06b6d4; color: white;
+            box-shadow: 0 4px 15px rgba(6, 182, 212, 0.4);
+            transition: transform 0.2s;
+        }
+        .min-dot:hover { transform: scale(1.1); }
+    </style>
+</head>
+<body class="h-screen flex overflow-hidden">
+
+    <aside class="w-80 bg-lab-card border-r border-lab-border flex flex-col hidden xl:flex shrink-0">
+        <div class="p-6 border-b border-lab-border">
+            <div class="flex items-center gap-2 mb-4">
+                <div class="w-6 h-6 bg-cyan-500 rounded text-black font-black text-center leading-6 text-xs">R</div>
+                <h1 class="font-black tracking-tighter text-lg uppercase">Resonance Lab</h1>
+            </div>
+            <input type="text" placeholder="搜尋函式 ID 或關鍵字..." class="w-full bg-lab-bg border border-lab-border rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-cyan-500">
+        </div>
+        
+        <div class="flex-1 overflow-y-auto p-4 space-y-8">
+            <section>
+                <div class="flex justify-between items-center mb-4 px-2">
+                    <h3 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">物理行為規則 (12)</h3>
+                    <button class="text-[10px] text-cyan-500 hover:underline">全選</button>
+                </div>
+                <div class="space-y-2">
+                    <label class="flex items-center justify-between p-3 bg-lab-bg/50 rounded-xl border border-lab-border cursor-pointer hover:border-slate-500 transition group">
+                        <div class="flex flex-col">
+                            <span class="text-[10px] text-cyan-500 font-mono">#FN-001</span>
+                            <span class="text-sm font-semibold text-lab-text">1-1 座標位移規律</span>
+                        </div>
+                        <input type="checkbox" checked class="w-4 h-4 rounded accent-cyan-500">
+                    </label>
+                    <label class="flex items-center justify-between p-3 bg-lab-bg/50 rounded-xl border border-lab-border cursor-pointer hover:border-slate-500 transition group">
+                        <div class="flex flex-col">
+                            <span class="text-[10px] text-slate-500 font-mono">#FN-002</span>
+                            <span class="text-sm font-semibold text-lab-text">左側重心補償分析</span>
+                        </div>
+                        <input type="checkbox" class="w-4 h-4 rounded accent-cyan-500">
+                    </label>
+                </div>
+            </section>
+        </div>
+    </aside>
+
+    <main class="flex-1 flex flex-col min-w-0">
+        <header class="h-16 bg-lab-card/80 backdrop-blur border-b border-lab-border px-6 flex items-center justify-between sticky top-0 z-20">
+            <div class="flex items-center gap-8">
+                <div class="flex items-center gap-3 bg-lab-bg px-3 py-1.5 rounded-full border border-lab-border">
+                    <span class="text-[10px] font-bold">字體 A</span>
+                    <input type="range" min="12" max="22" value="16" oninput="changeFontSize(this.value)" class="w-24 h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-cyan-500">
+                    <span class="text-lg font-bold text-lab-text">A</span>
+                </div>
+                <div class="h-6 w-px bg-lab-border"></div>
+                <div class="flex gap-4">
+                    <button class="p-2 hover:bg-lab-bg rounded-lg transition" onclick="toggleTheme()">🌓 主題</button>
+                    <button class="p-2 hover:bg-lab-bg rounded-lg transition">📊 歷史</button>
+                    <button class="p-2 hover:bg-lab-bg rounded-lg transition">📥 匯出</button>
+                </div>
+            </div>
+            <div class="flex items-center gap-4 text-lab-text">
+                <div class="text-right">
+                    <div class="text-[10px] text-slate-500 font-bold">DATA STREAMING</div>
+                    <div class="text-xs font-mono font-bold text-green-500">LIVE: 539_TW_2026</div>
+                </div>
+                <div class="w-10 h-10 bg-slate-800 rounded-full flex items-center justify-center text-xs">U</div>
+            </div>
+        </header>
+
+        <div class="flex-1 overflow-y-auto p-6 space-y-6">
+            <section class="bg-lab-card p-8 rounded-[2.5rem] border border-lab-border shadow-2xl relative overflow-hidden">
+                <h2 class="text-xs font-bold text-cyan-500 mb-8 uppercase tracking-[0.2em]">最強共振號碼建議</h2>
+                <div class="flex flex-wrap gap-8 items-center">
+                    <div class="flex flex-col items-center gap-4">
+                        <div class="w-28 h-28 rounded-full bg-lab-bg border-4 border-cyan-500 flex items-center justify-center text-5xl font-black text-cyan-500 font-mono resonance-pulse">18</div>
+                        <div class="text-center">
+                            <div class="text-lg font-black italic text-lab-text">88.5%</div>
+                            <div class="text-[10px] text-slate-500 font-bold tracking-tighter">共振匹配度</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="bg-lab-card rounded-3xl border border-lab-border shadow-xl overflow-hidden">
+                <table class="w-full text-left">
+                    <thead class="text-[10px] text-slate-500 uppercase bg-lab-bg/20">
+                        <tr>
+                            <th class="px-6 py-3">規則 ID 與 名稱</th>
+                            <th class="px-6 py-3">近期趨勢 (30期)</th>
+                            <th class="px-6 py-3 text-right">建議指向</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y border-lab-border text-lab-text">
+                        <tr class="hover:bg-cyan-500/5 transition">
+                            <td class="px-6 py-4 font-bold text-sm">#001 1-1座標規律</td>
+                            <td class="px-6 py-4"><div class="w-20 h-4 bg-cyan-500/20 rounded"></div></td>
+                            <td class="px-6 py-4 text-right font-mono font-bold text-cyan-500">18, 05, 12</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </section>
+        </div>
+    </main>
+
+    <div id="toolbox" class="fixed bottom-6 right-6 w-80 glass-widget rounded-3xl z-50 flex flex-col overflow-hidden">
+        <div class="flex items-center justify-between px-5 py-3 border-b border-black/5 dark:border-white/5 bg-black/5 cursor-pointer" onclick="minimize()">
+            <span class="text-[11px] font-black widget-text tracking-widest uppercase text-cyan-600 dark:text-cyan-400">TACTICAL SUITE</span>
+            <span class="text-[10px] opacity-50 widget-text">➖ 縮小</span>
+        </div>
+        <div class="flex border-b border-black/5 dark:border-white/5">
+            <button onclick="tab('notes')" id="t-n" class="flex-1 py-3 text-[10px] font-bold text-cyan-500 border-b-2 border-cyan-500 uppercase">便條紙</button>
+            <button onclick="tab('calc')" id="t-c" class="flex-1 py-3 text-[10px] font-bold text-slate-400 uppercase">計算機</button>
+        </div>
+
+        <div id="p-notes" class="p-5 h-56 block">
+            <textarea id="note-txt" placeholder="在此輸入分析筆記..." class="w-full h-full bg-transparent border-none text-sm widget-text outline-none resize-none leading-relaxed"></textarea>
+        </div>
+
+        <div id="p-calc" class="p-5 h-56 hidden flex flex-col">
+            <div id="disp" class="bg-white/40 dark:bg-black/40 p-3 rounded-xl text-right font-mono text-2xl mb-3 widget-text shadow-inner">0</div>
+            <div class="grid grid-cols-4 gap-1.5 flex-1">
+                <button onclick="cin('7')" class="bg-black/5 dark:bg-white/5 hover:bg-black/10 rounded-lg text-xs font-bold widget-text">7</button>
+                <button onclick="cin('8')" class="bg-black/5 dark:bg-white/5 rounded-lg text-xs font-bold widget-text">8</button>
+                <button onclick="cin('9')" class="bg-black/5 dark:bg-white/5 rounded-lg text-xs font-bold widget-text">9</button>
+                <button onclick="cin('/')" class="bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 rounded-lg text-xs font-bold">÷</button>
+                <button onclick="cin('4')" class="bg-black/5 dark:bg-white/5 rounded-lg text-xs font-bold widget-text">4</button>
+                <button onclick="cin('5')" class="bg-black/5 dark:bg-white/5 rounded-lg text-xs font-bold widget-text">5</button>
+                <button onclick="cin('6')" class="bg-black/5 dark:bg-white/5 rounded-lg text-xs font-bold widget-text">6</button>
+                <button onclick="cin('*')" class="bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 rounded-lg text-xs font-bold">×</button>
+                <button onclick="cin('1')" class="bg-black/5 dark:bg-white/5 rounded-lg text-xs font-bold widget-text">1</button>
+                <button onclick="cin('2')" class="bg-black/5 dark:bg-white/5 rounded-lg text-xs font-bold widget-text">2</button>
+                <button onclick="cin('3')" class="bg-black/5 dark:bg-white/5 rounded-lg text-xs font-bold widget-text">3</button>
+                <button onclick="cin('-')" class="bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 rounded-lg text-xs font-bold">-</button>
+                <button onclick="ccr()" class="bg-red-500/10 text-red-500 rounded-lg text-xs font-bold">C</button>
+                <button onclick="cin('0')" class="bg-black/5 dark:bg-white/5 rounded-lg text-xs font-bold widget-text">0</button>
+                <button onclick="crs()" class="bg-cyan-500 text-white rounded-lg text-xs font-black">=</button>
+                <button onclick="cin('+')" class="bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 rounded-lg text-xs font-bold">+</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="dot" class="fixed bottom-6 right-6 min-dot z-50" onclick="restore()">
+        <span class="font-black">工具</span>
+    </div>
+
+    <script>
+        // 主題與字體 (保留 v2.0)
+        function toggleTheme() {
+            document.documentElement.classList.toggle('dark');
+            localStorage.setItem('theme', document.documentElement.classList.contains('dark') ? 'dark' : 'light');
+        }
+        function changeFontSize(size) { document.documentElement.style.setProperty('--base-font-size', size + 'px'); }
+        if (localStorage.getItem('theme') === 'light') document.documentElement.classList.remove('dark');
+
+        // 小工具邏輯
+        function minimize() { document.getElementById('toolbox').style.display='none'; document.getElementById('dot').style.display='flex'; }
+        function restore() { document.getElementById('toolbox').style.display='flex'; document.getElementById('dot').style.display='none'; }
+        function tab(t) {
+            document.getElementById('p-notes').style.display = t==='notes'?'block':'none';
+            document.getElementById('p-calc').style.display = t==='calc'?'flex':'none';
+            document.getElementById('t-n').className = `flex-1 py-3 text-[10px] font-bold uppercase ${t==='notes'?'text-cyan-500 border-b-2 border-cyan-500':'text-slate-400'}`;
+            document.getElementById('t-c').className = `flex-1 py-3 text-[10px] font-bold uppercase ${t==='calc'?'text-cyan-500 border-b-2 border-cyan-500':'text-slate-400'}`;
+        }
+
+        // 計算機核心
+        let s = "";
+        function cin(v) { s += v; document.getElementById('disp').innerText = s; }
+        function ccr() { s = ""; document.getElementById('disp').innerText = "0"; }
+        function crs() { try { s = eval(s).toString(); document.getElementById('disp').innerText = s; } catch { document.getElementById('disp').innerText = "ERR"; s = ""; } }
+
+        // 便條紙保存
+        const n = document.getElementById('note-txt');
+        n.value = localStorage.getItem('rql_notes') || "";
+        n.oninput = () => localStorage.setItem('rql_notes', n.value);
+    </script>
+</body>
+</html>
