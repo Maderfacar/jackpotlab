@@ -1,0 +1,29 @@
+:root {
+    --bg-color: #f1f5f9;
+    --card-color: #ffffff;
+    --border-color: #e2e8f0;
+    --text-main: #1e293b;
+}
+
+.dark {
+    --bg-color: #0b0e14;
+    --card-color: #151921;
+    --border-color: #262c36;
+    --text-main: #cbd5e1;
+}
+
+/* 讓捲軸變漂亮 */
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
+
+/* 共振動畫 */
+.resonance-pulse {
+    box-shadow: 0 0 0 0 rgba(6, 182, 212, 0.4);
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(6, 182, 212, 0.7); }
+    70% { transform: scale(1); box-shadow: 0 0 0 15px rgba(6, 182, 212, 0); }
+    100% { transform: scale(0.95); }
+}
