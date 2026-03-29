@@ -1,74 +1,59 @@
-// --- UI 控制邏輯 ---
-const sidebar = document.getElementById('sidebar');
-const overlay = document.getElementById('overlay');
-
+// UI 切換
 function toggleSidebar() {
-    const isHidden = sidebar.classList.contains('-translate-x-full');
-    if (isHidden) {
-        sidebar.classList.remove('-translate-x-full');
-        overlay.classList.remove('hidden');
-        setTimeout(() => overlay.classList.add('opacity-100'), 10);
-    } else {
-        sidebar.classList.add('-translate-x-full');
-        overlay.classList.remove('opacity-100');
-        setTimeout(() => overlay.classList.add('hidden'), 300);
-    }
+    const sb = document.getElementById('sidebar');
+    const ov = document.getElementById('overlay');
+    sb.classList.toggle('-translate-x-full');
+    ov.classList.toggle('hidden');
+    setTimeout(() => ov.classList.toggle('opacity-100'), 10);
 }
 
-document.getElementById('menuBtn').addEventListener('click', toggleSidebar);
-document.getElementById('closeSidebar').addEventListener('click', toggleSidebar);
-overlay.addEventListener('click', toggleSidebar);
+function toggleTheme() { document.documentElement.classList.toggle('dark'); }
 
-function toggleTheme() {
-    document.documentElement.classList.toggle('dark');
-    const isDark = document.documentElement.classList.contains('dark');
-    localStorage.setItem('theme', isDark ? 'dark' : 'light');
-}
+// 小工具控制
+window.minimizeToolbox = () => { 
+    document.getElementById('toolbox').classList.add('translate-y-[120%]', 'opacity-0');
+    setTimeout(() => {
+        document.getElementById('toolbox').classList.add('hidden');
+        document.getElementById('dot').classList.replace('hidden', 'flex');
+    }, 500);
+};
 
-document.getElementById('themeBtn').addEventListener('click', toggleTheme);
-document.getElementById('themeBtnMobile').addEventListener('click', toggleTheme);
+window.restoreToolbox = () => { 
+    document.getElementById('toolbox').classList.remove('hidden');
+    setTimeout(() => {
+        document.getElementById('toolbox').classList.remove('translate-y-[120%]', 'opacity-0');
+        document.getElementById('dot').classList.replace('flex', 'hidden');
+    }, 10);
+};
 
-// --- LIFF 初始化與登入功能 ---
+document.getElementById('tabNotes').onclick = () => {
+    document.getElementById('p-notes').style.display = 'block';
+    document.getElementById('p-calc').style.display = 'none';
+};
+document.getElementById('tabCalc').onclick = () => {
+    document.getElementById('p-notes').style.display = 'none';
+    document.getElementById('p-calc').style.display = 'flex';
+};
+
+// 計算機
+let cStr = "";
+window.cin = (v) => { cStr += v; document.getElementById('disp').innerText = cStr; };
+window.ccr = () => { cStr = ""; document.getElementById('disp').innerText = "0"; };
+window.crs = () => { try { cStr = eval(cStr).toString(); document.getElementById('disp').innerText = cStr; } catch { document.getElementById('disp').innerText = "ERR"; cStr = ""; } };
+
+// LIFF 登入
 async function initLIFF() {
     try {
-        await liff.init({ liffId: "你的_LIFF_ID_填在這裡" }); // 請替換成你在 LINE Developers 申請的 ID
-        
+        await liff.init({ liffId: "你的_LIFF_ID" });
         if (liff.isLoggedIn()) {
-            getUserProfile();
+            const profile = await liff.getProfile();
+            document.getElementById('userName').innerText = profile.displayName;
+            document.getElementById('userId').innerText = `ID: ${profile.userId.substring(0,12)}...`;
+            document.getElementById('userPicture').src = profile.pictureUrl;
+            document.getElementById('liffLoginBtn').onclick = null;
         } else {
-            console.log("尚未登入 LINE");
+            document.getElementById('liffLoginBtn').onclick = () => liff.login();
         }
-    } catch (err) {
-        console.error("LIFF 初始化失敗", err);
-    }
+    } catch (e) { console.error(e); }
 }
-
-async function getUserProfile() {
-    try {
-        const profile = await liff.getProfile();
-        // 更新側邊欄資訊
-        document.getElementById('userName').innerText = profile.displayName;
-        document.getElementById('userId').innerText = `ID: ${profile.userId}`;
-        document.getElementById('userPicture').src = profile.pictureUrl;
-        
-        // 更新電腦版頭像
-        document.getElementById('userPicturePC').src = profile.pictureUrl;
-        
-        // 隱藏登入按鈕
-        document.getElementById('liffLoginBtn').style.display = 'none';
-        
-        console.log("登入成功:", profile.displayName);
-    } catch (err) {
-        console.error("抓取個人資料失敗", err);
-    }
-}
-
-// 登入按鈕事件
-document.getElementById('liffLoginBtn').addEventListener('click', () => {
-    if (!liff.isLoggedIn()) {
-        liff.login();
-    }
-});
-
-// 啟動
 initLIFF();
