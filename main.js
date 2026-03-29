@@ -1,4 +1,4 @@
-// UI 切換
+// UI 響應式邏輯
 function toggleSidebar() {
     const sb = document.getElementById('sidebar');
     const ov = document.getElementById('overlay');
@@ -19,92 +19,92 @@ function toggleSidebar() {
 
 function toggleTheme() { document.documentElement.classList.toggle('dark'); }
 
-// 小工具控制
+// 工具箱縮放
 window.minimizeToolbox = () => { 
-    const box = document.getElementById('toolbox');
-    box.classList.add('translate-y-[150%]', 'opacity-0', 'scale-90');
+    document.getElementById('toolbox').classList.add('translate-y-[120%]', 'opacity-0');
     setTimeout(() => {
-        box.classList.add('hidden');
+        document.getElementById('toolbox').classList.add('hidden');
         document.getElementById('dot').classList.replace('hidden', 'flex');
     }, 500);
 };
 
 window.restoreToolbox = () => { 
-    const box = document.getElementById('toolbox');
-    box.classList.remove('hidden');
+    document.getElementById('toolbox').classList.remove('hidden');
     setTimeout(() => {
-        box.classList.remove('translate-y-[150%]', 'opacity-0', 'scale-90');
+        document.getElementById('toolbox').classList.remove('translate-y-[120%]', 'opacity-0');
         document.getElementById('dot').classList.replace('flex', 'hidden');
     }, 10);
 };
 
-// 工具箱頁籤切換
-const tNotes = document.getElementById('tabNotes');
-const tCalc = document.getElementById('tabCalc');
-const pNotes = document.getElementById('p-notes');
-const pCalc = document.getElementById('p-calc');
-
-tNotes.onclick = () => {
-    pNotes.style.display = 'block'; pCalc.style.display = 'none';
-    tNotes.className = "flex-1 py-2 text-[10px] font-bold rounded-xl bg-cyan-500 text-black";
-    tCalc.className = "flex-1 py-2 text-[10px] font-bold rounded-xl text-slate-400 hover:bg-white/5";
-};
-tCalc.onclick = () => {
-    pNotes.style.display = 'none'; pCalc.style.display = 'flex';
-    tCalc.className = "flex-1 py-2 text-[10px] font-bold rounded-xl bg-cyan-500 text-black";
-    tNotes.className = "flex-1 py-2 text-[10px] font-bold rounded-xl text-slate-400 hover:bg-white/5";
+// 頁籤邏輯
+document.getElementById('tabNotes').onclick = function() {
+    document.getElementById('p-notes').style.display = 'block';
+    document.getElementById('p-calc').style.display = 'none';
+    this.className = "flex-1 py-3 text-[10px] font-bold border-b-2 border-cyan-500 text-cyan-500";
+    document.getElementById('tabCalc').className = "flex-1 py-3 text-[10px] font-bold text-slate-400";
 };
 
-// 計算機邏輯
-let cStr = "";
-window.cin = (v) => { 
-    if (cStr === "0" && !isNaN(v)) cStr = "";
-    cStr += v; 
-    document.getElementById('disp').innerText = cStr; 
-};
-window.ccr = () => { cStr = ""; document.getElementById('disp').innerText = "0"; };
-window.crs = () => { 
-    try { 
-        if (!cStr) return;
-        let res = Function('"use strict";return (' + cStr + ')')();
-        cStr = Number.isInteger(res) ? res.toString() : res.toFixed(2).toString();
-        document.getElementById('disp').innerText = cStr; 
-    } catch { 
-        document.getElementById('disp').innerText = "ERR"; 
-        cStr = ""; 
-    } 
+document.getElementById('tabCalc').onclick = function() {
+    document.getElementById('p-notes').style.display = 'none';
+    document.getElementById('p-calc').style.display = 'flex';
+    this.className = "flex-1 py-3 text-[10px] font-bold border-b-2 border-cyan-500 text-cyan-500";
+    document.getElementById('tabNotes').className = "flex-1 py-3 text-[10px] font-bold text-slate-400";
 };
 
-// LIFF 登入優化
-async function initLIFF() {
+// 計算機核心
+let currentInput = "";
+window.cin = (val) => {
+    currentInput += val;
+    document.getElementById('disp').innerText = currentInput;
+};
+window.ccr = () => {
+    currentInput = "";
+    document.getElementById('disp').innerText = "0";
+};
+window.crs = () => {
     try {
-        await liff.init({ liffId: "2009636686-ec6thLNX" });
+        // 使用 Function 代替 eval 較為安全
+        const result = new Function(`return ${currentInput}`)();
+        currentInput = result.toString();
+        document.getElementById('disp').innerText = currentInput;
+    } catch (e) {
+        document.getElementById('disp').innerText = "ERROR";
+        currentInput = "";
+    }
+};
+
+// LIFF 初始化與用戶資料顯示
+async function initLIFF() {
+    const liffId = "2009636686-ec6thLNX"; 
+    try {
+        await liff.init({ liffId });
         if (liff.isLoggedIn()) {
             const profile = await liff.getProfile();
             
-            // 更新 UI
-            const nameEl = document.getElementById('userName');
-            const idEl = document.getElementById('userId');
-            const picEl = document.getElementById('userPicture');
-            const picMobEl = document.getElementById('userPictureMobile');
-
-            nameEl.innerText = profile.displayName;
-            idEl.innerText = `ID: ${profile.userId.substring(0,12)}...`;
+            // 更新桌機版 UI
+            document.getElementById('userName').innerText = profile.displayName;
+            document.getElementById('userId').innerText = `ID: ${profile.userId.substring(0, 10)}...`;
             
+            const desktopImg = document.getElementById('userPicture');
             if (profile.pictureUrl) {
-                picEl.src = profile.pictureUrl;
-                picEl.classList.remove('opacity-0');
-                picMobEl.src = profile.pictureUrl;
-                picMobEl.classList.remove('hidden');
+                desktopImg.src = profile.pictureUrl;
+                desktopImg.style.opacity = "1";
             }
-            
+
+            // 更新手機版 UI
+            const mobileImg = document.getElementById('userPictureMobile');
+            if (profile.pictureUrl) {
+                mobileImg.src = profile.pictureUrl;
+                mobileImg.classList.remove('hidden');
+            }
+
             document.getElementById('liffLoginBtn').onclick = null;
         } else {
             document.getElementById('liffLoginBtn').onclick = () => liff.login();
         }
-    } catch (e) { 
-        console.error("LIFF Init Error:", e); 
-        document.getElementById('userName').innerText = "Connection Error";
+    } catch (err) {
+        console.error("LIFF Init Failed", err);
     }
 }
-initLIFF();
+
+window.onload = initLIFF;
