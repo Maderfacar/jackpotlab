@@ -229,7 +229,7 @@ window.loadHistoryGrid = async function() {
     }
 };
 
-// 彈出選擇面板
+
 // 彈出選擇面板（支援顏色選擇）
 window.showHighlightPanel = function(cellId, element) {
     if (document.getElementById('highlightPanel')) return;
