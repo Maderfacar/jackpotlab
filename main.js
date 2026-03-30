@@ -158,49 +158,84 @@ window.crs = () => {
 // 啟動
 document.addEventListener("DOMContentLoaded", initLIFF);
 
-// 強制渲染模擬數據的函數
-window.renderMockData = () => {
-    const list = document.getElementById('history-list');
-    if (!list) return;
-
-    // 模擬 3 筆數據，看會不會跑版
-    const mockItem = (period, date, nums, sum) => `
-        <div class="border-b border-lab-border p-4 hover:bg-white/5 transition-all cursor-pointer" onclick="toggleDetail(this)">
-            <div class="flex items-center justify-between">
-                <div class="flex flex-col w-14">
-                    <span class="text-[10px] font-mono text-cyan-500">#${period}</span>
-                    <span class="text-[9px] opacity-40 text-lab-text">${date}</span>
-                </div>
-                <div class="flex gap-1.5 flex-1 justify-center">
-                    ${nums.map(n => `<span class="w-7 h-7 flex items-center justify-center rounded-full bg-slate-900 border border-lab-border text-xs font-bold text-cyan-400">${n}</span>`).join('')}
-                </div>
-                <div class="text-right w-10">
-                    <div class="text-[10px] font-bold text-slate-300">Σ ${sum}</div>
-                </div>
-            </div>
-            <div class="detail-panel hidden mt-4 pt-4 border-t border-dashed border-lab-border grid grid-cols-2 gap-2">
-                <div class="text-[10px] flex justify-between px-2"><span class="opacity-50">尾數</span><span class="text-cyan-600">分析中...</span></div>
-                <div class="text-[10px] flex justify-between px-2"><span class="opacity-50">單雙</span><span class="text-cyan-600">3:2</span></div>
-            </div>
-        </div>
-    `;
-
-    list.innerHTML = 
-        mockItem('240030', '03/30', ['05','12','18','24','33'], 92) +
-        mockItem('240029', '03/29', ['01','10','15','22','39'], 87) +
-        mockItem('240028', '03/28', ['07','11','19','28','35'], 100);
-};
-
-// 修改你原本的 switchView，讓它在切換到 terminal 時自動渲染
-const originalSwitchView = window.switchView;
+// [核心修正] 視圖切換 + 自動觸發數據渲染
 window.switchView = (viewId) => {
-    originalSwitchView(viewId); // 執行原本的切換邏輯
+    // 1. 隱藏所有視圖
+    document.querySelectorAll('.spa-view').forEach(v => v.classList.add('hidden'));
+    
+    // 2. 顯示目標視圖
+    const targetView = document.getElementById(`view-${viewId}`);
+    if (targetView) {
+        targetView.classList.remove('hidden');
+        console.log("切換至視圖:", viewId);
+    }
+    
+    // 3. 更新底部導覽鈕顏色
+    document.querySelectorAll('.tab-item').forEach(btn => {
+        btn.classList.remove('text-cyan-500');
+        btn.classList.add('text-slate-400');
+    });
+    
+    // 4. 如果是點擊觸發的，染成青色
+    if (event && event.currentTarget) {
+        event.currentTarget.classList.remove('text-slate-400');
+        event.currentTarget.classList.add('text-cyan-500');
+    }
+
+    // 5. 【關鍵步驟】如果進入的是「terminal (分析)」，立即執行渲染
     if (viewId === 'terminal') {
-        window.renderMockData(); // 如果切換到終端機，立即刷出數據
+        renderTerminalData();
+    }
+
+    // 側邊欄自動關閉
+    const sidebar = document.getElementById('sidebar');
+    if (sidebar && !sidebar.classList.contains('-translate-x-full')) {
+        toggleSidebar();
     }
 };
 
-// 展開函數
+// [新增] 專門負責渲染分析列表的函數
+function renderTerminalData() {
+    const list = document.getElementById('history-list');
+    if (!list) {
+        console.error("找不到 history-list 容器");
+        return;
+    }
+
+    // 模擬 3 筆數據，確保視覺效果
+    const items = [
+        { id: '240030', date: '03/30', nums: ['05','12','18','24','33'], sum: 92 },
+        { id: '240029', date: '03/29', nums: ['01','10','15','22','39'], sum: 87 },
+        { id: '240028', date: '03/28', nums: ['07','11','19','28','35'], sum: 100 }
+    ];
+
+    // 生成 HTML
+    const html = items.map(item => `
+        <div class="border-b border-lab-border p-4 hover:bg-white/5 transition-all cursor-pointer" onclick="toggleDetail(this)">
+            <div class="flex items-center justify-between">
+                <div class="flex flex-col w-14">
+                    <span class="text-[10px] font-mono text-cyan-500">#${item.id}</span>
+                    <span class="text-[9px] opacity-40 text-lab-text">${item.date}</span>
+                </div>
+                <div class="flex gap-1.5 flex-1 justify-center">
+                    ${item.nums.map(n => `<span class="w-7 h-7 flex items-center justify-center rounded-full bg-slate-900 border border-lab-border text-xs font-bold text-cyan-400">${n}</span>`).join('')}
+                </div>
+                <div class="text-right w-10">
+                    <div class="text-[10px] font-bold text-slate-300">Σ ${item.sum}</div>
+                </div>
+            </div>
+            <div class="detail-panel hidden mt-4 pt-4 border-t border-dashed border-lab-border grid grid-cols-2 gap-2">
+                <div class="text-[10px] flex justify-between px-2"><span class="opacity-50">單雙</span><span class="text-cyan-600">3:2</span></div>
+                <div class="text-[10px] flex justify-between px-2"><span class="opacity-50">遺漏</span><span class="text-cyan-600">已計算</span></div>
+            </div>
+        </div>
+    `).join('');
+
+    // 直接替換掉「載入中」的內容
+    list.innerHTML = html;
+}
+
+// 展開函數 (確保全域可用)
 window.toggleDetail = (el) => {
     const detail = el.querySelector('.detail-panel');
     if (detail) detail.classList.toggle('hidden');
