@@ -166,7 +166,7 @@ document.addEventListener("DOMContentLoaded", initLIFF);
 
 // ====================== 歷史網格記錄功能 ======================
 
-// ====================== 歷史網格記錄功能 ======================
+
 
 window.loadHistoryGrid = async function() {
     const table = document.getElementById('historyGrid');
@@ -230,67 +230,95 @@ window.loadHistoryGrid = async function() {
 };
 
 // 彈出選擇面板
+// 彈出選擇面板（支援顏色選擇）
 window.showHighlightPanel = function(cellId, element) {
-    // 防止重複開啟
     if (document.getElementById('highlightPanel')) return;
 
-    const panel = document.createElement('div');
-    panel.id = 'highlightPanel';
-    panel.className = 'fixed inset-0 bg-black/70 z-[80] flex items-end';
-    panel.innerHTML = `
-        <div class="bg-lab-card w-full rounded-t-3xl p-6 animate-slide-up">
-            <div class="text-center mb-5">
-                <div class="text-sm font-bold text-lab-text">格子標記設定</div>
-                <div class="text-xs text-slate-400 mt-1">期數尾碼 ${cellId.split('_')[0]}</div>
-            </div>
-            
-            <div class="grid grid-cols-2 gap-3">
-                <button onclick="window.applyHighlight('${cellId}', 'border')" 
-                        class="py-5 border-2 border-cyan-400 text-cyan-400 rounded-2xl font-medium active:scale-95 transition">
-                    細內框
-                </button>
-                <button onclick="window.applyHighlight('${cellId}', 'bg')" 
-                        class="py-5 bg-cyan-500/10 text-cyan-400 rounded-2xl font-medium active:scale-95 transition">
-                    淺色背景
-                </button>
-            </div>
+    const colors = ['#22d3ee', '#eab308', '#a855f7', '#ef4444', '#4ade80']; // 青、黃、紫、紅、綠
 
-            <button onclick="document.getElementById('highlightPanel').remove()" 
-                    class="w-full mt-6 py-4 text-slate-400 text-sm">
-                取消
-            </button>
+    let colorButtons = '';
+    colors.forEach(color => {
+        colorButtons += `
+            <button onclick="window.applyHighlight('${cellId}', 'border', '${color}')" 
+                    class="w-9 h-9 rounded-full border-2 border-white shadow-sm" 
+                    style="background-color: ${color}"></button>`;
+    });
+
+    const panelHTML = `
+        <div class="fixed inset-0 bg-black/70 z-[80] flex items-end">
+            <div class="bg-lab-card w-full rounded-t-3xl p-6">
+                <div class="text-center mb-6">
+                    <div class="font-bold text-base">格子標記</div>
+                    <div class="text-xs text-slate-400 mt-1">期數尾碼 ${cellId.split('_')[0]}</div>
+                </div>
+
+                <div class="space-y-5">
+                    <!-- 內框 -->
+                    <div>
+                        <div class="text-xs text-slate-400 mb-3">細內框顏色</div>
+                        <div class="flex gap-3 justify-center">${colorButtons}</div>
+                    </div>
+
+                    <!-- 背景 -->
+                    <div>
+                        <div class="text-xs text-slate-400 mb-3">淺色背景</div>
+                        <div class="grid grid-cols-5 gap-3">
+                            <button onclick="window.applyHighlight('${cellId}', 'bg', '#164e63')" 
+                                    class="h-11 rounded-2xl bg-[#164e63]"></button>
+                            <button onclick="window.applyHighlight('${cellId}', 'bg', '#1e3a8a')" 
+                                    class="h-11 rounded-2xl bg-[#1e3a8a]"></button>
+                            <button onclick="window.applyHighlight('${cellId}', 'bg', '#312e81')" 
+                                    class="h-11 rounded-2xl bg-[#312e81]"></button>
+                            <button onclick="window.applyHighlight('${cellId}', 'bg', '#4c1d95')" 
+                                    class="h-11 rounded-2xl bg-[#4c1d95]"></button>
+                            <button onclick="window.applyHighlight('${cellId}', 'bg', '#431407')" 
+                                    class="h-11 rounded-2xl bg-[#431407]"></button>
+                        </div>
+                    </div>
+                </div>
+
+                <button onclick="document.getElementById('highlightPanel').remove()" 
+                        class="w-full mt-8 py-4 text-slate-400 text-sm font-medium">
+                    取消
+                </button>
+            </div>
         </div>
     `;
 
+    const panel = document.createElement('div');
+    panel.id = 'highlightPanel';
+    panel.innerHTML = panelHTML;
     document.body.appendChild(panel);
 
-    // 點擊背景關閉
     panel.addEventListener('click', (e) => {
         if (e.target.id === 'highlightPanel') panel.remove();
     });
 };
 
-window.applyHighlight = function(cellId, type) {
+window.applyHighlight = function(cellId, type, color = null) {
     const cell = document.querySelector(`[data-cell-id="${cellId}"]`);
     if (!cell) return;
 
-    // 清除舊樣式
     cell.classList.remove('active-border', 'active-bg');
+    cell.style.borderColor = '';
+    cell.style.backgroundColor = '';
 
-    if (type === 'border') {
+    if (type === 'border' && color) {
         cell.classList.add('active-border');
-    } else if (type === 'bg') {
+        cell.style.borderColor = color;
+    } else if (type === 'bg' && color) {
         cell.classList.add('active-bg');
+        cell.style.backgroundColor = color;
     }
 
-    window.saveHighlightToStorage(cellId, type);
+    window.saveHighlightToStorage(cellId, type, color);
     document.getElementById('highlightPanel').remove();
 };
 
-// localStorage 相關
-window.saveHighlightToStorage = function(cellId, type) {
+// 修改儲存函式支援顏色
+window.saveHighlightToStorage = function(cellId, type, color = null) {
     let highlights = JSON.parse(localStorage.getItem('gridHighlights_539') || '{}');
-    highlights[cellId] = type;
+    highlights[cellId] = { type, color };
     localStorage.setItem('gridHighlights_539', JSON.stringify(highlights));
 };
 
@@ -298,9 +326,15 @@ window.loadHighlightsFromLocalStorage = function() {
     const highlights = JSON.parse(localStorage.getItem('gridHighlights_539') || '{}');
     document.querySelectorAll('.highlight-cell').forEach(cell => {
         const cellId = cell.getAttribute('data-cell-id');
-        const type = highlights[cellId];
-        if (type) {
-            cell.classList.add(type === 'border' ? 'active-border' : 'active-bg');
+        const data = highlights[cellId];
+        if (data) {
+            if (data.type === 'border' && data.color) {
+                cell.classList.add('active-border');
+                cell.style.borderColor = data.color;
+            } else if (data.type === 'bg' && data.color) {
+                cell.classList.add('active-bg');
+                cell.style.backgroundColor = data.color;
+            }
         }
     });
 };
