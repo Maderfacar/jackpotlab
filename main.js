@@ -1,148 +1,102 @@
-// UI 響應式邏輯
+// --- 基礎 UI 邏輯 ---
 function toggleSidebar() {
     const sb = document.getElementById('sidebar');
     const ov = document.getElementById('overlay');
-    const isHidden = sb.classList.contains('-translate-x-full');
-    
-    if (isHidden) {
-        ov.classList.remove('hidden');
-        setTimeout(() => {
-            sb.classList.remove('-translate-x-full');
-            ov.classList.add('opacity-100');
-        }, 10);
-    } else {
-        sb.classList.add('-translate-x-full');
-        ov.classList.remove('opacity-100');
-        setTimeout(() => ov.classList.add('hidden'), 300);
-    }
+    sb.classList.toggle('-translate-x-full');
+    ov.classList.toggle('hidden');
+    ov.classList.toggle('opacity-100');
 }
 
 function toggleTheme() { document.documentElement.classList.toggle('dark'); }
 
-// 工具箱縮放
-window.minimizeToolbox = () => { 
-    document.getElementById('toolbox').classList.add('translate-y-[120%]', 'opacity-0');
-    setTimeout(() => {
-        document.getElementById('toolbox').classList.add('hidden');
-        document.getElementById('dot').classList.replace('hidden', 'flex');
-    }, 500);
-};
-
-window.restoreToolbox = () => { 
-    document.getElementById('toolbox').classList.remove('hidden');
-    setTimeout(() => {
-        document.getElementById('toolbox').classList.remove('translate-y-[120%]', 'opacity-0');
-        document.getElementById('dot').classList.replace('flex', 'hidden');
-    }, 10);
-};
-
-// 頁籤邏輯
-document.getElementById('tabNotes').onclick = function() {
-    document.getElementById('p-notes').style.display = 'block';
-    document.getElementById('p-calc').style.display = 'none';
-    this.className = "flex-1 py-3 text-[10px] font-bold border-b-2 border-cyan-500 text-cyan-500";
-    document.getElementById('tabCalc').className = "flex-1 py-3 text-[10px] font-bold text-slate-400";
-};
-
-document.getElementById('tabCalc').onclick = function() {
-    document.getElementById('p-notes').style.display = 'none';
-    document.getElementById('p-calc').style.display = 'flex';
-    this.className = "flex-1 py-3 text-[10px] font-bold border-b-2 border-cyan-500 text-cyan-500";
-    document.getElementById('tabNotes').className = "flex-1 py-3 text-[10px] font-bold text-slate-400";
-};
-
-// 計算機核心
-let currentInput = "";
-window.cin = (val) => {
-    currentInput += val;
-    document.getElementById('disp').innerText = currentInput;
-};
-window.ccr = () => {
-    currentInput = "";
-    document.getElementById('disp').innerText = "0";
-};
-window.crs = () => {
-    try {
-        // 使用 Function 代替 eval 較為安全
-        const result = new Function(`return ${currentInput}`)();
-        currentInput = result.toString();
-        document.getElementById('disp').innerText = currentInput;
-    } catch (e) {
-        document.getElementById('disp').innerText = "ERROR";
-        currentInput = "";
+// SPA 視圖切換
+window.switchView = (viewId) => {
+    document.querySelectorAll('.spa-view').forEach(v => v.classList.add('hidden'));
+    document.getElementById(`view-${viewId}`)?.classList.remove('hidden');
+    
+    // 更新導覽鈕顏色
+    document.querySelectorAll('.tab-item').forEach(btn => btn.classList.replace('text-cyan-500', 'text-slate-400'));
+    if (event?.currentTarget) {
+        event.currentTarget.classList.replace('text-slate-400', 'text-cyan-500');
     }
+    if (!document.getElementById('sidebar').classList.contains('-translate-x-full')) toggleSidebar();
 };
 
-// --- [新增] SPA 視圖切換邏輯 ---
-function switchView(viewId) {
-    // 1. 隱藏所有視圖
-    document.querySelectorAll('.spa-view').forEach(view => {
-        view.classList.add('hidden');
-    });
-    // 2. 顯示點選的視圖
-    const target = document.getElementById(`view-${viewId}`);
-    if (target) target.classList.remove('hidden');
-
-    // 3. 更新底部導覽按鈕樣式 (僅手機版)
-    document.querySelectorAll('.tab-item').forEach(btn => {
-        btn.classList.remove('text-cyan-500');
-        btn.classList.add('text-slate-400');
-    });
-    // 高亮當前點擊的按鈕
-    if (event && event.currentTarget) {
-        event.currentTarget.classList.remove('text-slate-400');
-        event.currentTarget.classList.add('text-cyan-500');
-    }
-}
-
-// --- [修改] LIFF 初始化與 Firebase 銜接 ---
+// --- LIFF 與 Firebase 核心邏輯 ---
 async function initLIFF() {
     const liffId = "2009636686-ec6thLNX"; 
     try {
         await liff.init({ liffId });
-        console.log("LIFF Initialized");
-
+        
         if (liff.isLoggedIn()) {
             const profile = await liff.getProfile();
-            console.log("Profile Loaded:", profile.displayName);
-
-            // 更新桌機版 UI
-            const userNameEl = document.getElementById('userName');
-            const userIdEl = document.getElementById('userId');
-            const userPicEl = document.getElementById('userPicture');
+            renderLoginState(profile);
             
-            if(userNameEl) userNameEl.innerText = profile.displayName;
-            if(userIdEl) userIdEl.innerText = `ID: ${profile.userId.substring(0, 10)}...`;
-            if(userPicEl && profile.pictureUrl) {
-                userPicEl.src = profile.pictureUrl;
-                userPicEl.style.opacity = "1";
-            }
-
-            // 更新手機版 UI
-            const mobilePicEl = document.getElementById('userPictureMobile');
-            if (mobilePicEl && profile.pictureUrl) {
-                mobilePicEl.src = profile.pictureUrl;
-                mobilePicEl.classList.remove('hidden');
-            }
-
-            // 【核心銜接】呼叫 database.js 中的同步函數
-            if (window.syncUserToFirebase) {
-                window.syncUserToFirebase(profile);
-            }
-
-            // 移除登入點擊事件
-            const loginBtn = document.getElementById('liffLoginBtn');
-            if(loginBtn) loginBtn.onclick = null;
-
+            // 確保 Firebase 函數載入後執行同步
+            const checkSync = () => {
+                if (typeof window.syncUserToFirebase === "function") {
+                    window.syncUserToFirebase(profile);
+                } else {
+                    setTimeout(checkSync, 500);
+                }
+            };
+            checkSync();
         } else {
-            console.log("User not logged in");
-            const loginBtn = document.getElementById('liffLoginBtn');
-            if(loginBtn) loginBtn.onclick = () => liff.login();
+            renderLogoutState();
         }
     } catch (err) {
-        console.error("LIFF Init Failed", err);
+        console.error("LIFF 初始化失敗", err);
     }
 }
 
-// 監聽載入
+// 渲染「已登入」狀態
+function renderLoginState(profile) {
+    const els = {
+        name: document.getElementById('userName'),
+        id: document.getElementById('userId'),
+        pic: document.getElementById('userPicture'),
+        mPic: document.getElementById('userPictureMobile'),
+        btn: document.getElementById('liffLoginBtn')
+    };
+
+    if(els.name) els.name.innerText = profile.displayName;
+    if(els.id) els.id.innerText = `ID: ${profile.userId.substring(0, 8)}`;
+    if(els.pic) { els.pic.src = profile.pictureUrl; els.pic.style.opacity = "1"; }
+    if(els.mPic) { els.mPic.src = profile.pictureUrl; els.mPic.classList.remove('hidden'); }
+
+    // 綁定點擊頭像 = 詢問是否登出 (解決你沒登出鈕的問題)
+    const handleLogout = () => {
+        if (confirm("確定要登出並切換帳號嗎？")) {
+            liff.logout();
+            window.location.reload();
+        }
+    };
+    if(els.btn) els.btn.onclick = handleLogout;
+    if(els.mPic) els.mPic.parentElement.onclick = handleLogout;
+}
+
+// 渲染「未登入」狀態
+function renderLogoutState() {
+    const loginBtn = document.getElementById('liffLoginBtn');
+    if(loginBtn) {
+        document.getElementById('userName').innerText = "點擊登入";
+        loginBtn.onclick = () => liff.login();
+    }
+    // 手機版頭像框點擊也觸發登入
+    const mPicBox = document.getElementById('mobileUser');
+    if(mPicBox) mPicBox.onclick = () => liff.login();
+}
+
+// 工具箱邏輯 (修正恢復顯示問題)
+window.minimizeToolbox = () => {
+    document.getElementById('toolbox').classList.add('hidden');
+    document.getElementById('dot').style.display = 'flex';
+    document.getElementById('dot').classList.remove('hidden');
+};
+window.restoreToolbox = () => {
+    document.getElementById('toolbox').classList.remove('hidden');
+    document.getElementById('dot').style.display = 'none';
+};
+
+// 啟動
 document.addEventListener("DOMContentLoaded", initLIFF);
