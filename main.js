@@ -167,7 +167,7 @@ document.addEventListener("DOMContentLoaded", initLIFF);
 // ====================== 歷史網格記錄功能 ======================
 
 
-
+/*
 window.loadHistoryGrid = async function() {
     const table = document.getElementById('historyGrid');
     if (!table) return;
@@ -228,7 +228,73 @@ window.loadHistoryGrid = async function() {
         table.innerHTML = `<tr><td colspan="8" class="py-12 text-center text-red-400">載入失敗</td></tr>`;
     }
 };
+*/
 
+// ====================== 歷史網格記錄功能 ======================
+
+window.loadHistoryGrid = async function() {
+    const table = document.getElementById('historyGrid');
+    if (!table) return;
+
+    const startInput = document.getElementById('startPeriod').value.trim();
+    const endInput = document.getElementById('endPeriod').value.trim();
+
+    table.innerHTML = `<tr><td colspan="8" class="py-12 text-center text-slate-400">載入中...</td></tr>`;
+
+    try {
+        // === 修改重點：改用 CSV 抓取 ===
+        let data = await window.getDrawsFromCSV(60);   // 從 CSV 抓取，預設 60 筆
+
+        if (data.length === 0) {
+            table.innerHTML = `<tr><td colspan="8" class="py-12 text-center text-slate-400">尚無資料，請確認 539.csv 檔案是否存在</td></tr>`;
+            return;
+        }
+
+        // 期數範圍過濾
+        if (startInput) data = data.filter(item => item.period >= startInput);
+        if (endInput) data = data.filter(item => item.period <= endInput);
+
+        let html = `<thead><tr class="bg-lab-bg border-b border-lab-border">`;
+        html += `<th class="px-2 py-3 text-center text-[10px] font-bold text-slate-400 border-r border-lab-border">期數</th>`;
+        html += `<th class="px-2 py-3 text-center text-[10px] font-bold text-slate-400 border-r border-lab-border">日期</th>`;
+        html += `<th class="px-2 py-3 text-center text-[10px] font-bold text-slate-400 border-r border-lab-border">星期</th>`;
+        for (let i = 1; i <= 5; i++) {
+            html += `<th class="px-3 py-3 text-center text-[10px] font-bold text-slate-400 border-r border-lab-border">${i}</th>`;
+        }
+        html += `</tr></thead><tbody class="text-sm">`;
+
+        // 資料已經由舊到新排序
+        const sortedData = data;
+
+        for (const item of sortedData) {
+            const periodTail = item.period ? item.period.slice(-3) : '---';
+            const dateObj = new Date(item.drawDate);
+            const monthDay = isNaN(dateObj.getTime()) ? '---' : `${dateObj.getMonth()+1}/${dateObj.getDate()}`;
+            const weekday = ['日','一','二','三','四','五','六'][dateObj.getDay()] || '—';
+
+            html += `<tr class="border-b border-lab-border">`;
+            html += `<td class="px-2 py-3 text-center font-mono border-r border-lab-border">${periodTail}</td>`;
+            html += `<td class="px-2 py-3 text-center border-r border-lab-border">${monthDay}</td>`;
+            html += `<td class="px-2 py-3 text-center border-r border-lab-border">${weekday}</td>`;
+
+            (item.numbers || []).forEach((num, idx) => {
+                const cellId = `${periodTail}_${idx+4}`;
+                html += `<td onclick="window.showHighlightPanel('${cellId}', this)" 
+                             class="highlight-cell px-2 py-3 text-center font-mono border-r border-lab-border" 
+                             data-cell-id="${cellId}">${num.toString().padStart(2, '0')}</td>`;
+            });
+            html += `</tr>`;
+        }
+        html += `</tbody>`;
+        table.innerHTML = html;
+
+        window.loadHighlightsFromLocalStorage();
+
+    } catch (err) {
+        console.error(err);
+        table.innerHTML = `<tr><td colspan="8" class="py-12 text-center text-red-400">載入失敗，請確認 539.csv 檔案</td></tr>`;
+    }
+};
 
 // 彈出選擇面板（支援顏色選擇）
 // 彈出選擇面板（增加清除標記功能）
