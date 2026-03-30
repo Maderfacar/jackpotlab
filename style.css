@@ -20,17 +20,13 @@
     background: rgba(21, 25, 33, 0.8);
 }
 
-/* === 核心滑動修復 === */
+/* === 全站滑動核心修復 === */
 #spa-container {
     flex: 1 1 auto;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
-    height: 0;                    /* 關鍵修復：讓 flex 正確計算高度 */
+    height: 100%;           /* 改回 100% + flex 組合，更穩定 */
     min-height: 0;
-}
-
-.no-scrollbar::-webkit-scrollbar { 
-    display: none; 
 }
 
 /* 導覽列安全區域 */
@@ -38,8 +34,11 @@ nav {
     padding-bottom: env(safe-area-inset-bottom);
 }
 
-/* === 歷史網格樣式 - 適配寬度 === */
-/* 歷史網格樣式 */
+.no-scrollbar::-webkit-scrollbar { 
+    display: none; 
+}
+
+/* === 歷史網格樣式 === */
 .history-grid {
     border-collapse: collapse;
     width: 100%;
@@ -54,16 +53,11 @@ nav {
     font-size: 13px;
 }
 
-/* 格子標記 - 修正版 */
+/* 格子標記 */
 .highlight-cell {
     cursor: pointer;
     position: relative;
     transition: all 0.2s;
-}
-
-/* 細內框 - 完整四邊 */
-.highlight-cell.active-border {
-    position: relative;
 }
 
 .highlight-cell.active-border::after {
@@ -76,44 +70,33 @@ nav {
     box-sizing: border-box;
 }
 
-/* 淺色背景 */
 .highlight-cell.active-bg {
     background-color: var(--highlight-bg, #164e63) !important;
 }
 
-/* 深色模式調整 */
+/* 深色模式 */
 .dark .history-grid th,
 .dark .history-grid td {
     border-color: var(--border-color);
 }
 
-/* === 滑動核心修復（全站）=== */
-#spa-container {
-    flex: 1 1 auto;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
-    height: 0;
-    min-height: 0;
-}
-
-/* 選擇期數區域高度壓縮 */
+/* 選擇期數區域 - 壓縮高度 */
 #view-history .period-input-area {
     flex-shrink: 0;
-    padding: 16px 20px 12px;
+    padding: 14px 20px 10px;
 }
 
-/* 歷史表格下方留白（避免被 nav 遮住） */
+/* 歷史表格容器 - 下方留白避免被 nav 遮住 */
 #view-history .table-container {
     flex: 1;
     overflow-y: auto;
-    padding-bottom: 120px;   /* 給底部 Nav + 額外空間 */
+    padding-bottom: 140px;   /* 增加留白 */
 }
 
-/* 選擇面板樣式 */
+/* 選擇面板 */
 #highlightPanel .option-btn {
     transition: all 0.2s;
 }
-
 #highlightPanel .option-btn:active {
     transform: scale(0.95);
 }
