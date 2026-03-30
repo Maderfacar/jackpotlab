@@ -162,3 +162,135 @@ window.crs = () => {
 };
 
 document.addEventListener("DOMContentLoaded", initLIFF);
+
+
+// ====================== 歷史網格記錄功能 (方案 B - 起始/結束期數) ======================
+
+async function loadHistoryGrid() {
+    const table = document.getElementById('historyGrid');
+    if (!table) return;
+
+    const startInput = document.getElementById('startPeriod').value.trim();
+    const endInput = document.getElementById('endPeriod').value.trim();
+
+    table.innerHTML = `<tr><td colspan="8" class="py-12 text-center text-slate-400">載入中...</td></tr>`;
+
+    try {
+        let data = await window.getDrawsByType("今彩539", 300); // 先抓較多筆，再過濾
+
+        if (data.length === 0) {
+            table.innerHTML = `<tr><td colspan="8" class="py-12 text-center text-slate-400">尚無資料，請先使用匯入工具匯入今彩539記錄</td></tr>`;
+            return;
+        }
+
+        // 過濾期數範圍
+        if (startInput) {
+            data = data.filter(item => item.period >= startInput);
+        }
+        if (endInput) {
+            data = data.filter(item => item.period <= endInput);
+        }
+
+        // 限制最多顯示 200 筆，避免過度卡頓
+        data = data.slice(0, 200);
+
+        let html = `
+            <thead>
+                <tr class="bg-lab-bg border-b border-lab-border">
+                    <th class="px-2 py-3 text-center text-[10px] font-bold text-slate-400 border-r border-lab-border">期數</th>
+                    <th class="px-2 py-3 text-center text-[10px] font-bold text-slate-400 border-r border-lab-border">日期</th>
+                    <th class="px-2 py-3 text-center text-[10px] font-bold text-slate-400 border-r border-lab-border">星期</th>
+                    <th class="px-3 py-3 text-center text-[10px] font-bold text-slate-400 border-r border-lab-border">1</th>
+                    <th class="px-3 py-3 text-center text-[10px] font-bold text-slate-400 border-r border-lab-border">2</th>
+                    <th class="px-3 py-3 text-center text-[10px] font-bold text-slate-400 border-r border-lab-border">3</th>
+                    <th class="px-3 py-3 text-center text-[10px] font-bold text-slate-400 border-r border-lab-border">4</th>
+                    <th class="px-3 py-3 text-center text-[10px] font-bold text-slate-400">5</th>
+                </tr>
+            </thead>
+            <tbody class="text-sm">
+        `;
+
+        // 由舊到新排序（最新一期在最下方）
+        const sortedData = [...data].sort((a, b) => a.period.localeCompare(b.period));
+
+        for (const item of sortedData) {
+            const periodTail = item.period.slice(-3);
+            const dateObj = new Date(item.drawDate);
+            const monthDay = `${dateObj.getMonth()+1}/${dateObj.getDate()}`;
+            const weekday = ['日','一','二','三','四','五','六'][dateObj.getDay()];
+
+            html += `<tr class="border-b border-lab-border hover:bg-lab-bg/50 transition">`;
+            html += `<td class="px-2 py-3 text-center font-mono border-r border-lab-border">${periodTail}</td>`;
+            html += `<td class="px-2 py-3 text-center border-r border-lab-border">${monthDay}</td>`;
+            html += `<td class="px-2 py-3 text-center border-r border-lab-border">${weekday}</td>`;
+
+            item.numbers.forEach((num, idx) => {
+                const cellId = `${periodTail}_${idx+4}`;
+                html += `<td onclick="toggleCellHighlight('${cellId}', this)" 
+                             class="px-3 py-3 text-center font-mono border-r border-lab-border highlight-cell" 
+                             data-cell-id="${cellId}">${num.toString().padStart(2, '0')}</td>`;
+            });
+
+            html += `</tr>`;
+        }
+
+        html += `</tbody>`;
+        table.innerHTML = html;
+
+        loadHighlightsFromLocalStorage();
+
+    } catch (err) {
+        console.error(err);
+        table.innerHTML = `<tr><td colspan="8" class="py-12 text-center text-red-400">載入失敗，請稍後再試</td></tr>`;
+    }
+}
+
+// 格子標記功能 - localStorage
+function toggleCellHighlight(cellId, element) {
+    const current = element.getAttribute('data-highlight') || '';
+    
+    if (current === 'border') {
+        element.style.border = '';
+        element.setAttribute('data-highlight', '');
+        removeHighlightFromStorage(cellId);
+    } else {
+        element.style.border = '2px solid #22d3ee';
+        element.setAttribute('data-highlight', 'border');
+        saveHighlightToStorage(cellId, 'border');
+    }
+}
+
+function saveHighlightToStorage(cellId, type) {
+    let highlights = JSON.parse(localStorage.getItem('gridHighlights_539') || '{}');
+    highlights[cellId] = type;
+    localStorage.setItem('gridHighlights_539', JSON.stringify(highlights));
+}
+
+function removeHighlightFromStorage(cellId) {
+    let highlights = JSON.parse(localStorage.getItem('gridHighlights_539') || '{}');
+    delete highlights[cellId];
+    localStorage.setItem('gridHighlights_539', JSON.stringify(highlights));
+}
+
+function loadHighlightsFromLocalStorage() {
+    const highlights = JSON.parse(localStorage.getItem('gridHighlights_539') || '{}');
+    document.querySelectorAll('.highlight-cell').forEach(cell => {
+        const cellId = cell.getAttribute('data-cell-id');
+        if (highlights[cellId] === 'border') {
+            cell.style.border = '2px solid #22d3ee';
+            cell.setAttribute('data-highlight', 'border');
+        }
+    });
+}
+
+// 切換到歷史頁面時自動載入（預設顯示最近60期）
+const originalSwitchView = window.switchView;
+window.switchView = (viewId) => {
+    originalSwitchView(viewId);
+    if (viewId === 'history') {
+        // 預設填入最近60期（需依實際期數調整）
+        const endP = document.getElementById('endPeriod');
+        if (endP && !endP.value) endP.value = "114300";   // 可依你實際最大期數調整
+        setTimeout(loadHistoryGrid, 150);
+    }
+};
