@@ -50,9 +50,7 @@ function updateUserUI(data) {
     }
 }
 
-// ====================== 提供給 main.js 使用的抓取函式 ======================
-
-// ====================== 抓取今彩539 開獎資料 ======================
+// ====================== 抓取今彩539 開獎資料 (最新版) ======================
 
 window.getDrawsByType = async (type = "今彩539", limit = 20) => {
     try {
@@ -77,13 +75,13 @@ window.getDrawsByType = async (type = "今彩539", limit = 20) => {
             return [];
         }
 
-        // 第一步：先按期數降序排序（最新的排在陣列最前面）
+        // 先按期數降序排序（最新的排在最前面）
         result.sort((a, b) => (b.period || "").localeCompare(a.period || ""));
 
-        // 第二步：取出最新的 limit 筆資料
+        // 只取出最新的 limit 筆
         result = result.slice(0, limit);
 
-        // 第三步：再改成升序排序（由舊到新），讓最新一期排在最下面
+        // 再改成升序排序，讓最新一期排在最下面（符合表格需求）
         result.sort((a, b) => (a.period || "").localeCompare(b.period || ""));
 
         return result;
@@ -91,20 +89,5 @@ window.getDrawsByType = async (type = "今彩539", limit = 20) => {
     } catch (error) {
         console.error("抓取資料失敗:", error);
         return [];
-    }
-};
-
-
-
-// 臨時測試用 - 加在 getDrawsByType 函式後面
-window.testGetDraws = async () => {
-    console.log("=== 開始測試抓取資料 ===");
-    const data = await window.getDrawsByType("今彩539", 10);
-    console.log("抓取到的資料筆數:", data.length);
-    if (data.length > 0) {
-        console.log("第一筆資料:", data[0]);
-        console.log("最後一筆資料:", data[data.length-1]);
-    } else {
-        console.log("沒有抓到任何資料");
     }
 };
