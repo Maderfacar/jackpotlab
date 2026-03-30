@@ -124,9 +124,9 @@
             <span class="text-lg">−</span>
         </div>
         <div class="flex border-b border-lab-border bg-lab-card">
-            <button id="tabNotes" class="flex-1 py-3 text-[10px] font-bold border-b-2 border-cyan-500 text-cyan-500">便條紙</button>
-            <button id="tabCalc" class="flex-1 py-3 text-[10px] font-bold text-slate-400">計算機</button>
-        </div>
+    <button id="tabNotes" onclick="switchTab('notes')" class="flex-1 py-3 text-[10px] font-bold border-b-2 border-cyan-500 text-cyan-500">便條紙</button>
+    <button id="tabCalc" onclick="switchTab('calc')" class="flex-1 py-3 text-[10px] font-bold text-slate-400">計算機</button>
+</div>
         
         <div id="p-notes" class="p-4 h-64 block bg-lab-card/50">
             <textarea id="note-txt" placeholder="在此輸入分析記錄..." class="w-full h-full bg-transparent border-none text-sm outline-none resize-none leading-relaxed text-lab-text"></textarea>
