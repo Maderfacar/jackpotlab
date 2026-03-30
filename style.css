@@ -41,3 +41,20 @@
 }
 
 .no-scrollbar::-webkit-scrollbar { display: none; }
+
+/* 確保 SPA 容器在手機上的高度計算正確 */
+#spa-container {
+    height: calc(100vh - 64px - 64px); /* 減去頂部 Header 與 底部 Tab Bar */
+    -webkit-overflow-scrolling: touch;
+}
+
+/* Tab Bar 磨砂玻璃效果 */
+.bg-lab-card\/80 {
+    background-color: var(--card-color);
+    opacity: 0.9;
+}
+
+/* 移除手機點擊藍色高亮 */
+* {
+    -webkit-tap-highlight-color: transparent;
+}
