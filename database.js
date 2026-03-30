@@ -103,7 +103,7 @@ window.getDrawsByType = async (type = "今彩539", limit = 20) => {
 
 // ====================== 從 CSV 抓取今彩539 資料 (從最新期開始抓取) ======================
 
-window.getDrawsFromCSV = async (limit = 60) => {
+window.getDrawsFromCSV = async (limit = 30) => {
     try {
         const baseUrl = window.location.origin + window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/'));
         const csvUrl = baseUrl + '/539.csv';
