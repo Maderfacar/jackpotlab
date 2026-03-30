@@ -90,3 +90,34 @@ nav {
 .dark .history-grid td {
     border-color: var(--border-color);
 }
+
+/* === 滑動核心修復（全站）=== */
+#spa-container {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    height: 0;
+    min-height: 0;
+}
+
+/* 選擇期數區域高度壓縮 */
+#view-history .period-input-area {
+    flex-shrink: 0;
+    padding: 16px 20px 12px;
+}
+
+/* 歷史表格下方留白（避免被 nav 遮住） */
+#view-history .table-container {
+    flex: 1;
+    overflow-y: auto;
+    padding-bottom: 120px;   /* 給底部 Nav + 額外空間 */
+}
+
+/* 選擇面板樣式 */
+#highlightPanel .option-btn {
+    transition: all 0.2s;
+}
+
+#highlightPanel .option-btn:active {
+    transform: scale(0.95);
+}
