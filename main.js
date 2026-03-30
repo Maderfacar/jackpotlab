@@ -172,24 +172,25 @@ window.crs = () => {
         currentInput = "";
     }
 };
-
-// [新增] 專門負責渲染分析列表的函數
+//==========================================================================================================
+// [最終修正] 渲染分析列表 - 帶有自動重試機制
 function renderTerminalData() {
     const list = document.getElementById('history-list');
+    
+    // 如果找不到容器，0.5秒後重試 (解決 HTML 還沒加載完的問題)
     if (!list) {
-        console.error("找不到 history-list 容器");
+        console.warn("找不到 history-list，0.5秒後重試...");
+        setTimeout(renderTerminalData, 500);
         return;
     }
 
-    // 模擬 3 筆數據，確保視覺效果
     const items = [
         { id: '240030', date: '03/30', nums: ['05','12','18','24','33'], sum: 92 },
         { id: '240029', date: '03/29', nums: ['01','10','15','22','39'], sum: 87 },
         { id: '240028', date: '03/28', nums: ['07','11','19','28','35'], sum: 100 }
     ];
 
-    // 生成 HTML
-    const html = items.map(item => `
+    list.innerHTML = items.map(item => `
         <div class="border-b border-lab-border p-4 hover:bg-white/5 transition-all cursor-pointer" onclick="toggleDetail(this)">
             <div class="flex items-center justify-between">
                 <div class="flex flex-col w-14">
@@ -204,21 +205,20 @@ function renderTerminalData() {
                 </div>
             </div>
             <div class="detail-panel hidden mt-4 pt-4 border-t border-dashed border-lab-border grid grid-cols-2 gap-2">
-                <div class="text-[10px] flex justify-between px-2"><span class="opacity-50">單雙</span><span class="text-cyan-600">3:2</span></div>
-                <div class="text-[10px] flex justify-between px-2"><span class="opacity-50">遺漏</span><span class="text-cyan-600">已計算</span></div>
+                <div class="text-[10px] flex justify-between px-2"><span class="opacity-50 text-xs">單雙</span><span class="text-cyan-600">3:2</span></div>
+                <div class="text-[10px] flex justify-between px-2"><span class="opacity-50 text-xs">狀態</span><span class="text-cyan-600">數據已對齊</span></div>
             </div>
         </div>
     `).join('');
-
-    // 直接替換掉內容
-    list.innerHTML = html;
+    
+    console.log("數據渲染成功");
 }
 
-// 展開函數 (確保全域可用)
-window.toggleDetail = (el) => {
-    const detail = el.querySelector('.detail-panel');
-    if (detail) detail.classList.toggle('hidden');
-};
+// 確保頁面一打開就先跑一次，預載入資料
+document.addEventListener("DOMContentLoaded", () => {
+    initLIFF();
+    renderTerminalData(); 
+});
 
 // 啟動
 document.addEventListener("DOMContentLoaded", initLIFF);
