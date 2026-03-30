@@ -9,22 +9,40 @@ function toggleSidebar() {
 
 function toggleTheme() { document.documentElement.classList.toggle('dark'); }
 
-// SPA 視圖切換
+// SPA 視圖切換 (已整合分析渲染邏輯)
 window.switchView = (viewId) => {
+    // 1. 隱藏所有視圖
     document.querySelectorAll('.spa-view').forEach(v => v.classList.add('hidden'));
-    const targetView = document.getElementById(`view-${viewId}`);
-    if (targetView) targetView.classList.remove('hidden');
     
+    // 2. 顯示目標視圖
+    const targetView = document.getElementById(`view-${viewId}`);
+    if (targetView) {
+        targetView.classList.remove('hidden');
+        console.log("切換至視圖:", viewId);
+    }
+    
+    // 3. 更新底部導覽鈕顏色
     document.querySelectorAll('.tab-item').forEach(btn => {
         btn.classList.remove('text-cyan-500');
         btn.classList.add('text-slate-400');
     });
     
-    if (event?.currentTarget) {
+    // 4. 如果是點擊觸發的，染成青色
+    if (event && event.currentTarget) {
         event.currentTarget.classList.remove('text-slate-400');
         event.currentTarget.classList.add('text-cyan-500');
     }
-    if (!document.getElementById('sidebar').classList.contains('-translate-x-full')) toggleSidebar();
+
+    // 5. 【關鍵步驟】如果進入的是「terminal (分析)」，立即執行渲染
+    if (viewId === 'terminal') {
+        renderTerminalData();
+    }
+
+    // 側邊欄自動關閉
+    const sidebar = document.getElementById('sidebar');
+    if (sidebar && !sidebar.classList.contains('-translate-x-full')) {
+        toggleSidebar();
+    }
 };
 
 // --- LIFF 與 Firebase 核心邏輯 ---
@@ -107,7 +125,7 @@ window.restoreToolbox = () => {
     }, 50);
 };
 
-// --- [核心修正] 工具箱分頁切換函數 ---
+// --- 工具箱分頁切換函數 ---
 window.switchTab = (tab) => {
     const pNotes = document.getElementById('p-notes');
     const pCalc = document.getElementById('p-calc');
@@ -127,7 +145,7 @@ window.switchTab = (tab) => {
     }
 };
 
-// --- [核心修正] 計算機運算邏輯 ---
+// --- 計算機運算邏輯 ---
 let currentInput = "";
 window.cin = (val) => {
     currentInput += val.toString();
@@ -152,45 +170,6 @@ window.crs = () => {
         const disp = document.getElementById('disp');
         if (disp) disp.innerText = "ERR";
         currentInput = "";
-    }
-};
-
-// 啟動
-document.addEventListener("DOMContentLoaded", initLIFF);
-
-// [核心修正] 視圖切換 + 自動觸發數據渲染
-window.switchView = (viewId) => {
-    // 1. 隱藏所有視圖
-    document.querySelectorAll('.spa-view').forEach(v => v.classList.add('hidden'));
-    
-    // 2. 顯示目標視圖
-    const targetView = document.getElementById(`view-${viewId}`);
-    if (targetView) {
-        targetView.classList.remove('hidden');
-        console.log("切換至視圖:", viewId);
-    }
-    
-    // 3. 更新底部導覽鈕顏色
-    document.querySelectorAll('.tab-item').forEach(btn => {
-        btn.classList.remove('text-cyan-500');
-        btn.classList.add('text-slate-400');
-    });
-    
-    // 4. 如果是點擊觸發的，染成青色
-    if (event && event.currentTarget) {
-        event.currentTarget.classList.remove('text-slate-400');
-        event.currentTarget.classList.add('text-cyan-500');
-    }
-
-    // 5. 【關鍵步驟】如果進入的是「terminal (分析)」，立即執行渲染
-    if (viewId === 'terminal') {
-        renderTerminalData();
-    }
-
-    // 側邊欄自動關閉
-    const sidebar = document.getElementById('sidebar');
-    if (sidebar && !sidebar.classList.contains('-translate-x-full')) {
-        toggleSidebar();
     }
 };
 
@@ -231,7 +210,7 @@ function renderTerminalData() {
         </div>
     `).join('');
 
-    // 直接替換掉「載入中」的內容
+    // 直接替換掉內容
     list.innerHTML = html;
 }
 
@@ -240,3 +219,6 @@ window.toggleDetail = (el) => {
     const detail = el.querySelector('.detail-panel');
     if (detail) detail.classList.toggle('hidden');
 };
+
+// 啟動
+document.addEventListener("DOMContentLoaded", initLIFF);
