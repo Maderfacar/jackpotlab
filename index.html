@@ -9,10 +9,10 @@
     <script>
         tailwind.config = {
             darkMode: 'class',
-            theme: { 
-                extend: { 
-                    colors: { 'lab-bg': 'var(--bg-color)', 'lab-card': 'var(--card-color)', 'lab-border': 'var(--border-color)', 'lab-text': 'var(--text-main)', } 
-                } 
+            theme: {
+                extend: {
+                    colors: { 'lab-bg': 'var(--bg-color)', 'lab-card': 'var(--card-color)', 'lab-border': 'var(--border-color)', 'lab-text': 'var(--text-main)', }
+                }
             }
         }
     </script>
@@ -48,7 +48,6 @@
                     <input type="checkbox" checked class="w-5 h-5 rounded-full accent-cyan-500">
                 </label>
             </div>
-
             <div>
                 <div class="px-2 pb-3 text-[10px] font-bold text-slate-500 tracking-widest uppercase">Weighted Scoring</div>
                 <div class="space-y-4 px-2">
@@ -104,9 +103,42 @@
                     <button class="w-full py-4 bg-cyan-500 text-black font-black rounded-xl">開啟號碼盤</button>
                 </div>
             </section>
+
+            <!-- 歷史記錄網格視圖 -->
+            <section id="view-history" class="spa-view hidden p-4 lg:p-6">
+                <div class="bg-lab-card rounded-3xl border border-lab-border overflow-hidden">
+                    <div class="p-5 border-b border-lab-border bg-lab-card">
+                        <div class="flex flex-col sm:flex-row gap-4 items-end">
+                            <div class="flex-1">
+                                <div class="text-xs text-slate-400 mb-1">起始期數</div>
+                                <input id="startPeriod" type="text" placeholder="例如: 114001" 
+                                       class="w-full bg-lab-bg border border-lab-border rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-cyan-500 font-mono">
+                            </div>
+                            <div class="flex-1">
+                                <div class="text-xs text-slate-400 mb-1">結束期數</div>
+                                <input id="endPeriod" type="text" placeholder="例如: 114060" 
+                                       class="w-full bg-lab-bg border border-lab-border rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-cyan-500 font-mono">
+                            </div>
+                            <button onclick="loadHistoryGrid()" 
+                                    class="px-6 py-3 bg-cyan-500 text-black font-bold rounded-2xl hover:bg-cyan-400 transition whitespace-nowrap">
+                                載入資料
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="overflow-x-auto no-scrollbar">
+                        <table id="historyGrid" class="history-grid w-full text-sm border-collapse">
+                            <!-- 由 JS 動態產生 -->
+                        </table>
+                    </div>
+                </div>
+            </section>
         </div>
 
         <nav class="fixed bottom-0 left-0 right-0 lg:left-72 bg-lab-card/80 backdrop-blur-md border-t border-lab-border h-16 flex items-center justify-around px-4 z-40 lg:hidden">
+            <button onclick="switchView('history')" class="tab-item text-slate-400 flex flex-col items-center">
+                <span class="text-[10px] font-bold uppercase">歷史</span>
+            </button>
             <button onclick="switchView('dashboard')" class="tab-item text-cyan-500 flex flex-col items-center">
                 <span class="text-[10px] font-bold uppercase">儀表板</span>
             </button>
@@ -116,6 +148,7 @@
             <button onclick="switchView('prediction')" class="tab-item text-slate-400 flex flex-col items-center">
                 <span class="text-[10px] font-bold uppercase">預測</span>
             </button>
+            
         </nav>
     </main>
 
@@ -157,7 +190,6 @@
     </div>
 
     <div id="dot" class="fixed bottom-8 right-8 w-14 h-14 rounded-full bg-cyan-500 flex items-center justify-center text-black font-black text-xs shadow-2xl z-50 cursor-pointer" onclick="restoreToolbox()">工具</div>
-
     <div id="overlay" class="fixed inset-0 bg-black/50 z-40 hidden opacity-0 transition-opacity lg:hidden" onclick="toggleSidebar()"></div>
 
     <script type="module" src="database.js"></script>
