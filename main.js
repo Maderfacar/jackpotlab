@@ -231,54 +231,54 @@ window.loadHistoryGrid = async function() {
 
 
 // 彈出選擇面板（支援顏色選擇）
+// 彈出選擇面板
 window.showHighlightPanel = function(cellId, element) {
     if (document.getElementById('highlightPanel')) return;
 
-    const colors = ['#22d3ee', '#eab308', '#a855f7', '#ef4444', '#4ade80']; // 青、黃、紫、紅、綠
+    const colors = [
+        {name: '青色', value: '#22d3ee'},
+        {name: '黃色', value: '#eab308'},
+        {name: '紫色', value: '#a855f7'},
+        {name: '紅色', value: '#ef4444'},
+        {name: '綠色', value: '#4ade80'}
+    ];
 
-    let colorButtons = '';
-    colors.forEach(color => {
-        colorButtons += `
-            <button onclick="window.applyHighlight('${cellId}', 'border', '${color}')" 
-                    class="w-9 h-9 rounded-full border-2 border-white shadow-sm" 
-                    style="background-color: ${color}"></button>`;
-    });
+    let colorHTML = colors.map(c => `
+        <button onclick="window.applyHighlight('${cellId}', 'border', '${c.value}')" 
+                class="w-10 h-10 rounded-2xl shadow-sm border border-white/30" 
+                style="background-color: ${c.value}"></button>
+    `).join('');
 
     const panelHTML = `
         <div class="fixed inset-0 bg-black/70 z-[80] flex items-end">
-            <div class="bg-lab-card w-full rounded-t-3xl p-6">
+            <div class="bg-lab-card w-full rounded-t-3xl p-6 pb-8">
                 <div class="text-center mb-6">
-                    <div class="font-bold text-base">格子標記</div>
+                    <div class="font-bold">格子標記</div>
                     <div class="text-xs text-slate-400 mt-1">期數尾碼 ${cellId.split('_')[0]}</div>
                 </div>
 
-                <div class="space-y-5">
-                    <!-- 內框 -->
+                <div class="space-y-6">
+                    <!-- 細內框 -->
                     <div>
                         <div class="text-xs text-slate-400 mb-3">細內框顏色</div>
-                        <div class="flex gap-3 justify-center">${colorButtons}</div>
+                        <div class="flex gap-4 justify-center">${colorHTML}</div>
                     </div>
 
-                    <!-- 背景 -->
+                    <!-- 淺色背景 -->
                     <div>
                         <div class="text-xs text-slate-400 mb-3">淺色背景</div>
                         <div class="grid grid-cols-5 gap-3">
-                            <button onclick="window.applyHighlight('${cellId}', 'bg', '#164e63')" 
-                                    class="h-11 rounded-2xl bg-[#164e63]"></button>
-                            <button onclick="window.applyHighlight('${cellId}', 'bg', '#1e3a8a')" 
-                                    class="h-11 rounded-2xl bg-[#1e3a8a]"></button>
-                            <button onclick="window.applyHighlight('${cellId}', 'bg', '#312e81')" 
-                                    class="h-11 rounded-2xl bg-[#312e81]"></button>
-                            <button onclick="window.applyHighlight('${cellId}', 'bg', '#4c1d95')" 
-                                    class="h-11 rounded-2xl bg-[#4c1d95]"></button>
-                            <button onclick="window.applyHighlight('${cellId}', 'bg', '#431407')" 
-                                    class="h-11 rounded-2xl bg-[#431407]"></button>
+                            <button onclick="window.applyHighlight('${cellId}', 'bg', '#164e63')" class="h-11 rounded-2xl bg-[#164e63]"></button>
+                            <button onclick="window.applyHighlight('${cellId}', 'bg', '#1e40af')" class="h-11 rounded-2xl bg-[#1e40af]"></button>
+                            <button onclick="window.applyHighlight('${cellId}', 'bg', '#312e81')" class="h-11 rounded-2xl bg-[#312e81]"></button>
+                            <button onclick="window.applyHighlight('${cellId}', 'bg', '#4c1d95')" class="h-11 rounded-2xl bg-[#4c1d95]"></button>
+                            <button onclick="window.applyHighlight('${cellId}', 'bg', '#431407')" class="h-11 rounded-2xl bg-[#431407]"></button>
                         </div>
                     </div>
                 </div>
 
                 <button onclick="document.getElementById('highlightPanel').remove()" 
-                        class="w-full mt-8 py-4 text-slate-400 text-sm font-medium">
+                        class="w-full mt-8 py-4 text-slate-400">
                     取消
                 </button>
             </div>
@@ -295,28 +295,32 @@ window.showHighlightPanel = function(cellId, element) {
     });
 };
 
-window.applyHighlight = function(cellId, type, color = null) {
+// 套用標記
+window.applyHighlight = function(cellId, type, color) {
     const cell = document.querySelector(`[data-cell-id="${cellId}"]`);
     if (!cell) return;
 
+    // 清除舊樣式
     cell.classList.remove('active-border', 'active-bg');
     cell.style.borderColor = '';
     cell.style.backgroundColor = '';
+    cell.style.setProperty('--highlight-color', '');
+    cell.style.setProperty('--highlight-bg', '');
 
-    if (type === 'border' && color) {
+    if (type === 'border') {
         cell.classList.add('active-border');
-        cell.style.borderColor = color;
-    } else if (type === 'bg' && color) {
+        cell.style.setProperty('--highlight-color', color);
+    } else if (type === 'bg') {
         cell.classList.add('active-bg');
-        cell.style.backgroundColor = color;
+        cell.style.setProperty('--highlight-bg', color);
     }
 
     window.saveHighlightToStorage(cellId, type, color);
     document.getElementById('highlightPanel').remove();
 };
 
-// 修改儲存函式支援顏色
-window.saveHighlightToStorage = function(cellId, type, color = null) {
+// 儲存（支援顏色）
+window.saveHighlightToStorage = function(cellId, type, color) {
     let highlights = JSON.parse(localStorage.getItem('gridHighlights_539') || '{}');
     highlights[cellId] = { type, color };
     localStorage.setItem('gridHighlights_539', JSON.stringify(highlights));
@@ -330,10 +334,10 @@ window.loadHighlightsFromLocalStorage = function() {
         if (data) {
             if (data.type === 'border' && data.color) {
                 cell.classList.add('active-border');
-                cell.style.borderColor = data.color;
+                cell.style.setProperty('--highlight-color', data.color);
             } else if (data.type === 'bg' && data.color) {
                 cell.classList.add('active-bg');
-                cell.style.backgroundColor = data.color;
+                cell.style.setProperty('--highlight-bg', data.color);
             }
         }
     });
