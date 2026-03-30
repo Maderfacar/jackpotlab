@@ -50,12 +50,12 @@ function updateUserUI(data) {
     }
 }
 
-// ====================== 歷史網格所需 - 抓取今彩539 資料 ======================
-
-import { collection, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+// ====================== 提供給 main.js 使用的抓取函式 ======================
 
 window.getDrawsByType = async (type = "今彩539", limit = 300) => {
     try {
+        const { collection, getDocs } = await import("https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js");
+
         const drawsRef = collection(db, "draws");
         const querySnapshot = await getDocs(drawsRef);
 
@@ -63,7 +63,7 @@ window.getDrawsByType = async (type = "今彩539", limit = 300) => {
 
         querySnapshot.forEach((docSnap) => {
             const data = docSnap.data();
-            if (data.type === type) {
+            if (data && data.type === type) {
                 result.push({
                     id: docSnap.id,
                     ...data
@@ -72,9 +72,10 @@ window.getDrawsByType = async (type = "今彩539", limit = 300) => {
         });
 
         // 按期數降序排序（最新在前）
-        result.sort((a, b) => b.period.localeCompare(a.period));
+        result.sort((a, b) => (b.period || "").localeCompare(a.period || ""));
 
         return result.slice(0, limit);
+
     } catch (error) {
         console.error("抓取資料失敗:", error);
         return [];
