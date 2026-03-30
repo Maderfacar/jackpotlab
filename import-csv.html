@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>彩券歷史資料匯入工具</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+    <style>
+        body { font-family: 'Inter', system-ui, sans-serif; }
+        textarea { font-family: 'JetBrains Mono', monospace; }
+    </style>
+</head>
+<body class="bg-gray-950 text-gray-200 min-h-screen">
+
+<div class="max-w-4xl mx-auto p-6">
+    <div class="mb-8">
+        <h1 class="text-3xl font-bold text-cyan-400">彩券歷史資料匯入工具</h1>
+        <p class="text-gray-400 mt-2">支援今彩539、大樂透、威力彩等未來擴充</p>
+    </div>
+
+    <div class="bg-gray-900 rounded-2xl border border-gray-700 p-8">
+        
+        <!-- 採種選擇 -->
+        <div class="mb-6">
+            <label class="block text-sm font-medium text-gray-400 mb-2">採種</label>
+            <select id="lotteryType" class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-cyan-500">
+                <option value="今彩539">今彩539</option>
+                <option value="大樂透">大樂透</option>
+                <option value="威力彩">威力彩</option>
+            </select>
+        </div>
+
+        <!-- CSV 輸入區 -->
+        <div class="mb-6">
+            <label class="block text-sm font-medium text-gray-400 mb-2">貼上 CSV 內容</label>
+            <textarea id="csvInput" rows="12" 
+                class="w-full bg-gray-950 border border-gray-700 rounded-2xl p-5 text-sm resize-y focus:outline-none focus:border-cyan-500"
+                placeholder="114001,1月1日,2,7,8,10,14&#10;114002,1月2日,12,26,30,32,33"></textarea>
+        </div>
+
+        <div class="flex gap-4">
+            <button onclick="clearInput()" 
+                class="flex-1 py-4 bg-gray-800 hover:bg-gray-700 rounded-2xl font-medium transition">
+                清空
+            </button>
+            <button onclick="importCSV()" 
+                class="flex-1 py-4 bg-cyan-500 hover:bg-cyan-600 text-black font-bold rounded-2xl transition">
+                開始匯入資料
+            </button>
+        </div>
+
+        <!-- 狀態顯示 -->
+        <div id="status" class="mt-6 min-h-[120px] text-sm"></div>
+    </div>
+
+    <div class="mt-8 text-xs text-gray-500 text-center">
+        注意：日期格式目前預設「114年」轉為 2025 年<br>
+        如需調整年份轉換規則，請告訴我
+    </div>
+</div>
+
+<script>
+// Firebase 配置（與你的主專案相同）
+const firebaseConfig = {
+    apiKey: "AIzaSyAOuoIXa7WLh3uKsX4V9hp66V2m_0THJuU",
+    authDomain: "jackpot-19965.firebaseapp.com",
+    projectId: "jackpot-19965",
+    storageBucket: "jackpot-19965.firebasestorage.app",
+    messagingSenderId: "736576405476",
+    appId: "1:736576405476:web:c8422400537b197da111f1"
+};
+
+// 初始化 Firebase
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+
+async function importCSV() {
+    const type = document.getElementById('lotteryType').value;
+    const csvText = document.getElementById('csvInput').value.trim();
+    const statusEl = document.getElementById('status');
+
+    if (!csvText) {
+        statusEl.innerHTML = `<span class="text-red-400">請貼上 CSV 內容</span>`;
+        return;
+    }
+
+    statusEl.innerHTML = `<span class="text-cyan-400">正在處理並匯入資料...</span>`;
+
+    const lines = csvText.split('\n');
+    let success = 0;
+    let failed = 0;
+    const batchSize = 40;
+
+    for (let i = 0; i < lines.length; i += batchSize) {
+        const batch = lines.slice(i, i + batchSize);
+
+        for (const line of batch) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+
+            const parts = trimmed.split(',').map(p => p.trim());
+            if (parts.length < 7 && type === "今彩539") {
+                failed++;
+                continue;
+            }
+
+            try {
+                const period = parts[0];
+                const rawDate = parts[1];
+                let numbers = [];
+
+                if (type === "今彩539") {
+                    numbers = parts.slice(2, 7).map(n => parseInt(n, 10)).filter(n => !isNaN(n));
+                } else {
+                    // 未來大樂透、威力彩可在此擴充
+                    numbers = parts.slice(2).map(n => parseInt(n, 10)).filter(n => !isNaN(n));
+                }
+
+                // 日期轉換：114年1月1日 → 2025-01-01
+                const yearPrefix = parseInt(period.substring(0, 3)) + 1911;
+                const dateParts = rawDate.replace(/[月日]/g, ' ').trim().split(/\s+/);
+                const month = parseInt(dateParts[0]) || 1;
+                const day = parseInt(dateParts[1]) || 1;
+                const drawDate = `${yearPrefix}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+
+                const docData = {
+                    type: type,
+                    period: period,
+                    drawDate: drawDate,
+                    numbers: numbers.sort((a, b) => a - b),
+                    special: type === "今彩539" ? null : null,
+                    secondZone: null,
+                    importedAt: firebase.firestore.FieldValue.serverTimestamp()
+                };
+
+                await db.collection("draws").doc(period).set(docData, { merge: true });
+                success++;
+            } catch (err) {
+                console.error("匯入失敗:", line, err);
+                failed++;
+            }
+        }
+
+        // 避免單次寫入過多
+        if (i + batchSize < lines.length) {
+            await new Promise(r => setTimeout(r, 600));
+        }
+    }
+
+    statusEl.innerHTML = `
+        <div class="bg-gray-800 rounded-xl p-5">
+            <p class="text-green-400 font-medium">匯入完成！</p>
+            <p>成功：${success} 筆</p>
+            <p class="text-red-400">失敗：${failed} 筆</p>
+            <p class="text-gray-400 text-xs mt-3">Collection: draws</p>
+        </div>
+    `;
+}
+
+function clearInput() {
+    document.getElementById('csvInput').value = '';
+    document.getElementById('status').innerHTML = '';
+}
+</script>
+
+</body>
+</html>
