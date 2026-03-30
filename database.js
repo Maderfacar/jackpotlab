@@ -52,7 +52,7 @@ function updateUserUI(data) {
 
 // ====================== 提供給 main.js 使用的抓取函式 ======================
 
-window.getDrawsByType = async (type = "今彩539", limit = 300) => {
+window.getDrawsByType = async (type = "今彩539", limit = 10) => {
     try {
         const { collection, getDocs } = await import("https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js");
 
@@ -72,8 +72,10 @@ window.getDrawsByType = async (type = "今彩539", limit = 300) => {
         });
 
         // 按期數降序排序（最新在前）
-        result.sort((a, b) => (b.period || "").localeCompare(a.period || ""));
-
+        // result.sort((a, b) => (b.period || "").localeCompare(a.period || ""));
+        // 由舊到新排序（最新一期排在最下面）
+            result.sort((a, b) => a.period.localeCompare(b.period));
+      
         return result.slice(0, limit);
 
     } catch (error) {
