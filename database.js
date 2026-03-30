@@ -54,6 +54,8 @@ function updateUserUI(data) {
 
 // ====================== 抓取今彩539 開獎資料 (Quota 優化版) ======================
 
+// ====================== 抓取今彩539 開獎資料 (Quota 安全版) ======================
+
 window.getDrawsByType = async (type = "今彩539", limit = 20) => {
     try {
         const { collection, getDocs, query, where, orderBy, limit: firestoreLimit } = 
@@ -61,11 +63,10 @@ window.getDrawsByType = async (type = "今彩539", limit = 20) => {
 
         const drawsRef = collection(db, "draws");
         
-        // 使用 query 只抓今彩539 的資料，並按 period 降序排序
         const q = query(
             drawsRef, 
             where("type", "==", type),
-            orderBy("period", "desc"),   // 最新在前
+            orderBy("period", "desc"), 
             firestoreLimit(limit)
         );
 
@@ -83,16 +84,16 @@ window.getDrawsByType = async (type = "今彩539", limit = 20) => {
             }
         });
 
-        // 因為已經是降序了，再轉成升序讓最新一期在最下面
+        // 轉成由舊到新排序（最新一期在最下面）
         result.sort((a, b) => (a.period || "").localeCompare(b.period || ""));
 
-        console.log(`成功抓取 ${result.length} 筆 ${type} 資料`);
+        console.log(`[getDrawsByType] 成功抓取 ${result.length} 筆 ${type} 資料 (limit=${limit})`);
         return result;
 
     } catch (error) {
         console.error("抓取資料失敗:", error);
-        if (error.code === 'resource-exhausted') {
-            console.error("Firestore 額度已用盡，請明天再試或升級方案");
+        if (error.code === 'resource-exhausted' || error.message.includes('Quota exceeded')) {
+            console.error("Firestore 額度已用盡，請等待每日重置（台灣時間約早上 8~9 點）");
         }
         return [];
     }
