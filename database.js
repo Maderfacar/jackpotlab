@@ -93,3 +93,18 @@ window.getDrawsByType = async (type = "今彩539", limit = 20) => {
         return [];
     }
 };
+
+
+
+// 臨時測試用 - 加在 getDrawsByType 函式後面
+window.testGetDraws = async () => {
+    console.log("=== 開始測試抓取資料 ===");
+    const data = await window.getDrawsByType("今彩539", 10);
+    console.log("抓取到的資料筆數:", data.length);
+    if (data.length > 0) {
+        console.log("第一筆資料:", data[0]);
+        console.log("最後一筆資料:", data[data.length-1]);
+    } else {
+        console.log("沒有抓到任何資料");
+    }
+};
