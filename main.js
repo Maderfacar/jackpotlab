@@ -231,7 +231,7 @@ window.loadHistoryGrid = async function() {
 
 
 // 彈出選擇面板（支援顏色選擇）
-// 彈出選擇面板
+// 彈出選擇面板（增加清除標記功能）
 window.showHighlightPanel = function(cellId, element) {
     if (document.getElementById('highlightPanel')) return;
 
@@ -277,8 +277,14 @@ window.showHighlightPanel = function(cellId, element) {
                     </div>
                 </div>
 
+                <!-- 新增：清除標記按鈕 -->
+                <button onclick="window.clearHighlight('${cellId}')" 
+                        class="w-full mt-8 py-4 bg-red-500/10 text-red-400 rounded-2xl font-medium">
+                    清除此格標記
+                </button>
+
                 <button onclick="document.getElementById('highlightPanel').remove()" 
-                        class="w-full mt-8 py-4 text-slate-400">
+                        class="w-full mt-4 py-4 text-slate-400 text-sm">
                     取消
                 </button>
             </div>
@@ -293,6 +299,28 @@ window.showHighlightPanel = function(cellId, element) {
     panel.addEventListener('click', (e) => {
         if (e.target.id === 'highlightPanel') panel.remove();
     });
+};
+
+// 新增：清除標記函式
+window.clearHighlight = function(cellId) {
+    const cell = document.querySelector(`[data-cell-id="${cellId}"]`);
+    if (cell) {
+        cell.classList.remove('active-border', 'active-bg');
+        cell.style.borderColor = '';
+        cell.style.backgroundColor = '';
+        cell.style.setProperty('--highlight-color', '');
+        cell.style.setProperty('--highlight-bg', '');
+    }
+
+    window.removeHighlightFromStorage(cellId);
+    document.getElementById('highlightPanel').remove();
+};
+
+// 清除 localStorage 中的標記
+window.removeHighlightFromStorage = function(cellId) {
+    let highlights = JSON.parse(localStorage.getItem('gridHighlights_539') || '{}');
+    delete highlights[cellId];
+    localStorage.setItem('gridHighlights_539', JSON.stringify(highlights));
 };
 
 // 套用標記
