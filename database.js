@@ -52,7 +52,7 @@ function updateUserUI(data) {
 
 // ====================== 提供給 main.js 使用的抓取函式 ======================
 
-window.getDrawsByType = async (type = "今彩539", limit = 10) => {
+window.getDrawsByType = async (type = "今彩539", limit = 300) => {
     try {
         const { collection, getDocs } = await import("https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js");
 
