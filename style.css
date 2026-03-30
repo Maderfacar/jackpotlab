@@ -12,12 +12,6 @@
     --text-main: #f1f5f9;
 }
 
-body {
-    font-family: 'Inter', 'JetBrains Mono', sans-serif;
-    background-color: var(--bg-color);
-    color: var(--text-main);
-}
-
 .glass-widget {
     background: rgba(255, 255, 255, 0.7);
     backdrop-filter: blur(20px);
@@ -29,11 +23,11 @@ body {
 }
 
 .calc-key {
-    @apply flex items-center justify-center bg-slate-100 dark:bg-white/5 rounded-lg text-sm transition hover:bg-slate-200 dark:hover:bg-white/10 active:scale-95;
+    flex items-center justify-center bg-slate-100 dark:bg-white/5 rounded-lg text-sm transition hover:bg-slate-200 dark:hover:bg-white/10 active:scale-95;
 }
 
 .calc-op {
-    @apply flex items-center justify-center bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 rounded-lg text-sm font-bold;
+    flex items-center justify-center bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 rounded-lg text-sm font-bold;
 }
 
 .resonance-pulse {
@@ -48,25 +42,17 @@ body {
 
 .no-scrollbar::-webkit-scrollbar { display: none; }
 
-/* 確保 SPA 容器在手機上的高度計算正確 */
 #spa-container {
-    height: calc(100vh - 64px - 64px); /* 減去頂部 Header 與 底部 Tab Bar */
-    -webkit-overflow-scrolling: touch;
+    flex: 1;
     overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
 }
 
-/* Tab Bar 磨砂玻璃效果 */
 .bg-lab-card\/80 {
     background-color: var(--card-color);
-    opacity: 0.9;
+    opacity: 0.8;
 }
 
-/* 移除手機點擊藍色高亮 */
-* {
-    -webkit-tap-highlight-color: transparent;
-}
-
-/* 輔助類別 */
-.spa-view {
-    @apply min-h-full;
+nav {
+    padding-bottom: env(safe-area-inset-bottom);
 }
