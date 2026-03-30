@@ -170,6 +170,12 @@ window.loadHistoryGrid = async function() {
     const table = document.getElementById('historyGrid');
     if (!table) return;
 
+    // 防護：如果 getDrawsByType 還沒準備好
+    if (typeof window.getDrawsByType !== 'function') {
+        table.innerHTML = `<tr><td colspan="8" class="py-12 text-center text-red-400">資料庫函式尚未載入，請重新整理頁面</td></tr>`;
+        return;
+    }
+    
     const startInput = document.getElementById('startPeriod').value.trim();
     const endInput = document.getElementById('endPeriod').value.trim();
 
