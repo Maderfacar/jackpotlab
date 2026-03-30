@@ -52,18 +52,30 @@ function updateUserUI(data) {
 
 // ====================== 抓取今彩539 開獎資料 (最新版) ======================
 
+// ====================== 抓取今彩539 開獎資料 (Quota 優化版) ======================
+
 window.getDrawsByType = async (type = "今彩539", limit = 20) => {
     try {
-        const { collection, getDocs } = await import("https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js");
+        const { collection, getDocs, query, where, orderBy, limit: firestoreLimit } = 
+              await import("https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js");
 
         const drawsRef = collection(db, "draws");
-        const querySnapshot = await getDocs(drawsRef);
+        
+        // 使用 query 只抓今彩539 的資料，並按 period 降序排序
+        const q = query(
+            drawsRef, 
+            where("type", "==", type),
+            orderBy("period", "desc"),   // 最新在前
+            firestoreLimit(limit)
+        );
 
-        let result = [];
+        const querySnapshot = await getDocs(q);
+
+        const result = [];
 
         querySnapshot.forEach((docSnap) => {
             const data = docSnap.data();
-            if (data && data.type === type) {
+            if (data) {
                 result.push({
                     id: docSnap.id,
                     ...data
@@ -71,23 +83,17 @@ window.getDrawsByType = async (type = "今彩539", limit = 20) => {
             }
         });
 
-        if (result.length === 0) {
-            return [];
-        }
-
-        // 先按期數降序排序（最新的排在最前面）
-        result.sort((a, b) => (b.period || "").localeCompare(a.period || ""));
-
-        // 只取出最新的 limit 筆
-        result = result.slice(0, limit);
-
-        // 再改成升序排序，讓最新一期排在最下面（符合表格需求）
+        // 因為已經是降序了，再轉成升序讓最新一期在最下面
         result.sort((a, b) => (a.period || "").localeCompare(b.period || ""));
 
+        console.log(`成功抓取 ${result.length} 筆 ${type} 資料`);
         return result;
 
     } catch (error) {
         console.error("抓取資料失敗:", error);
+        if (error.code === 'resource-exhausted') {
+            console.error("Firestore 額度已用盡，請明天再試或升級方案");
+        }
         return [];
     }
 };
