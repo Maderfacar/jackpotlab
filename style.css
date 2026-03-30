@@ -56,3 +56,30 @@
 nav {
     padding-bottom: env(safe-area-inset-bottom);
 }
+
+/* 歷史網格樣式 */
+.history-grid {
+    border-collapse: collapse;
+    font-family: 'JetBrains Mono', monospace;
+}
+
+.history-grid th,
+.history-grid td {
+    border: 1px solid var(--border-color);
+}
+
+.history-grid td {
+    min-width: 52px;
+    transition: all 0.2s;
+}
+
+.highlight-cell {
+    cursor: pointer;
+    user-select: none;
+}
+
+/* 深色模式調整 */
+.dark .history-grid th,
+.dark .history-grid td {
+    border-color: var(--border-color);
+}
