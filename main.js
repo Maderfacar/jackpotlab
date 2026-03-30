@@ -15,7 +15,6 @@ window.switchView = (viewId) => {
     const targetView = document.getElementById(`view-${viewId}`);
     if (targetView) targetView.classList.remove('hidden');
     
-    // 更新導覽鈕顏色
     document.querySelectorAll('.tab-item').forEach(btn => {
         btn.classList.remove('text-cyan-500');
         btn.classList.add('text-slate-400');
@@ -33,12 +32,9 @@ async function initLIFF() {
     const liffId = "2009636686-ec6thLNX"; 
     try {
         await liff.init({ liffId });
-        
         if (liff.isLoggedIn()) {
             const profile = await liff.getProfile();
             renderLoginState(profile);
-            
-            // 確保 Firebase 函數載入後執行同步
             const checkSync = () => {
                 if (typeof window.syncUserToFirebase === "function") {
                     window.syncUserToFirebase(profile);
@@ -55,7 +51,6 @@ async function initLIFF() {
     }
 }
 
-// 渲染「已登入」狀態
 function renderLoginState(profile) {
     const els = {
         name: document.getElementById('userName'),
@@ -64,7 +59,6 @@ function renderLoginState(profile) {
         mPic: document.getElementById('userPictureMobile'),
         btn: document.getElementById('liffLoginBtn')
     };
-
     if(els.name) els.name.innerText = profile.displayName;
     if(els.id) els.id.innerText = `ID: ${profile.userId.substring(0, 8)}`;
     if(els.pic) { els.pic.src = profile.pictureUrl; els.pic.style.opacity = "1"; }
@@ -80,7 +74,6 @@ function renderLoginState(profile) {
     if(els.mPic) els.mPic.parentElement.onclick = handleLogout;
 }
 
-// 渲染「未登入」狀態
 function renderLogoutState() {
     const loginBtn = document.getElementById('liffLoginBtn');
     if(loginBtn) {
@@ -91,13 +84,11 @@ function renderLogoutState() {
     if(mPicBox) mPicBox.onclick = () => liff.login();
 }
 
-// --- [修正] 工具箱顯示邏輯 - 中文與平滑動畫 ---
+// --- 工具箱顯示/隱藏邏輯 ---
 window.minimizeToolbox = () => {
     const tb = document.getElementById('toolbox');
     const dot = document.getElementById('dot');
-    
     tb.classList.add('translate-y-[120%]', 'opacity-0');
-    
     setTimeout(() => {
         tb.classList.add('hidden');
         dot.style.display = 'flex';
@@ -108,52 +99,58 @@ window.minimizeToolbox = () => {
 window.restoreToolbox = () => {
     const tb = document.getElementById('toolbox');
     const dot = document.getElementById('dot');
-    
-    // 1. 先從 DOM 顯示出來 (hidden 移除)
     tb.classList.remove('hidden');
-    // 2. 隱藏小工具圓點
     dot.style.display = 'none';
     dot.classList.add('hidden');
-    
-    // 3. 延遲觸發動畫，讓元素滑入
     setTimeout(() => {
         tb.classList.remove('translate-y-[120%]', 'opacity-0');
     }, 50);
 };
 
-// [修正] 便條紙與計算機切換
-document.getElementById('tabNotes').onclick = function() {
-    document.getElementById('p-notes').style.display = 'block';
-    document.getElementById('p-calc').style.display = 'none';
-    this.className = "flex-1 py-3 text-[10px] font-bold border-b-2 border-cyan-500 text-cyan-500";
-    document.getElementById('tabCalc').className = "flex-1 py-3 text-[10px] font-bold text-slate-400";
+// --- [核心修正] 工具箱分頁切換函數 ---
+window.switchTab = (tab) => {
+    const pNotes = document.getElementById('p-notes');
+    const pCalc = document.getElementById('p-calc');
+    const btnNotes = document.getElementById('tabNotes');
+    const btnCalc = document.getElementById('tabCalc');
+
+    if (tab === 'notes') {
+        pNotes.style.display = 'block';
+        pCalc.style.display = 'none';
+        btnNotes.className = "flex-1 py-3 text-[10px] font-bold border-b-2 border-cyan-500 text-cyan-500";
+        btnCalc.className = "flex-1 py-3 text-[10px] font-bold text-slate-400";
+    } else {
+        pNotes.style.display = 'none';
+        pCalc.style.display = 'flex';
+        btnCalc.className = "flex-1 py-3 text-[10px] font-bold border-b-2 border-cyan-500 text-cyan-500";
+        btnNotes.className = "flex-1 py-3 text-[10px] font-bold text-slate-400";
+    }
 };
 
-document.getElementById('tabCalc').onclick = function() {
-    document.getElementById('p-notes').style.display = 'none';
-    document.getElementById('p-calc').style.display = 'flex';
-    this.className = "flex-1 py-3 text-[10px] font-bold border-b-2 border-cyan-500 text-cyan-500";
-    document.getElementById('tabNotes').className = "flex-1 py-3 text-[10px] font-bold text-slate-400";
-};
-
-// [修正] 計算機運算
+// --- [核心修正] 計算機運算邏輯 ---
 let currentInput = "";
 window.cin = (val) => {
-    currentInput += val;
-    document.getElementById('disp').innerText = currentInput;
+    currentInput += val.toString();
+    const disp = document.getElementById('disp');
+    if (disp) disp.innerText = currentInput;
 };
+
 window.ccr = () => {
     currentInput = "";
-    document.getElementById('disp').innerText = "0";
+    const disp = document.getElementById('disp');
+    if (disp) disp.innerText = "0";
 };
+
 window.crs = () => {
     try {
-        if(!currentInput) return;
+        if (!currentInput) return;
         const result = new Function(`return ${currentInput}`)();
         currentInput = result.toString();
-        document.getElementById('disp').innerText = currentInput;
+        const disp = document.getElementById('disp');
+        if (disp) disp.innerText = currentInput;
     } catch (e) {
-        document.getElementById('disp').innerText = "ERR";
+        const disp = document.getElementById('disp');
+        if (disp) disp.innerText = "ERR";
         currentInput = "";
     }
 };
