@@ -164,17 +164,11 @@ window.crs = () => {
 document.addEventListener("DOMContentLoaded", initLIFF);
 
 
-// ====================== 歷史網格記錄功能 (方案 B - 起始/結束期數) ======================
+// ====================== 歷史網格記錄功能 ======================
 
 window.loadHistoryGrid = async function() {
     const table = document.getElementById('historyGrid');
     if (!table) return;
-
-    // 防護：如果 getDrawsByType 還沒準備好
-    if (typeof window.getDrawsByType !== 'function') {
-        table.innerHTML = `<tr><td colspan="8" class="py-12 text-center text-red-400">資料庫函式尚未載入，請重新整理頁面</td></tr>`;
-        return;
-    }
 
     const startInput = document.getElementById('startPeriod').value.trim();
     const endInput = document.getElementById('endPeriod').value.trim();
@@ -183,32 +177,23 @@ window.loadHistoryGrid = async function() {
 
     try {
         let data = await window.getDrawsByType("今彩539", 300);
-
         if (data.length === 0) {
-            table.innerHTML = `<tr><td colspan="8" class="py-12 text-center text-slate-400">尚無資料，請先使用匯入工具匯入今彩539記錄</td></tr>`;
+            table.innerHTML = `<tr><td colspan="8" class="py-12 text-center text-slate-400">尚無資料，請先使用匯入工具</td></tr>`;
             return;
         }
 
         if (startInput) data = data.filter(item => item.period >= startInput);
         if (endInput) data = data.filter(item => item.period <= endInput);
-
         data = data.slice(0, 200);
 
-        let html = `
-            <thead>
-                <tr class="bg-lab-bg border-b border-lab-border">
-                    <th class="px-2 py-3 text-center text-[10px] font-bold text-slate-400 border-r border-lab-border">期數</th>
-                    <th class="px-2 py-3 text-center text-[10px] font-bold text-slate-400 border-r border-lab-border">日期</th>
-                    <th class="px-2 py-3 text-center text-[10px] font-bold text-slate-400 border-r border-lab-border">星期</th>
-                    <th class="px-3 py-3 text-center text-[10px] font-bold text-slate-400 border-r border-lab-border">1</th>
-                    <th class="px-3 py-3 text-center text-[10px] font-bold text-slate-400 border-r border-lab-border">2</th>
-                    <th class="px-3 py-3 text-center text-[10px] font-bold text-slate-400 border-r border-lab-border">3</th>
-                    <th class="px-3 py-3 text-center text-[10px] font-bold text-slate-400 border-r border-lab-border">4</th>
-                    <th class="px-3 py-3 text-center text-[10px] font-bold text-slate-400">5</th>
-                </tr>
-            </thead>
-            <tbody class="text-sm">
-        `;
+        let html = `<thead><tr class="bg-lab-bg border-b border-lab-border">`;
+        html += `<th class="px-2 py-3 text-center text-[10px] font-bold text-slate-400 border-r border-lab-border">期數</th>`;
+        html += `<th class="px-2 py-3 text-center text-[10px] font-bold text-slate-400 border-r border-lab-border">日期</th>`;
+        html += `<th class="px-2 py-3 text-center text-[10px] font-bold text-slate-400 border-r border-lab-border">星期</th>`;
+        for (let i = 1; i <= 5; i++) {
+            html += `<th class="px-3 py-3 text-center text-[10px] font-bold text-slate-400 border-r border-lab-border">${i}</th>`;
+        }
+        html += `</tr></thead><tbody class="text-sm">`;
 
         const sortedData = [...data].sort((a, b) => a.period.localeCompare(b.period));
 
@@ -218,57 +203,85 @@ window.loadHistoryGrid = async function() {
             const monthDay = isNaN(dateObj.getTime()) ? '---' : `${dateObj.getMonth()+1}/${dateObj.getDate()}`;
             const weekday = ['日','一','二','三','四','五','六'][dateObj.getDay()] || '—';
 
-            html += `<tr class="border-b border-lab-border hover:bg-lab-bg/50 transition">`;
+            html += `<tr class="border-b border-lab-border">`;
             html += `<td class="px-2 py-3 text-center font-mono border-r border-lab-border">${periodTail}</td>`;
             html += `<td class="px-2 py-3 text-center border-r border-lab-border">${monthDay}</td>`;
             html += `<td class="px-2 py-3 text-center border-r border-lab-border">${weekday}</td>`;
 
             (item.numbers || []).forEach((num, idx) => {
                 const cellId = `${periodTail}_${idx+4}`;
-                html += `<td onclick="window.toggleCellHighlight('${cellId}', this)" 
-                             class="px-3 py-3 text-center font-mono border-r border-lab-border highlight-cell" 
+                html += `<td onclick="window.showHighlightPanel('${cellId}', this)" 
+                             class="highlight-cell px-3 py-3 text-center font-mono border-r border-lab-border" 
                              data-cell-id="${cellId}">${num.toString().padStart(2, '0')}</td>`;
             });
-
             html += `</tr>`;
         }
-
         html += `</tbody>`;
         table.innerHTML = html;
 
-        if (typeof window.loadHighlightsFromLocalStorage === 'function') {
-            window.loadHighlightsFromLocalStorage();
-        }
+        window.loadHighlightsFromLocalStorage();
 
     } catch (err) {
         console.error(err);
-        table.innerHTML = `<tr><td colspan="8" class="py-12 text-center text-red-400">載入失敗，請稍後再試</td></tr>`;
+        table.innerHTML = `<tr><td colspan="8" class="py-12 text-center text-red-400">載入失敗</td></tr>`;
     }
 };
 
-window.toggleCellHighlight = function(cellId, element) {
-    const current = element.getAttribute('data-highlight') || '';
-    
-    if (current === 'border') {
-        element.style.border = '';
-        element.setAttribute('data-highlight', '');
-        window.removeHighlightFromStorage(cellId);
-    } else {
-        element.style.border = '2px solid #22d3ee';
-        element.setAttribute('data-highlight', 'border');
-        window.saveHighlightToStorage(cellId, 'border');
-    }
+// 彈出選擇面板
+let currentCellElement = null;
+let currentCellId = null;
+
+window.showHighlightPanel = function(cellId, element) {
+    currentCellElement = element;
+    currentCellId = cellId;
+
+    const panelHTML = `
+        <div class="fixed inset-0 bg-black/70 z-[80] flex items-end">
+            <div class="bg-lab-card w-full rounded-t-3xl p-6">
+                <div class="text-center text-sm font-bold mb-6">格子標記</div>
+                
+                <div class="grid grid-cols-2 gap-4">
+                    <button onclick="applyHighlight('border')" 
+                            class="py-4 border border-cyan-500 text-cyan-400 rounded-2xl font-medium">細內框</button>
+                    <button onclick="applyHighlight('bg')" 
+                            class="py-4 bg-cyan-500/10 text-cyan-400 rounded-2xl font-medium">淺色背景</button>
+                </div>
+
+                <div class="mt-6 text-xs text-slate-400 text-center">點擊空白處關閉</div>
+            </div>
+        </div>
+    `;
+
+    const panel = document.createElement('div');
+    panel.id = 'highlightPanel';
+    panel.innerHTML = panelHTML;
+    document.body.appendChild(panel);
+
+    panel.addEventListener('click', (e) => {
+        if (e.target.id === 'highlightPanel') panel.remove();
+    });
 };
 
+window.applyHighlight = function(type) {
+    if (!currentCellElement) return;
+
+    // 先清除舊樣式
+    currentCellElement.classList.remove('active-border', 'active-bg');
+
+    if (type === 'border') {
+        currentCellElement.classList.add('active-border');
+    } else if (type === 'bg') {
+        currentCellElement.classList.add('active-bg');
+    }
+
+    window.saveHighlightToStorage(currentCellId, type);
+    document.getElementById('highlightPanel').remove();
+};
+
+// 儲存與載入標記
 window.saveHighlightToStorage = function(cellId, type) {
     let highlights = JSON.parse(localStorage.getItem('gridHighlights_539') || '{}');
     highlights[cellId] = type;
-    localStorage.setItem('gridHighlights_539', JSON.stringify(highlights));
-};
-
-window.removeHighlightFromStorage = function(cellId) {
-    let highlights = JSON.parse(localStorage.getItem('gridHighlights_539') || '{}');
-    delete highlights[cellId];
     localStorage.setItem('gridHighlights_539', JSON.stringify(highlights));
 };
 
@@ -276,20 +289,20 @@ window.loadHighlightsFromLocalStorage = function() {
     const highlights = JSON.parse(localStorage.getItem('gridHighlights_539') || '{}');
     document.querySelectorAll('.highlight-cell').forEach(cell => {
         const cellId = cell.getAttribute('data-cell-id');
-        if (highlights[cellId] === 'border') {
-            cell.style.border = '2px solid #22d3ee';
-            cell.setAttribute('data-highlight', 'border');
+        const type = highlights[cellId];
+        if (type) {
+            cell.classList.add(type === 'border' ? 'active-border' : 'active-bg');
         }
     });
 };
 
-// 進入歷史頁面時自動載入
+// 進入歷史頁面自動載入
 const originalSwitchView = window.switchView;
 window.switchView = (viewId) => {
     originalSwitchView(viewId);
     if (viewId === 'history') {
         const endP = document.getElementById('endPeriod');
-        if (endP && !endP.value) endP.value = "114300";   // ← 請改成你實際最大的期數
-        setTimeout(window.loadHistoryGrid, 150);
+        if (endP && !endP.value) endP.value = "114300"; 
+        setTimeout(window.loadHistoryGrid, 100);
     }
 };
