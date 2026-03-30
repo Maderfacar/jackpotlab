@@ -175,7 +175,7 @@ window.loadHistoryGrid = async function() {
         table.innerHTML = `<tr><td colspan="8" class="py-12 text-center text-red-400">資料庫函式尚未載入，請重新整理頁面</td></tr>`;
         return;
     }
-    
+
     const startInput = document.getElementById('startPeriod').value.trim();
     const endInput = document.getElementById('endPeriod').value.trim();
 
@@ -189,15 +189,10 @@ window.loadHistoryGrid = async function() {
             return;
         }
 
-        // 過濾期數範圍
-        if (startInput) {
-            data = data.filter(item => item.period >= startInput);
-        }
-        if (endInput) {
-            data = data.filter(item => item.period <= endInput);
-        }
+        if (startInput) data = data.filter(item => item.period >= startInput);
+        if (endInput) data = data.filter(item => item.period <= endInput);
 
-        data = data.slice(0, 200); // 限制最多200筆
+        data = data.slice(0, 200);
 
         let html = `
             <thead>
@@ -218,17 +213,17 @@ window.loadHistoryGrid = async function() {
         const sortedData = [...data].sort((a, b) => a.period.localeCompare(b.period));
 
         for (const item of sortedData) {
-            const periodTail = item.period.slice(-3);
+            const periodTail = item.period ? item.period.slice(-3) : '---';
             const dateObj = new Date(item.drawDate);
-            const monthDay = `${dateObj.getMonth()+1}/${dateObj.getDate()}`;
-            const weekday = ['日','一','二','三','四','五','六'][dateObj.getDay()];
+            const monthDay = isNaN(dateObj.getTime()) ? '---' : `${dateObj.getMonth()+1}/${dateObj.getDate()}`;
+            const weekday = ['日','一','二','三','四','五','六'][dateObj.getDay()] || '—';
 
             html += `<tr class="border-b border-lab-border hover:bg-lab-bg/50 transition">`;
             html += `<td class="px-2 py-3 text-center font-mono border-r border-lab-border">${periodTail}</td>`;
             html += `<td class="px-2 py-3 text-center border-r border-lab-border">${monthDay}</td>`;
             html += `<td class="px-2 py-3 text-center border-r border-lab-border">${weekday}</td>`;
 
-            item.numbers.forEach((num, idx) => {
+            (item.numbers || []).forEach((num, idx) => {
                 const cellId = `${periodTail}_${idx+4}`;
                 html += `<td onclick="window.toggleCellHighlight('${cellId}', this)" 
                              class="px-3 py-3 text-center font-mono border-r border-lab-border highlight-cell" 
@@ -241,7 +236,9 @@ window.loadHistoryGrid = async function() {
         html += `</tbody>`;
         table.innerHTML = html;
 
-        window.loadHighlightsFromLocalStorage();
+        if (typeof window.loadHighlightsFromLocalStorage === 'function') {
+            window.loadHighlightsFromLocalStorage();
+        }
 
     } catch (err) {
         console.error(err);
