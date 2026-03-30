@@ -39,11 +39,11 @@ nav {
 }
 
 /* === 歷史網格樣式 - 適配寬度 === */
+/* 歷史網格樣式 */
 .history-grid {
     border-collapse: collapse;
     width: 100%;
-    table-layout: fixed;           /* 強制平均分配欄位 */
-    font-family: 'JetBrains Mono', monospace;
+    table-layout: fixed;
 }
 
 .history-grid th,
@@ -52,40 +52,36 @@ nav {
     padding: 8px 4px;
     text-align: center;
     font-size: 13px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
 }
 
-.history-grid th {
-    background-color: var(--bg-color);
-    font-weight: 700;
-    font-size: 11px;
-    color: #64748b;
-    padding: 10px 4px;
-}
-
-/* 格子點擊效果 */
+/* 格子標記 - 修正版 */
 .highlight-cell {
     cursor: pointer;
     position: relative;
     transition: all 0.2s;
 }
 
+/* 細內框 - 完整四邊 */
+.highlight-cell.active-border {
+    position: relative;
+}
+
 .highlight-cell.active-border::after {
     content: '';
     position: absolute;
-    inset: 2px;
-    border: 2px solid #22d3ee;
-    border-radius: 4px;
+    inset: 0;
+    border: 2.5px solid var(--highlight-color, #22d3ee);
+    border-radius: 6px;
     pointer-events: none;
+    box-sizing: border-box;
 }
 
+/* 淺色背景 */
 .highlight-cell.active-bg {
-    background-color: #164e63 !important;
+    background-color: var(--highlight-bg, #164e63) !important;
 }
 
-/* 深色模式 */
+/* 深色模式調整 */
 .dark .history-grid th,
 .dark .history-grid td {
     border-color: var(--border-color);
