@@ -166,6 +166,8 @@ document.addEventListener("DOMContentLoaded", initLIFF);
 
 // ====================== 歷史網格記錄功能 ======================
 
+// ====================== 歷史網格記錄功能 ======================
+
 window.loadHistoryGrid = async function() {
     const table = document.getElementById('historyGrid');
     if (!table) return;
@@ -211,7 +213,7 @@ window.loadHistoryGrid = async function() {
             (item.numbers || []).forEach((num, idx) => {
                 const cellId = `${periodTail}_${idx+4}`;
                 html += `<td onclick="window.showHighlightPanel('${cellId}', this)" 
-                             class="highlight-cell px-3 py-3 text-center font-mono border-r border-lab-border" 
+                             class="highlight-cell px-2 py-3 text-center font-mono border-r border-lab-border" 
                              data-cell-id="${cellId}">${num.toString().padStart(2, '0')}</td>`;
             });
             html += `</tr>`;
@@ -228,57 +230,64 @@ window.loadHistoryGrid = async function() {
 };
 
 // 彈出選擇面板
-let currentCellElement = null;
-let currentCellId = null;
-
 window.showHighlightPanel = function(cellId, element) {
-    currentCellElement = element;
-    currentCellId = cellId;
-
-    const panelHTML = `
-        <div class="fixed inset-0 bg-black/70 z-[80] flex items-end">
-            <div class="bg-lab-card w-full rounded-t-3xl p-6">
-                <div class="text-center text-sm font-bold mb-6">格子標記</div>
-                
-                <div class="grid grid-cols-2 gap-4">
-                    <button onclick="applyHighlight('border')" 
-                            class="py-4 border border-cyan-500 text-cyan-400 rounded-2xl font-medium">細內框</button>
-                    <button onclick="applyHighlight('bg')" 
-                            class="py-4 bg-cyan-500/10 text-cyan-400 rounded-2xl font-medium">淺色背景</button>
-                </div>
-
-                <div class="mt-6 text-xs text-slate-400 text-center">點擊空白處關閉</div>
-            </div>
-        </div>
-    `;
+    // 防止重複開啟
+    if (document.getElementById('highlightPanel')) return;
 
     const panel = document.createElement('div');
     panel.id = 'highlightPanel';
-    panel.innerHTML = panelHTML;
+    panel.className = 'fixed inset-0 bg-black/70 z-[80] flex items-end';
+    panel.innerHTML = `
+        <div class="bg-lab-card w-full rounded-t-3xl p-6 animate-slide-up">
+            <div class="text-center mb-5">
+                <div class="text-sm font-bold text-lab-text">格子標記設定</div>
+                <div class="text-xs text-slate-400 mt-1">期數尾碼 ${cellId.split('_')[0]}</div>
+            </div>
+            
+            <div class="grid grid-cols-2 gap-3">
+                <button onclick="window.applyHighlight('${cellId}', 'border')" 
+                        class="py-5 border-2 border-cyan-400 text-cyan-400 rounded-2xl font-medium active:scale-95 transition">
+                    細內框
+                </button>
+                <button onclick="window.applyHighlight('${cellId}', 'bg')" 
+                        class="py-5 bg-cyan-500/10 text-cyan-400 rounded-2xl font-medium active:scale-95 transition">
+                    淺色背景
+                </button>
+            </div>
+
+            <button onclick="document.getElementById('highlightPanel').remove()" 
+                    class="w-full mt-6 py-4 text-slate-400 text-sm">
+                取消
+            </button>
+        </div>
+    `;
+
     document.body.appendChild(panel);
 
+    // 點擊背景關閉
     panel.addEventListener('click', (e) => {
         if (e.target.id === 'highlightPanel') panel.remove();
     });
 };
 
-window.applyHighlight = function(type) {
-    if (!currentCellElement) return;
+window.applyHighlight = function(cellId, type) {
+    const cell = document.querySelector(`[data-cell-id="${cellId}"]`);
+    if (!cell) return;
 
-    // 先清除舊樣式
-    currentCellElement.classList.remove('active-border', 'active-bg');
+    // 清除舊樣式
+    cell.classList.remove('active-border', 'active-bg');
 
     if (type === 'border') {
-        currentCellElement.classList.add('active-border');
+        cell.classList.add('active-border');
     } else if (type === 'bg') {
-        currentCellElement.classList.add('active-bg');
+        cell.classList.add('active-bg');
     }
 
-    window.saveHighlightToStorage(currentCellId, type);
+    window.saveHighlightToStorage(cellId, type);
     document.getElementById('highlightPanel').remove();
 };
 
-// 儲存與載入標記
+// localStorage 相關
 window.saveHighlightToStorage = function(cellId, type) {
     let highlights = JSON.parse(localStorage.getItem('gridHighlights_539') || '{}');
     highlights[cellId] = type;
@@ -296,13 +305,13 @@ window.loadHighlightsFromLocalStorage = function() {
     });
 };
 
-// 進入歷史頁面自動載入
+// 切換到歷史頁面時自動載入
 const originalSwitchView = window.switchView;
 window.switchView = (viewId) => {
     originalSwitchView(viewId);
     if (viewId === 'history') {
         const endP = document.getElementById('endPeriod');
         if (endP && !endP.value) endP.value = "114300"; 
-        setTimeout(window.loadHistoryGrid, 100);
+        setTimeout(window.loadHistoryGrid, 120);
     }
 };
