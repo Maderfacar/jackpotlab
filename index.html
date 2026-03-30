@@ -105,9 +105,11 @@
             </section>
 
             <!-- 歷史記錄網格視圖 -->
+            
             <section id="view-history" class="spa-view hidden flex flex-col h-full p-4 lg:p-6">
     <div class="bg-lab-card rounded-3xl border border-lab-border flex flex-col h-full overflow-hidden">
-        <div class="p-5 border-b border-lab-border flex-shrink-0">
+        <!-- 期數選擇區域（壓縮高度） -->
+        <div class="period-input-area border-b border-lab-border bg-lab-card flex-shrink-0">
             <div class="flex flex-col sm:flex-row gap-4 items-end">
                 <div class="flex-1">
                     <div class="text-xs text-slate-400 mb-1">起始期數</div>
@@ -120,13 +122,14 @@
                            class="w-full bg-lab-bg border border-lab-border rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-cyan-500 font-mono">
                 </div>
                 <button onclick="window.loadHistoryGrid()" 
-                        class="px-6 py-3 bg-cyan-400 text-black font-bold rounded-2xl hover:bg-cyan-400 transition whitespace-nowrap flex-shrink-0">
+                        class="px-6 py-3 bg-cyan-500 text-black font-bold rounded-2xl hover:bg-cyan-400 transition whitespace-nowrap flex-shrink-0">
                     載入資料
                 </button>
             </div>
         </div>
         
-        <div class="flex-1 overflow-auto no-scrollbar p-1">
+        <!-- 表格區域 -->
+        <div class="table-container flex-1 overflow-y-auto no-scrollbar p-2">
             <table id="historyGrid" class="history-grid w-full text-sm border-collapse">
                 <!-- JS 動態產生 -->
             </table>
