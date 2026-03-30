@@ -73,38 +73,50 @@ window.crs = () => {
     }
 };
 
-// LIFF 初始化與用戶資料顯示
+// 修改後的初始化監聽
+document.addEventListener("DOMContentLoaded", () => {
+    initLIFF();
+});
+
 async function initLIFF() {
     const liffId = "2009636686-ec6thLNX"; 
     try {
         await liff.init({ liffId });
+        console.log("LIFF Initialized"); // 偵錯用
+
         if (liff.isLoggedIn()) {
             const profile = await liff.getProfile();
+            console.log("Profile Loaded:", profile.displayName);
+
+            // 更新桌機版
+            const userNameEl = document.getElementById('userName');
+            const userIdEl = document.getElementById('userId');
+            const userPicEl = document.getElementById('userPicture');
             
-            // 更新桌機版 UI
-            document.getElementById('userName').innerText = profile.displayName;
-            document.getElementById('userId').innerText = `ID: ${profile.userId.substring(0, 10)}...`;
-            
-            const desktopImg = document.getElementById('userPicture');
-            if (profile.pictureUrl) {
-                desktopImg.src = profile.pictureUrl;
-                desktopImg.style.opacity = "1";
+            if(userNameEl) userNameEl.innerText = profile.displayName;
+            if(userIdEl) userIdEl.innerText = `ID: ${profile.userId.substring(0, 10)}...`;
+            if(userPicEl && profile.pictureUrl) {
+                userPicEl.src = profile.pictureUrl;
+                userPicEl.style.opacity = "1";
             }
 
-            // 更新手機版 UI
-            const mobileImg = document.getElementById('userPictureMobile');
-            if (profile.pictureUrl) {
-                mobileImg.src = profile.pictureUrl;
-                mobileImg.classList.remove('hidden');
+            // 更新手機版
+            const mobilePicEl = document.getElementById('userPictureMobile');
+            if (mobilePicEl && profile.pictureUrl) {
+                mobilePicEl.src = profile.pictureUrl;
+                mobilePicEl.classList.remove('hidden');
             }
 
-            document.getElementById('liffLoginBtn').onclick = null;
+            // 移除登入點擊事件
+            const loginBtn = document.getElementById('liffLoginBtn');
+            if(loginBtn) loginBtn.onclick = null;
+
         } else {
-            document.getElementById('liffLoginBtn').onclick = () => liff.login();
+            console.log("User not logged in");
+            const loginBtn = document.getElementById('liffLoginBtn');
+            if(loginBtn) loginBtn.onclick = () => liff.login();
         }
     } catch (err) {
         console.error("LIFF Init Failed", err);
     }
 }
-
-window.onload = initLIFF;
