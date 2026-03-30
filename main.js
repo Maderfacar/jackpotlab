@@ -9,7 +9,7 @@ function toggleSidebar() {
 
 function toggleTheme() { document.documentElement.classList.toggle('dark'); }
 
-// SPA 視圖切換 (已整合分析渲染邏輯)
+// SPA 視圖切換 (回歸最穩定的 ID 切換邏輯)
 window.switchView = (viewId) => {
     // 1. 隱藏所有視圖
     document.querySelectorAll('.spa-view').forEach(v => v.classList.add('hidden'));
@@ -18,7 +18,6 @@ window.switchView = (viewId) => {
     const targetView = document.getElementById(`view-${viewId}`);
     if (targetView) {
         targetView.classList.remove('hidden');
-        console.log("切換至視圖:", viewId);
     }
     
     // 3. 更新底部導覽鈕顏色
@@ -27,13 +26,16 @@ window.switchView = (viewId) => {
         btn.classList.add('text-slate-400');
     });
     
-    // 4. 如果是點擊觸發的，染成青色
-    if (event && event.currentTarget) {
-        event.currentTarget.classList.remove('text-slate-400');
-        event.currentTarget.classList.add('text-cyan-500');
+    // 4. 高亮當前按鈕 (透過檢查 onclick 屬性對齊)
+    const activeTab = Array.from(document.querySelectorAll('.tab-item')).find(btn => 
+        btn.getAttribute('onclick')?.includes(`'${viewId}'`)
+    );
+    if (activeTab) {
+        activeTab.classList.remove('text-slate-400');
+        activeTab.classList.add('text-cyan-500');
     }
 
-    // 5. 【關鍵步驟】如果進入的是「terminal (分析)」，立即執行渲染
+    // 5. 如果進入分析頁，執行渲染
     if (viewId === 'terminal') {
         renderTerminalData();
     }
@@ -106,6 +108,7 @@ function renderLogoutState() {
 window.minimizeToolbox = () => {
     const tb = document.getElementById('toolbox');
     const dot = document.getElementById('dot');
+    if (!tb || !dot) return;
     tb.classList.add('translate-y-[120%]', 'opacity-0');
     setTimeout(() => {
         tb.classList.add('hidden');
@@ -117,6 +120,7 @@ window.minimizeToolbox = () => {
 window.restoreToolbox = () => {
     const tb = document.getElementById('toolbox');
     const dot = document.getElementById('dot');
+    if (!tb || !dot) return;
     tb.classList.remove('hidden');
     dot.style.display = 'none';
     dot.classList.add('hidden');
@@ -131,6 +135,7 @@ window.switchTab = (tab) => {
     const pCalc = document.getElementById('p-calc');
     const btnNotes = document.getElementById('tabNotes');
     const btnCalc = document.getElementById('tabCalc');
+    if (!pNotes || !pCalc) return;
 
     if (tab === 'notes') {
         pNotes.style.display = 'block';
@@ -172,17 +177,11 @@ window.crs = () => {
         currentInput = "";
     }
 };
-//==========================================================================================================
-// [最終修正] 渲染分析列表 - 帶有自動重試機制
+
+// --- [分析列表渲染] ---
 function renderTerminalData() {
     const list = document.getElementById('history-list');
-    
-    // 如果找不到容器，0.5秒後重試 (解決 HTML 還沒加載完的問題)
-    if (!list) {
-        console.warn("找不到 history-list，0.5秒後重試...");
-        setTimeout(renderTerminalData, 500);
-        return;
-    }
+    if (!list) return;
 
     const items = [
         { id: '240030', date: '03/30', nums: ['05','12','18','24','33'], sum: 92 },
@@ -191,7 +190,7 @@ function renderTerminalData() {
     ];
 
     list.innerHTML = items.map(item => `
-        <div class="border-b border-lab-border p-4 hover:bg-white/5 transition-all cursor-pointer" onclick="toggleDetail(this)">
+        <div class="border-b border-lab-border p-4 hover:bg-white/5 transition-all cursor-pointer" onclick="window.toggleDetail(this)">
             <div class="flex items-center justify-between">
                 <div class="flex flex-col w-14">
                     <span class="text-[10px] font-mono text-cyan-500">#${item.id}</span>
@@ -200,25 +199,23 @@ function renderTerminalData() {
                 <div class="flex gap-1.5 flex-1 justify-center">
                     ${item.nums.map(n => `<span class="w-7 h-7 flex items-center justify-center rounded-full bg-slate-900 border border-lab-border text-xs font-bold text-cyan-400">${n}</span>`).join('')}
                 </div>
-                <div class="text-right w-10">
-                    <div class="text-[10px] font-bold text-slate-300">Σ ${item.sum}</div>
-                </div>
+                <div class="text-right w-10 text-[10px] font-bold text-slate-300">Σ ${item.sum}</div>
             </div>
             <div class="detail-panel hidden mt-4 pt-4 border-t border-dashed border-lab-border grid grid-cols-2 gap-2">
                 <div class="text-[10px] flex justify-between px-2"><span class="opacity-50 text-xs">單雙</span><span class="text-cyan-600">3:2</span></div>
-                <div class="text-[10px] flex justify-between px-2"><span class="opacity-50 text-xs">狀態</span><span class="text-cyan-600">數據已對齊</span></div>
+                <div class="text-[10px] flex justify-between px-2"><span class="opacity-50 text-xs">狀態</span><span class="text-cyan-600">數據對齊</span></div>
             </div>
         </div>
     `).join('');
-    
-    console.log("數據渲染成功");
 }
 
-// 確保頁面一打開就先跑一次，預載入資料
+window.toggleDetail = (el) => {
+    const detail = el.querySelector('.detail-panel');
+    if (detail) detail.classList.toggle('hidden');
+};
+
+// --- 啟動初始化 ---
 document.addEventListener("DOMContentLoaded", () => {
     initLIFF();
-    renderTerminalData(); 
+    renderTerminalData();
 });
-
-// 啟動
-document.addEventListener("DOMContentLoaded", initLIFF);
