@@ -178,7 +178,7 @@ window.loadHistoryGrid = async function() {
     table.innerHTML = `<tr><td colspan="8" class="py-12 text-center text-slate-400">載入中...</td></tr>`;
 
     try {
-        let data = await window.getDrawsByType("今彩539", 300);
+        let data = await window.getDrawsByType("今彩539", 20);
         if (data.length === 0) {
             table.innerHTML = `<tr><td colspan="8" class="py-12 text-center text-slate-400">尚無資料，請先使用匯入工具</td></tr>`;
             return;
