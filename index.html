@@ -68,62 +68,52 @@
     </aside>
 
     <main class="flex-1 flex flex-col min-w-0 relative">
-        <header class="h-16 lg:h-20 bg-lab-card border-b border-lab-border px-4 lg:px-8 flex items-center justify-between">
-            <div class="flex items-center gap-3">
-                <div class="w-10 h-10 lg:w-12 lg:h-12 rounded-xl border border-lab-border overflow-hidden bg-slate-100">
-                    <img id="userPicture" src="" class="w-full h-full object-cover opacity-0 transition-opacity">
+        <header class="hidden lg:flex h-20 bg-lab-card border-b border-lab-border px-8 items-center justify-end">
+            <div id="liffLoginBtn" class="flex items-center gap-4 cursor-pointer">
+                <div class="text-right">
+                    <div id="userName" class="text-sm font-bold">Guest Login</div>
+                    <div id="userId" class="text-[9px] font-mono text-cyan-500 tracking-tighter opacity-60 uppercase">Wait Authorization</div>
                 </div>
-                <div>
-                    <div id="userName" class="text-sm font-bold leading-none mb-1">Guest</div>
-                    <div class="flex items-center gap-2">
-                        <span id="userTitle" class="text-[9px] px-1.5 py-0.5 bg-cyan-500/10 text-cyan-500 border border-cyan-500/20 rounded">載入中...</span>
-                        <div class="w-16 h-1 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
-                            <div id="levelBar" class="h-full bg-cyan-500 transition-all duration-500" style="width: 0%"></div>
-                        </div>
-                    </div>
+                <div class="w-12 h-12 rounded-xl border border-lab-border overflow-hidden bg-slate-100 shadow-sm">
+                    <img id="userPicture" src="" class="w-full h-full object-cover opacity-0 transition-opacity duration-300">
                 </div>
             </div>
-            <div id="userId" class="hidden lg:block text-[9px] font-mono text-slate-500 uppercase">Wait Auth</div>
         </header>
 
-        <div id="spa-container" class="flex-1 overflow-y-auto no-scrollbar pb-20">
-            <section id="view-dashboard" class="spa-view p-4 lg:p-8 space-y-4">
-                <div class="bg-lab-card p-6 rounded-2xl border border-lab-border relative">
-                    <div class="absolute top-6 right-6 bg-cyan-500 text-black px-2 py-0.5 rounded text-[10px] font-black italic">LIVE</div>
-                    <h3 class="text-xs font-black text-slate-400 mb-4 tracking-widest uppercase">Latest Result</h3>
-                    <div class="text-3xl font-mono font-bold tracking-tighter">539 - 115001</div>
-                    <div class="flex gap-2 mt-4">
-                        <span class="w-10 h-10 rounded-full bg-cyan-500 text-black flex items-center justify-center font-bold">08</span>
-                    </div>
-                </div>
+        <div id="spa-container" class="flex-1 overflow-y-auto no-scrollbar pb-32">
+            <section id="view-dashboard" class="spa-view p-4 lg:p-8 space-y-6">
+                <section class="bg-lab-card p-10 rounded-3xl border border-lab-border shadow-sm text-center relative">
+                    <div class="absolute top-6 right-8 bg-cyan-500 text-black px-3 py-1 rounded text-[10px] font-black italic">ANALYSIS</div>
+                    <h2 class="text-xs font-bold text-slate-400 mb-6 tracking-widest uppercase">Match Suggestion</h2>
+                    <div id="mainDisplay" class="w-32 h-32 rounded-full border-4 border-cyan-500 mx-auto flex items-center justify-center text-5xl font-mono font-bold text-cyan-500 resonance-pulse">18</div>
+                    <div class="mt-6 text-xl font-bold italic">Confidence: 88.5%</div>
+                </section>
             </section>
 
             <section id="view-terminal" class="spa-view hidden p-4 lg:p-8">
                 <div class="bg-lab-card rounded-2xl border border-lab-border overflow-hidden">
                     <div class="p-4 border-b border-lab-border font-bold text-xs uppercase">Analysis Terminal</div>
-                    <div class="h-96 flex items-center justify-center text-slate-500 text-sm italic">
-                        數據引擎載入中...
-                    </div>
+                    <div class="h-96 flex items-center justify-center text-slate-500 text-sm italic">數據引擎載入中...</div>
                 </div>
             </section>
 
             <section id="view-prediction" class="spa-view hidden p-4 lg:p-8">
                 <div class="bg-lab-card p-6 rounded-2xl border border-lab-border text-center">
                     <h2 class="text-xl font-bold mb-4">預測下一期獎號</h2>
-                    <button class="w-full py-4 bg-cyan-500 text-black font-black rounded-xl hover:bg-cyan-400 transition">開啟號碼盤</button>
+                    <button class="w-full py-4 bg-cyan-500 text-black font-black rounded-xl">開啟號碼盤</button>
                 </div>
             </section>
         </div>
 
-        <nav class="fixed bottom-0 left-0 right-0 lg:left-72 bg-lab-card/80 backdrop-blur-md border-t border-lab-border h-16 flex items-center justify-around px-4 z-40">
+        <nav class="fixed bottom-0 left-0 right-0 lg:left-72 bg-lab-card/80 backdrop-blur-md border-t border-lab-border h-16 flex items-center justify-around px-4 z-40 lg:hidden">
             <button onclick="switchView('dashboard')" class="tab-item text-cyan-500 flex flex-col items-center">
-                <span class="text-[10px] font-bold mt-1 uppercase">儀表板</span>
+                <span class="text-[10px] font-bold uppercase">儀表板</span>
             </button>
             <button onclick="switchView('terminal')" class="tab-item text-slate-400 flex flex-col items-center">
-                <span class="text-[10px] font-bold mt-1 uppercase">分析</span>
+                <span class="text-[10px] font-bold uppercase">分析</span>
             </button>
             <button onclick="switchView('prediction')" class="tab-item text-slate-400 flex flex-col items-center">
-                <span class="text-[10px] font-bold mt-1 uppercase">預測</span>
+                <span class="text-[10px] font-bold uppercase">預測</span>
             </button>
         </nav>
     </main>
@@ -164,7 +154,6 @@
     </div>
 
     <div id="dot" class="fixed bottom-8 right-8 w-14 h-14 rounded-full bg-cyan-500 items-center justify-center text-black font-black text-xs shadow-2xl z-50 cursor-pointer hidden" onclick="restoreToolbox()">工具</div>
-    
     <div id="overlay" class="fixed inset-0 bg-black/50 z-40 hidden opacity-0 transition-opacity lg:hidden" onclick="toggleSidebar()"></div>
 
     <script src="database.js"></script>
