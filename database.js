@@ -74,7 +74,15 @@ window.getDrawsByType = async (type = "今彩539", limit = 300) => {
         // 按期數降序排序（最新在前）
         // result.sort((a, b) => (b.period || "").localeCompare(a.period || ""));
         // 由舊到新排序（最新一期排在最下面）
-            result.sort((a, b) => a.period.localeCompare(b.period));
+        //   result.sort((a, b) => a.period.localeCompare(b.period));
+        // 第一步：先按期數降序排序（最新的排在陣列前面）
+        result.sort((a, b) => (b.period || "").localeCompare(a.period || ""));
+
+        // 第二步：取出最新的 limit 筆
+        result = result.slice(0, limit);
+
+        // 第三步：再把這 limit 筆改成升序（舊的在上面，最新在下面）
+        result.sort((a, b) => (a.period || "").localeCompare(b.period || ""));
       
         return result.slice(0, limit);
 
