@@ -234,36 +234,47 @@ window.loadHistoryGrid = async function() {
 
 // ====================== 歷史網格記錄功能 (最終推薦版) ======================
 
+// ====================== 歷史網格記錄功能 ======================
+
 window.loadHistoryGrid = async function() {
     const table = document.getElementById('historyGrid');
     if (!table) return;
 
     const startInput = document.getElementById('startPeriod').value.trim();
-    const endInput = document.getElementById('endPeriod').value.trim();
+    const endInputEl = document.getElementById('endPeriod');
 
     table.innerHTML = `<tr><td colspan="8" class="py-12 text-center text-slate-400">載入中...</td></tr>`;
 
     try {
-        // ==================== 這裡可以輕鬆切換來源 ====================
-        let data = await window.getDrawsFromCSV(100);     // ← 目前使用 CSV
-        // let data = await window.getDrawsByType("今彩539", 100);   // ← 未來想用 Firebase 時改這行
+        // 從 CSV 抓取資料（先多抓一點方便找最新期數）
+        let data = await window.getDrawsFromCSV(200);
 
         if (data.length === 0) {
-            table.innerHTML = `<tr><td colspan="8" class="py-12 text-center text-slate-400">尚無資料，請確認資料來源</td></tr>`;
+            table.innerHTML = `<tr><td colspan="8" class="py-12 text-center text-slate-400">尚無資料，請確認 539.csv 檔案</td></tr>`;
             return;
         }
 
+        // === 自動設定結束期數為最新一期 ===
+        if (data.length > 0) {
+            // 因為資料已經由舊到新排序，最後一筆就是最新期數
+            const latestPeriod = data[data.length - 1].period;
+            if (endInputEl && !endInputEl.value) {
+                endInputEl.value = latestPeriod;
+            }
+        }
+
         // 期數區間過濾
-        if (startInput || endInput) {
+        if (startInput || endInputEl.value) {
+            const endVal = endInputEl.value;
             data = data.filter(item => {
                 const p = item.period || "";
                 if (startInput && p < startInput) return false;
-                if (endInput && p > endInput) return false;
+                if (endVal && p > endVal) return false;
                 return true;
             });
         }
 
-        // 限制顯示筆數
+        // 限制最多顯示 200 筆
         data = data.slice(0, 200);
 
         let html = `<thead><tr class="bg-lab-bg border-b border-lab-border">`;
@@ -275,7 +286,7 @@ window.loadHistoryGrid = async function() {
         }
         html += `</tr></thead><tbody class="text-sm">`;
 
-        const sortedData = data;   // 來源已經排好序了
+        const sortedData = data;
 
         for (const item of sortedData) {
             const periodTail = item.period ? item.period.slice(-3) : '---';
@@ -302,8 +313,8 @@ window.loadHistoryGrid = async function() {
         window.loadHighlightsFromLocalStorage();
 
     } catch (err) {
-        console.error("載入歷史資料失敗:", err);
-        table.innerHTML = `<tr><td colspan="8" class="py-12 text-center text-red-400">載入失敗，請確認資料來源</td></tr>`;
+        console.error(err);
+        table.innerHTML = `<tr><td colspan="8" class="py-12 text-center text-red-400">載入失敗，請確認 539.csv 檔案</td></tr>`;
     }
 };
 
@@ -449,12 +460,17 @@ window.loadHighlightsFromLocalStorage = function() {
 };
 
 // 切換到歷史頁面時自動載入
+// 切換到歷史頁面時自動載入（優化版 - 自動填入最新期數）
 const originalSwitchView = window.switchView;
+
 window.switchView = (viewId) => {
     originalSwitchView(viewId);
+
+    // 只有切換到歷史頁面時才自動載入與設定最新期數
     if (viewId === 'history') {
-        const endP = document.getElementById('endPeriod');
-        if (endP && !endP.value) endP.value = "114300"; 
-        setTimeout(window.loadHistoryGrid, 120);
+        // 延遲一點時間，讓畫面渲染完成後再執行
+        setTimeout(() => {
+            window.loadHistoryGrid();   // loadHistoryGrid 內部會自動設定最新期數
+        }, 150);
     }
 };
