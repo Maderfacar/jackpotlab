@@ -166,7 +166,7 @@ document.addEventListener("DOMContentLoaded", initLIFF);
 
 // ====================== 歷史網格記錄功能 (方案 B - 起始/結束期數) ======================
 
-async function loadHistoryGrid() {
+window.loadHistoryGrid = async function() {
     const table = document.getElementById('historyGrid');
     if (!table) return;
 
@@ -176,7 +176,7 @@ async function loadHistoryGrid() {
     table.innerHTML = `<tr><td colspan="8" class="py-12 text-center text-slate-400">載入中...</td></tr>`;
 
     try {
-        let data = await window.getDrawsByType("今彩539", 300); // 先抓較多筆，再過濾
+        let data = await window.getDrawsByType("今彩539", 300);
 
         if (data.length === 0) {
             table.innerHTML = `<tr><td colspan="8" class="py-12 text-center text-slate-400">尚無資料，請先使用匯入工具匯入今彩539記錄</td></tr>`;
@@ -191,8 +191,7 @@ async function loadHistoryGrid() {
             data = data.filter(item => item.period <= endInput);
         }
 
-        // 限制最多顯示 200 筆，避免過度卡頓
-        data = data.slice(0, 200);
+        data = data.slice(0, 200); // 限制最多200筆
 
         let html = `
             <thead>
@@ -210,7 +209,6 @@ async function loadHistoryGrid() {
             <tbody class="text-sm">
         `;
 
-        // 由舊到新排序（最新一期在最下方）
         const sortedData = [...data].sort((a, b) => a.period.localeCompare(b.period));
 
         for (const item of sortedData) {
@@ -226,7 +224,7 @@ async function loadHistoryGrid() {
 
             item.numbers.forEach((num, idx) => {
                 const cellId = `${periodTail}_${idx+4}`;
-                html += `<td onclick="toggleCellHighlight('${cellId}', this)" 
+                html += `<td onclick="window.toggleCellHighlight('${cellId}', this)" 
                              class="px-3 py-3 text-center font-mono border-r border-lab-border highlight-cell" 
                              data-cell-id="${cellId}">${num.toString().padStart(2, '0')}</td>`;
             });
@@ -237,42 +235,41 @@ async function loadHistoryGrid() {
         html += `</tbody>`;
         table.innerHTML = html;
 
-        loadHighlightsFromLocalStorage();
+        window.loadHighlightsFromLocalStorage();
 
     } catch (err) {
         console.error(err);
         table.innerHTML = `<tr><td colspan="8" class="py-12 text-center text-red-400">載入失敗，請稍後再試</td></tr>`;
     }
-}
+};
 
-// 格子標記功能 - localStorage
-function toggleCellHighlight(cellId, element) {
+window.toggleCellHighlight = function(cellId, element) {
     const current = element.getAttribute('data-highlight') || '';
     
     if (current === 'border') {
         element.style.border = '';
         element.setAttribute('data-highlight', '');
-        removeHighlightFromStorage(cellId);
+        window.removeHighlightFromStorage(cellId);
     } else {
         element.style.border = '2px solid #22d3ee';
         element.setAttribute('data-highlight', 'border');
-        saveHighlightToStorage(cellId, 'border');
+        window.saveHighlightToStorage(cellId, 'border');
     }
-}
+};
 
-function saveHighlightToStorage(cellId, type) {
+window.saveHighlightToStorage = function(cellId, type) {
     let highlights = JSON.parse(localStorage.getItem('gridHighlights_539') || '{}');
     highlights[cellId] = type;
     localStorage.setItem('gridHighlights_539', JSON.stringify(highlights));
-}
+};
 
-function removeHighlightFromStorage(cellId) {
+window.removeHighlightFromStorage = function(cellId) {
     let highlights = JSON.parse(localStorage.getItem('gridHighlights_539') || '{}');
     delete highlights[cellId];
     localStorage.setItem('gridHighlights_539', JSON.stringify(highlights));
-}
+};
 
-function loadHighlightsFromLocalStorage() {
+window.loadHighlightsFromLocalStorage = function() {
     const highlights = JSON.parse(localStorage.getItem('gridHighlights_539') || '{}');
     document.querySelectorAll('.highlight-cell').forEach(cell => {
         const cellId = cell.getAttribute('data-cell-id');
@@ -281,16 +278,15 @@ function loadHighlightsFromLocalStorage() {
             cell.setAttribute('data-highlight', 'border');
         }
     });
-}
+};
 
-// 切換到歷史頁面時自動載入（預設顯示最近60期）
+// 進入歷史頁面時自動載入
 const originalSwitchView = window.switchView;
 window.switchView = (viewId) => {
     originalSwitchView(viewId);
     if (viewId === 'history') {
-        // 預設填入最近60期（需依實際期數調整）
         const endP = document.getElementById('endPeriod');
-        if (endP && !endP.value) endP.value = "114300";   // 可依你實際最大期數調整
-        setTimeout(loadHistoryGrid, 150);
+        if (endP && !endP.value) endP.value = "114300";   // ← 請改成你實際最大的期數
+        setTimeout(window.loadHistoryGrid, 150);
     }
 };
