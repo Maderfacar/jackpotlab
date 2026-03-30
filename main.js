@@ -87,48 +87,35 @@ function renderLogoutState() {
     if(mPicBox) mPicBox.onclick = () => liff.login();
 }
 
-// [修正] 工具箱顯示邏輯
+// [修正] 工具箱顯示邏輯 - 確保動畫平滑且不消失
 window.minimizeToolbox = () => {
     const tb = document.getElementById('toolbox');
     const dot = document.getElementById('dot');
+    
+    // 1. 先跑位移與透明度動畫
     tb.classList.add('translate-y-[120%]', 'opacity-0');
+    
+    // 2. 等動畫跑完 (500ms) 再徹底隱藏
     setTimeout(() => {
         tb.classList.add('hidden');
         dot.style.display = 'flex';
+        dot.classList.remove('hidden');
     }, 500);
 };
 
 window.restoreToolbox = () => {
     const tb = document.getElementById('toolbox');
     const dot = document.getElementById('dot');
+    
+    // 1. 先移除隱藏，讓瀏覽器抓到元素高度
     tb.classList.remove('hidden');
     dot.style.display = 'none';
+    dot.classList.add('hidden');
+    
+    // 2. 稍微延遲 (10ms) 再移除動畫類，觸發滑入效果
     setTimeout(() => {
         tb.classList.remove('translate-y-[120%]', 'opacity-0');
     }, 10);
-};
-
-// [修正] 計算機運算邏輯
-let currentInput = "";
-window.cin = (val) => {
-    currentInput += val;
-    document.getElementById('disp').innerText = currentInput;
-};
-window.ccr = () => {
-    currentInput = "";
-    document.getElementById('disp').innerText = "0";
-};
-window.crs = () => {
-    try {
-        // 防止空輸入
-        if(!currentInput) return;
-        const result = eval(currentInput); 
-        currentInput = result.toString();
-        document.getElementById('disp').innerText = currentInput;
-    } catch (e) {
-        document.getElementById('disp').innerText = "ERR";
-        currentInput = "";
-    }
 };
 
 // 啟動
