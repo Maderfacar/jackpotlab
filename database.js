@@ -101,10 +101,16 @@ window.getDrawsByType = async (type = "今彩539", limit = 20) => {
 
 // ====================== 從 CSV 抓取今彩539 資料 (不使用 Firebase) ======================
 
+// ====================== 從 CSV 抓取今彩539 資料 (從最新期開始抓取) ======================
+
 window.getDrawsFromCSV = async (limit = 60) => {
     try {
-        // 因為 CSV 與 database.js 同目錄，所以相對路徑為 "./539.csv"
-        const response = await fetch('./539.csv');
+        const baseUrl = window.location.origin + window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/'));
+        const csvUrl = baseUrl + '/539.csv';
+
+        console.log("正在從以下路徑抓取 CSV:", csvUrl);
+
+        const response = await fetch(csvUrl);
         if (!response.ok) {
             throw new Error(`CSV 載入失敗: ${response.status}`);
         }
@@ -113,7 +119,7 @@ window.getDrawsFromCSV = async (limit = 60) => {
         const lines = csvText.trim().split('\n');
         const result = [];
 
-        for (let i = 0; i < lines.length && result.length < limit * 2; i++) {  // 多抓一點再過濾
+        for (let i = 0; i < lines.length; i++) {
             const line = lines[i].trim();
             if (!line) continue;
 
@@ -126,14 +132,13 @@ window.getDrawsFromCSV = async (limit = 60) => {
 
             if (numbers.length !== 5) continue;
 
-            // 日期轉換
             let drawDate = '';
-            if (rawDate.includes('月')) {
-                const year = 1911 + parseInt(period.substring(0, 3));
-                const monthDay = rawDate.replace(/月|日/g, ',').split(',');
-                const month = parseInt(monthDay[0]) || 1;
-                const day = parseInt(monthDay[1]) || 1;
-                drawDate = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+            if (rawDate && rawDate.includes('月')) {
+                const yearPrefix = 1911 + parseInt(period.substring(0, 3) || 0);
+                const dateParts = rawDate.replace(/[月日]/g, ' ').trim().split(/\s+/);
+                const month = parseInt(dateParts[0]) || 1;
+                const day = parseInt(dateParts[1]) || 1;
+                drawDate = `${yearPrefix}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
             }
 
             result.push({
@@ -147,14 +152,22 @@ window.getDrawsFromCSV = async (limit = 60) => {
             });
         }
 
-        // 由舊到新排序（最新一期在最下面）
-        result.sort((a, b) => a.period.localeCompare(b.period));
+        if (result.length === 0) {
+            console.log("CSV 中沒有有效資料");
+            return [];
+        }
 
-        // 取 limit 筆
-        const finalResult = result.slice(0, limit);
+        // === 關鍵修正：先降序排序（最新的排在前面）===
+        result.sort((a, b) => (b.period || "").localeCompare(a.period || ""));
 
-        console.log(`[getDrawsFromCSV] 成功從 CSV 抓取 ${finalResult.length} 筆資料`);
-        return finalResult;
+        // 取出最新的 limit 筆
+        const latestData = result.slice(0, limit);
+
+        // 再轉成升序，讓最新一期排在表格最下面
+        latestData.sort((a, b) => (a.period || "").localeCompare(b.period || ""));
+
+        console.log(`[getDrawsFromCSV] 成功從 CSV 抓取最新的 ${latestData.length} 筆資料`);
+        return latestData;
 
     } catch (error) {
         console.error("從 CSV 抓取資料失敗:", error);
