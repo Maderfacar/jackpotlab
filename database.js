@@ -98,3 +98,66 @@ window.getDrawsByType = async (type = "今彩539", limit = 20) => {
         return [];
     }
 };
+
+// ====================== 從 CSV 抓取今彩539 資料 (不使用 Firebase) ======================
+
+window.getDrawsFromCSV = async (limit = 60) => {
+    try {
+        // 因為 CSV 與 database.js 同目錄，所以相對路徑為 "./539.csv"
+        const response = await fetch('./539.csv');
+        if (!response.ok) {
+            throw new Error(`CSV 載入失敗: ${response.status}`);
+        }
+
+        const csvText = await response.text();
+        const lines = csvText.trim().split('\n');
+        const result = [];
+
+        for (let i = 0; i < lines.length && result.length < limit * 2; i++) {  // 多抓一點再過濾
+            const line = lines[i].trim();
+            if (!line) continue;
+
+            const parts = line.split(',').map(p => p.trim());
+            if (parts.length < 7) continue;
+
+            const period = parts[0];
+            const rawDate = parts[1];
+            const numbers = parts.slice(2, 7).map(n => parseInt(n, 10)).filter(n => !isNaN(n));
+
+            if (numbers.length !== 5) continue;
+
+            // 日期轉換
+            let drawDate = '';
+            if (rawDate.includes('月')) {
+                const year = 1911 + parseInt(period.substring(0, 3));
+                const monthDay = rawDate.replace(/月|日/g, ',').split(',');
+                const month = parseInt(monthDay[0]) || 1;
+                const day = parseInt(monthDay[1]) || 1;
+                drawDate = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+            }
+
+            result.push({
+                id: `539_${period}`,
+                type: "今彩539",
+                period: period,
+                drawDate: drawDate,
+                numbers: numbers.sort((a, b) => a - b),
+                special: null,
+                secondZone: null
+            });
+        }
+
+        // 由舊到新排序（最新一期在最下面）
+        result.sort((a, b) => a.period.localeCompare(b.period));
+
+        // 取 limit 筆
+        const finalResult = result.slice(0, limit);
+
+        console.log(`[getDrawsFromCSV] 成功從 CSV 抓取 ${finalResult.length} 筆資料`);
+        return finalResult;
+
+    } catch (error) {
+        console.error("從 CSV 抓取資料失敗:", error);
+        return [];
+    }
+};
