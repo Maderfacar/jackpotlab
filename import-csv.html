@@ -17,12 +17,11 @@
 <div class="max-w-4xl mx-auto p-6">
     <div class="mb-8">
         <h1 class="text-3xl font-bold text-cyan-400">彩券歷史資料匯入工具</h1>
-        <p class="text-gray-400 mt-2">支援今彩539、大樂透、威力彩等未來擴充</p>
+        <p class="text-gray-400 mt-2">Document ID 格式：彩種代碼_期數（避免碰撞）</p>
     </div>
 
     <div class="bg-gray-900 rounded-2xl border border-gray-700 p-8">
         
-        <!-- 採種選擇 -->
         <div class="mb-6">
             <label class="block text-sm font-medium text-gray-400 mb-2">採種</label>
             <select id="lotteryType" class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-cyan-500">
@@ -32,7 +31,6 @@
             </select>
         </div>
 
-        <!-- CSV 輸入區 -->
         <div class="mb-6">
             <label class="block text-sm font-medium text-gray-400 mb-2">貼上 CSV 內容</label>
             <textarea id="csvInput" rows="12" 
@@ -51,18 +49,19 @@
             </button>
         </div>
 
-        <!-- 狀態顯示 -->
-        <div id="status" class="mt-6 min-h-[120px] text-sm"></div>
+        <div id="status" class="mt-6 min-h-[140px] text-sm"></div>
     </div>
 
     <div class="mt-8 text-xs text-gray-500 text-center">
-        注意：日期格式目前預設「114年」轉為 2025 年<br>
-        如需調整年份轉換規則，請告訴我
+        Document ID 規則：<br>
+        今彩539 → 539_114001<br>
+        大樂透 → Lotto_114001<br>
+        威力彩 → Power_114001
     </div>
 </div>
 
 <script>
-// Firebase 配置（與你的主專案相同）
+// Firebase 配置
 const firebaseConfig = {
     apiKey: "AIzaSyAOuoIXa7WLh3uKsX4V9hp66V2m_0THJuU",
     authDomain: "jackpot-19965.firebaseapp.com",
@@ -72,9 +71,15 @@ const firebaseConfig = {
     appId: "1:736576405476:web:c8422400537b197da111f1"
 };
 
-// 初始化 Firebase
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
+
+function getTypeCode(type) {
+    if (type === "今彩539") return "539";
+    if (type === "大樂透") return "Lotto";
+    if (type === "威力彩") return "Power";
+    return "Unknown";
+}
 
 async function importCSV() {
     const type = document.getElementById('lotteryType').value;
@@ -92,6 +97,7 @@ async function importCSV() {
     let success = 0;
     let failed = 0;
     const batchSize = 40;
+    const typeCode = getTypeCode(type);
 
     for (let i = 0; i < lines.length; i += batchSize) {
         const batch = lines.slice(i, i + batchSize);
@@ -114,16 +120,17 @@ async function importCSV() {
                 if (type === "今彩539") {
                     numbers = parts.slice(2, 7).map(n => parseInt(n, 10)).filter(n => !isNaN(n));
                 } else {
-                    // 未來大樂透、威力彩可在此擴充
                     numbers = parts.slice(2).map(n => parseInt(n, 10)).filter(n => !isNaN(n));
                 }
 
-                // 日期轉換：114年1月1日 → 2025-01-01
+                // 日期轉換
                 const yearPrefix = parseInt(period.substring(0, 3)) + 1911;
                 const dateParts = rawDate.replace(/[月日]/g, ' ').trim().split(/\s+/);
                 const month = parseInt(dateParts[0]) || 1;
                 const day = parseInt(dateParts[1]) || 1;
                 const drawDate = `${yearPrefix}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+
+                const documentId = `${typeCode}_${period}`;
 
                 const docData = {
                     type: type,
@@ -131,11 +138,11 @@ async function importCSV() {
                     drawDate: drawDate,
                     numbers: numbers.sort((a, b) => a - b),
                     special: type === "今彩539" ? null : null,
-                    secondZone: null,
+                    secondZone: type === "威力彩" ? null : null,   // 未來威力彩可在此填入
                     importedAt: firebase.firestore.FieldValue.serverTimestamp()
                 };
 
-                await db.collection("draws").doc(period).set(docData, { merge: true });
+                await db.collection("draws").doc(documentId).set(docData, { merge: true });
                 success++;
             } catch (err) {
                 console.error("匯入失敗:", line, err);
@@ -143,7 +150,6 @@ async function importCSV() {
             }
         }
 
-        // 避免單次寫入過多
         if (i + batchSize < lines.length) {
             await new Promise(r => setTimeout(r, 600));
         }
@@ -152,9 +158,10 @@ async function importCSV() {
     statusEl.innerHTML = `
         <div class="bg-gray-800 rounded-xl p-5">
             <p class="text-green-400 font-medium">匯入完成！</p>
+            <p>採種：${type}</p>
             <p>成功：${success} 筆</p>
             <p class="text-red-400">失敗：${failed} 筆</p>
-            <p class="text-gray-400 text-xs mt-3">Collection: draws</p>
+            <p class="text-xs text-gray-400 mt-2">Document ID 格式：${typeCode}_期數</p>
         </div>
     `;
 }
