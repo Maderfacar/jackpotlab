@@ -105,29 +105,38 @@
             </section>
 
             <!-- 歷史記錄網格視圖 -->
-            
-            <section id="view-history" class="spa-view hidden flex flex-col h-full p-4 lg:p-6">
+     
+<section id="view-history" class="spa-view hidden flex flex-col h-full p-4 lg:p-6">
     <div class="bg-lab-card rounded-3xl border border-lab-border flex flex-col h-full overflow-hidden">
-        <!-- 期數選擇區域（壓縮高度） -->
-        <div class="period-input-area border-b border-lab-border bg-lab-card flex-shrink-0">
-            <div class="flex flex-col sm:flex-row gap-4 items-end">
+        
+       
+        <div class="period-input-area border-b border-lab-border bg-lab-card flex-shrink-0 p-4">
+            <div class="flex flex-row gap-3 items-end">
                 <div class="flex-1">
                     <div class="text-xs text-slate-400 mb-1">起始期數</div>
-                    <input id="startPeriod" type="text" placeholder="例如: 114001" 
+                    <input id="startPeriod" type="text" placeholder="114001" 
                            class="w-full bg-lab-bg border border-lab-border rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-cyan-500 font-mono">
                 </div>
                 <div class="flex-1">
                     <div class="text-xs text-slate-400 mb-1">結束期數</div>
-                    <input id="endPeriod" type="text" placeholder="例如: 114060" 
+                    <input id="endPeriod" type="text" placeholder="114060" 
                            class="w-full bg-lab-bg border border-lab-border rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-cyan-500 font-mono">
                 </div>
                 <button onclick="window.loadHistoryGrid()" 
-                        class="px-6 py-3 bg-cyan-500 text-black font-bold rounded-2xl hover:bg-cyan-400 transition whitespace-nowrap flex-shrink-0">
-                    載入資料
+                        class="px-5 py-3 bg-cyan-500 text-black font-bold rounded-2xl hover:bg-cyan-400 transition whitespace-nowrap flex-shrink-0 text-sm">
+                    載入
                 </button>
             </div>
         </div>
         
+        <!-- 表格區域 -->
+        <div class="table-container flex-1 overflow-y-auto no-scrollbar p-2">
+            <table id="historyGrid" class="history-grid w-full text-sm border-collapse">
+                <!-- JS 動態產生 -->
+            </table>
+        </div>
+    </div>
+</section>
         <!-- 表格區域 -->
         <div class="table-container flex-1 overflow-y-auto no-scrollbar p-2">
             <table id="historyGrid" class="history-grid w-full text-sm border-collapse">
