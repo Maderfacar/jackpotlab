@@ -87,15 +87,48 @@ function renderLogoutState() {
     if(mPicBox) mPicBox.onclick = () => liff.login();
 }
 
-// 工具箱邏輯 (修正恢復顯示問題)
+// [修正] 工具箱顯示邏輯
 window.minimizeToolbox = () => {
-    document.getElementById('toolbox').classList.add('hidden');
-    document.getElementById('dot').style.display = 'flex';
-    document.getElementById('dot').classList.remove('hidden');
+    const tb = document.getElementById('toolbox');
+    const dot = document.getElementById('dot');
+    tb.classList.add('translate-y-[120%]', 'opacity-0');
+    setTimeout(() => {
+        tb.classList.add('hidden');
+        dot.style.display = 'flex';
+    }, 500);
 };
+
 window.restoreToolbox = () => {
-    document.getElementById('toolbox').classList.remove('hidden');
-    document.getElementById('dot').style.display = 'none';
+    const tb = document.getElementById('toolbox');
+    const dot = document.getElementById('dot');
+    tb.classList.remove('hidden');
+    dot.style.display = 'none';
+    setTimeout(() => {
+        tb.classList.remove('translate-y-[120%]', 'opacity-0');
+    }, 10);
+};
+
+// [修正] 計算機運算邏輯
+let currentInput = "";
+window.cin = (val) => {
+    currentInput += val;
+    document.getElementById('disp').innerText = currentInput;
+};
+window.ccr = () => {
+    currentInput = "";
+    document.getElementById('disp').innerText = "0";
+};
+window.crs = () => {
+    try {
+        // 防止空輸入
+        if(!currentInput) return;
+        const result = eval(currentInput); 
+        currentInput = result.toString();
+        document.getElementById('disp').innerText = currentInput;
+    } catch (e) {
+        document.getElementById('disp').innerText = "ERR";
+        currentInput = "";
+    }
 };
 
 // 啟動
