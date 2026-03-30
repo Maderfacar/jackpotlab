@@ -10,7 +10,12 @@
             darkMode: 'class',
             theme: { 
                 extend: { 
-                    colors: { 'lab-bg': 'var(--bg-color)', 'lab-card': 'var(--card-color)', 'lab-border': 'var(--border-color)', 'lab-text': 'var(--text-main)', } 
+                    colors: { 
+                        'lab-bg': 'var(--bg-color)', 
+                        'lab-card': 'var(--card-color)', 
+                        'lab-border': 'var(--border-color)', 
+                        'lab-text': 'var(--text-main)', 
+                    } 
                 } 
             }
         }
@@ -21,14 +26,67 @@
 </head>
 <body class="min-h-screen flex flex-col lg:flex-row bg-lab-bg text-lab-text">
 
+    <header class="lg:hidden h-14 bg-lab-card border-b border-lab-border px-4 flex items-center justify-between sticky top-0 z-40">
+        <button onclick="toggleSidebar()" class="p-2 text-cyan-500">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+        </button>
+        <div class="font-bold text-sm tracking-tighter uppercase text-cyan-500">The Jackpot Lab</div>
+        <div id="mobileUser" class="w-8 h-8 rounded-full bg-slate-800 overflow-hidden border border-lab-border">
+            <img id="userPictureMobile" src="" class="w-full h-full object-cover hidden">
+        </div>
+    </header>
+
+    <aside id="sidebar" class="fixed inset-y-0 left-0 w-72 bg-lab-card border-r border-lab-border z-50 flex flex-col -translate-x-full lg:translate-x-0 lg:relative lg:flex shrink-0 transition-transform duration-300">
+        <div class="p-6 border-b border-lab-border flex justify-between items-center">
+            <h1 class="font-black tracking-tighter text-lg uppercase italic text-cyan-500">JACKPOT LAB</h1>
+            <button onclick="toggleSidebar()" class="lg:hidden text-slate-400">✕</button>
+        </div>
+        <div class="flex-1 overflow-y-auto p-4 space-y-6">
+            <div>
+                <div class="px-2 pb-3 text-[10px] font-bold text-slate-500 tracking-widest uppercase">Analysis Modules</div>
+                <label class="flex items-center justify-between p-4 bg-lab-bg rounded-xl border border-lab-border cursor-pointer transition hover:border-cyan-500">
+                    <div class="flex flex-col">
+                        <span class="text-[10px] text-cyan-500 font-mono">#FN-001</span>
+                        <span class="text-sm font-semibold">1-1 座標位移規律</span>
+                    </div>
+                    <input type="checkbox" checked class="w-5 h-5 rounded-full accent-cyan-500">
+                </label>
+            </div>
+            <div>
+                <div class="px-2 pb-3 text-[10px] font-bold text-slate-500 tracking-widest uppercase">Weighted Scoring</div>
+                <div class="space-y-4 px-2">
+                    <div class="flex justify-between text-[10px] font-bold"><span>座標權重</span><span id="v-coord">70%</span></div>
+                    <input type="range" class="w-full accent-cyan-500" oninput="document.getElementById('v-coord').innerText=this.value+'%'">
+                </div>
+            </div>
+        </div>
+        <div class="p-4 border-t border-lab-border">
+            <button onclick="toggleTheme()" class="w-full py-2 bg-lab-bg border border-lab-border rounded-lg text-xs font-bold transition hover:bg-slate-800">🌓 切換主題模式</button>
+        </div>
+    </aside>
+
     <main class="flex-1 flex flex-col min-w-0 relative">
         <header class="hidden lg:flex h-20 bg-lab-card border-b border-lab-border px-8 items-center justify-end">
-            </header>
+            <div id="liffLoginBtn" class="flex items-center gap-4 cursor-pointer">
+                <div class="text-right">
+                    <div id="userName" class="text-sm font-bold">Guest Login</div>
+                    <div id="userTitle" class="text-[9px] font-mono text-cyan-500 tracking-tighter opacity-60 uppercase">Wait Authorization</div>
+                </div>
+                <div class="w-12 h-12 rounded-xl border border-lab-border overflow-hidden bg-slate-800 shadow-sm">
+                    <img id="userPicture" src="" class="w-full h-full object-cover opacity-0 transition-opacity duration-300">
+                </div>
+            </div>
+        </header>
 
         <div id="spa-container" class="pb-32">
-            
             <section id="view-dashboard" class="spa-view p-4 lg:p-8 space-y-6">
-                </section>
+                <div class="analysis-card bg-lab-card p-10 rounded-3xl border border-lab-border shadow-sm text-center relative overflow-hidden">
+                    <div class="status-tag absolute top-6 right-8 bg-cyan-500 text-black px-3 py-1 rounded text-[10px] font-black italic">ANALYSIS</div>
+                    <h2 class="text-xs font-bold text-slate-400 mb-6 tracking-widest uppercase">Match Suggestion</h2>
+                    <div id="mainDisplay" class="w-32 h-32 rounded-full border-4 border-cyan-500 mx-auto flex items-center justify-center text-5xl font-mono font-bold text-cyan-500">18</div>
+                    <div class="mt-6 text-xl font-bold italic">Confidence: 88.5%</div>
+                </div>
+            </section>
 
             <section id="view-terminal" class="spa-view hidden p-4 lg:p-8">
                 <div class="bg-lab-card rounded-2xl border border-lab-border overflow-hidden flex flex-col">
@@ -36,19 +94,64 @@
                         <div class="font-bold text-xs uppercase tracking-widest text-cyan-500">Analysis Terminal</div>
                         <div class="text-[10px] text-slate-500">DATABASE: 539</div>
                     </div>
-
                     <div id="history-list" class="divide-y divide-lab-border">
-                        <div class="h-64 flex items-center justify-center text-slate-500 text-sm italic">
-                            數據引擎連線中...
-                        </div>
+                        <div class="h-64 flex items-center justify-center text-slate-500 text-sm italic">引擎加載中...</div>
                     </div>
                 </div>
             </section>
-
-            <section id="view-prediction" class="spa-view hidden p-4 lg:p-8">
-                </section>
         </div>
 
-        </main>
+        <nav class="fixed bottom-0 left-0 right-0 lg:left-72 bg-lab-card/90 backdrop-blur-md border-t border-lab-border h-16 flex items-center justify-around px-4 z-40 lg:hidden">
+            <button onclick="switchView('dashboard')" class="tab-item text-cyan-500 flex flex-col items-center">
+                <span class="text-[10px] font-bold uppercase">儀表板</span>
+            </button>
+            <button onclick="switchView('terminal')" class="tab-item text-slate-400 flex flex-col items-center">
+                <span class="text-[10px] font-bold uppercase">分析</span>
+            </button>
+            <button onclick="switchView('prediction')" class="tab-item text-slate-400 flex flex-col items-center">
+                <span class="text-[10px] font-bold uppercase">預測</span>
+            </button>
+        </nav>
+    </main>
+
+    <div id="overlay" class="fixed inset-0 bg-black/60 z-40 hidden opacity-0 transition-opacity lg:hidden" onclick="toggleSidebar()"></div>
+
+    <div id="toolbox" class="fixed bottom-6 right-6 w-80 rounded-2xl z-50 flex flex-col overflow-hidden border border-lab-border shadow-2xl transition-all duration-500 hidden translate-y-[120%] opacity-0 bg-lab-card">
+        <div class="flex items-center justify-between px-6 py-4 border-b border-lab-border cursor-pointer" onclick="minimizeToolbox()">
+            <span class="text-[11px] font-black tracking-widest text-cyan-500 uppercase">好用小物</span>
+            <span class="text-lg">−</span>
+        </div>
+        <div class="flex border-b border-lab-border bg-black/20">
+            <button id="tabNotes" onclick="switchTab('notes')" class="flex-1 py-3 text-[10px] font-bold border-b-2 border-cyan-500 text-cyan-500">便條紙</button>
+            <button id="tabCalc" onclick="switchTab('calc')" class="flex-1 py-3 text-[10px] font-bold text-slate-400">計算機</button>
+        </div>
+        <div id="p-notes" class="p-4 h-64 block">
+            <textarea id="note-txt" placeholder="在此輸入分析記錄..." class="w-full h-full bg-transparent border-none text-sm outline-none resize-none leading-relaxed text-lab-text"></textarea>
+        </div>
+        <div id="p-calc" class="p-4 h-72 hidden flex flex-col">
+            <div id="disp" class="bg-black/40 p-4 rounded-xl text-right font-mono text-2xl mb-4 h-14 flex items-center justify-end text-cyan-500">0</div>
+            <div class="grid grid-cols-4 gap-2 flex-1">
+                <button onclick="cin('7')" class="calc-btn">7</button>
+                <button onclick="cin('8')" class="calc-btn">8</button>
+                <button onclick="cin('9')" class="calc-btn">9</button>
+                <button onclick="cin('/')" class="calc-op">/</button>
+                <button onclick="cin('4')" class="calc-btn">4</button>
+                <button onclick="cin('5')" class="calc-btn">5</button>
+                <button onclick="cin('6')" class="calc-btn">6</button>
+                <button onclick="cin('*')" class="calc-op">*</button>
+                <button onclick="cin('1')" class="calc-btn">1</button>
+                <button onclick="cin('2')" class="calc-btn">2</button>
+                <button onclick="cin('3')" class="calc-btn">3</button>
+                <button onclick="cin('-')" class="calc-op">-</button>
+                <button onclick="ccr()" class="calc-op text-red-400">C</button>
+                <button onclick="cin('0')" class="calc-btn">0</button>
+                <button onclick="crs()" class="bg-cyan-500 text-black font-bold rounded">=</button>
+                <button onclick="cin('+')" class="calc-op">+</button>
+            </div>
+        </div>
+    </div>
+    <div id="dot" class="fixed bottom-8 right-8 w-14 h-14 rounded-full bg-cyan-500 flex items-center justify-center text-black font-black text-xs shadow-2xl z-50 cursor-pointer" onclick="restoreToolbox()">工具</div>
+
+    <script src="main.js"></script>
 </body>
 </html>
