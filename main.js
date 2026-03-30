@@ -73,22 +73,40 @@ window.crs = () => {
     }
 };
 
-// 修改後的初始化監聽
-document.addEventListener("DOMContentLoaded", () => {
-    initLIFF();
-});
+// --- [新增] SPA 視圖切換邏輯 ---
+function switchView(viewId) {
+    // 1. 隱藏所有視圖
+    document.querySelectorAll('.spa-view').forEach(view => {
+        view.classList.add('hidden');
+    });
+    // 2. 顯示點選的視圖
+    const target = document.getElementById(`view-${viewId}`);
+    if (target) target.classList.remove('hidden');
 
+    // 3. 更新底部導覽按鈕樣式 (僅手機版)
+    document.querySelectorAll('.tab-item').forEach(btn => {
+        btn.classList.remove('text-cyan-500');
+        btn.classList.add('text-slate-400');
+    });
+    // 高亮當前點擊的按鈕
+    if (event && event.currentTarget) {
+        event.currentTarget.classList.remove('text-slate-400');
+        event.currentTarget.classList.add('text-cyan-500');
+    }
+}
+
+// --- [修改] LIFF 初始化與 Firebase 銜接 ---
 async function initLIFF() {
     const liffId = "2009636686-ec6thLNX"; 
     try {
         await liff.init({ liffId });
-        console.log("LIFF Initialized"); // 偵錯用
+        console.log("LIFF Initialized");
 
         if (liff.isLoggedIn()) {
             const profile = await liff.getProfile();
             console.log("Profile Loaded:", profile.displayName);
 
-            // 更新桌機版
+            // 更新桌機版 UI
             const userNameEl = document.getElementById('userName');
             const userIdEl = document.getElementById('userId');
             const userPicEl = document.getElementById('userPicture');
@@ -100,11 +118,16 @@ async function initLIFF() {
                 userPicEl.style.opacity = "1";
             }
 
-            // 更新手機版
+            // 更新手機版 UI
             const mobilePicEl = document.getElementById('userPictureMobile');
             if (mobilePicEl && profile.pictureUrl) {
                 mobilePicEl.src = profile.pictureUrl;
                 mobilePicEl.classList.remove('hidden');
+            }
+
+            // 【核心銜接】呼叫 database.js 中的同步函數
+            if (window.syncUserToFirebase) {
+                window.syncUserToFirebase(profile);
             }
 
             // 移除登入點擊事件
@@ -120,3 +143,6 @@ async function initLIFF() {
         console.error("LIFF Init Failed", err);
     }
 }
+
+// 監聽載入
+document.addEventListener("DOMContentLoaded", initLIFF);
