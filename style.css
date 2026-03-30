@@ -25,8 +25,13 @@
     flex: 1 1 auto;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
-    height: 100%;           /* 改回 100% + flex 組合，更穩定 */
+    height: auto;
     min-height: 0;
+}
+
+html, body {
+    height: 100%;
+    overflow-x: hidden;              /* 只隱藏水平方向 */
 }
 
 /* 導覽列安全區域 */
