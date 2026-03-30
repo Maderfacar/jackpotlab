@@ -12,6 +12,12 @@
     --text-main: #f1f5f9;
 }
 
+body {
+    font-family: 'Inter', 'JetBrains Mono', sans-serif;
+    background-color: var(--bg-color);
+    color: var(--text-main);
+}
+
 .glass-widget {
     background: rgba(255, 255, 255, 0.7);
     backdrop-filter: blur(20px);
@@ -46,6 +52,7 @@
 #spa-container {
     height: calc(100vh - 64px - 64px); /* 減去頂部 Header 與 底部 Tab Bar */
     -webkit-overflow-scrolling: touch;
+    overflow-y: auto;
 }
 
 /* Tab Bar 磨砂玻璃效果 */
@@ -57,4 +64,9 @@
 /* 移除手機點擊藍色高亮 */
 * {
     -webkit-tap-highlight-color: transparent;
+}
+
+/* 輔助類別 */
+.spa-view {
+    @apply min-h-full;
 }
