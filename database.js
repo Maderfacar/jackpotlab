@@ -1,5 +1,6 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
 import { getFirestore, doc, getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { collection, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyAOuoIXa7WLh3uKsX4V9hp66V2m_0THJuU",
@@ -48,3 +49,34 @@ function updateUserUI(data) {
         titleEl.innerText = data.title || "數據學徒";
     }
 }
+
+// ====================== 歷史網格所需 - 抓取今彩539 資料 ======================
+
+import { collection, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+window.getDrawsByType = async (type = "今彩539", limit = 300) => {
+    try {
+        const drawsRef = collection(db, "draws");
+        const querySnapshot = await getDocs(drawsRef);
+
+        const result = [];
+
+        querySnapshot.forEach((docSnap) => {
+            const data = docSnap.data();
+            if (data.type === type) {
+                result.push({
+                    id: docSnap.id,
+                    ...data
+                });
+            }
+        });
+
+        // 按期數降序排序（最新在前）
+        result.sort((a, b) => b.period.localeCompare(a.period));
+
+        return result.slice(0, limit);
+    } catch (error) {
+        console.error("抓取資料失敗:", error);
+        return [];
+    }
+};
