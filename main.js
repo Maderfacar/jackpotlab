@@ -232,6 +232,8 @@ window.loadHistoryGrid = async function() {
 
 // ====================== 歷史網格記錄功能 ======================
 
+// ====================== 歷史網格記錄功能 (最終推薦版) ======================
+
 window.loadHistoryGrid = async function() {
     const table = document.getElementById('historyGrid');
     if (!table) return;
@@ -242,17 +244,27 @@ window.loadHistoryGrid = async function() {
     table.innerHTML = `<tr><td colspan="8" class="py-12 text-center text-slate-400">載入中...</td></tr>`;
 
     try {
-        // === 修改重點：改用 CSV 抓取 ===
-        let data = await window.getDrawsFromCSV(60);   // 從 CSV 抓取，預設 60 筆
+        // ==================== 這裡可以輕鬆切換來源 ====================
+        let data = await window.getDrawsFromCSV(100);     // ← 目前使用 CSV
+        // let data = await window.getDrawsByType("今彩539", 100);   // ← 未來想用 Firebase 時改這行
 
         if (data.length === 0) {
-            table.innerHTML = `<tr><td colspan="8" class="py-12 text-center text-slate-400">尚無資料，請確認 539.csv 檔案是否存在</td></tr>`;
+            table.innerHTML = `<tr><td colspan="8" class="py-12 text-center text-slate-400">尚無資料，請確認資料來源</td></tr>`;
             return;
         }
 
-        // 期數範圍過濾
-        if (startInput) data = data.filter(item => item.period >= startInput);
-        if (endInput) data = data.filter(item => item.period <= endInput);
+        // 期數區間過濾
+        if (startInput || endInput) {
+            data = data.filter(item => {
+                const p = item.period || "";
+                if (startInput && p < startInput) return false;
+                if (endInput && p > endInput) return false;
+                return true;
+            });
+        }
+
+        // 限制顯示筆數
+        data = data.slice(0, 200);
 
         let html = `<thead><tr class="bg-lab-bg border-b border-lab-border">`;
         html += `<th class="px-2 py-3 text-center text-[10px] font-bold text-slate-400 border-r border-lab-border">期數</th>`;
@@ -263,8 +275,7 @@ window.loadHistoryGrid = async function() {
         }
         html += `</tr></thead><tbody class="text-sm">`;
 
-        // 資料已經由舊到新排序
-        const sortedData = data;
+        const sortedData = data;   // 來源已經排好序了
 
         for (const item of sortedData) {
             const periodTail = item.period ? item.period.slice(-3) : '---';
@@ -291,8 +302,8 @@ window.loadHistoryGrid = async function() {
         window.loadHighlightsFromLocalStorage();
 
     } catch (err) {
-        console.error(err);
-        table.innerHTML = `<tr><td colspan="8" class="py-12 text-center text-red-400">載入失敗，請確認 539.csv 檔案</td></tr>`;
+        console.error("載入歷史資料失敗:", err);
+        table.innerHTML = `<tr><td colspan="8" class="py-12 text-center text-red-400">載入失敗，請確認資料來源</td></tr>`;
     }
 };
 
