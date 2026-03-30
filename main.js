@@ -158,41 +158,49 @@ window.crs = () => {
 // 啟動
 document.addEventListener("DOMContentLoaded", initLIFF);
 
-// 模擬 DataEngine 渲染一筆資料到終端機
-document.addEventListener("DOMContentLoaded", () => {
+// 強制渲染模擬數據的函數
+window.renderMockData = () => {
     const list = document.getElementById('history-list');
-    if (list) {
-        // 模擬延遲 1 秒後顯示資料
-        setTimeout(() => {
-            list.innerHTML = `
-                <div class="border-b border-lab-border p-4 hover:bg-white/5 transition-all cursor-pointer" onclick="toggleDetail(this)">
-                    <div class="flex items-center justify-between">
-                        <div class="flex flex-col w-14">
-                            <span class="text-[10px] font-mono text-cyan-500">#240030</span>
-                            <span class="text-[9px] opacity-40 text-lab-text">03/30</span>
-                        </div>
-                        <div class="flex gap-1.5 flex-1 justify-center">
-                            <span class="w-7 h-7 flex items-center justify-center rounded-full bg-slate-900 border border-lab-border text-xs font-bold text-cyan-400">05</span>
-                            <span class="w-7 h-7 flex items-center justify-center rounded-full bg-slate-900 border border-lab-border text-xs font-bold text-cyan-400">12</span>
-                            <span class="w-7 h-7 flex items-center justify-center rounded-full bg-slate-900 border border-lab-border text-xs font-bold text-cyan-400">18</span>
-                            <span class="w-7 h-7 flex items-center justify-center rounded-full bg-slate-900 border border-lab-border text-xs font-bold text-cyan-400">24</span>
-                            <span class="w-7 h-7 flex items-center justify-center rounded-full bg-slate-900 border border-lab-border text-xs font-bold text-cyan-400">33</span>
-                        </div>
-                        <div class="text-right w-10">
-                            <div class="text-[10px] font-bold text-slate-300">Σ 92</div>
-                        </div>
-                    </div>
-                    <div class="detail-panel hidden mt-4 pt-4 border-t border-dashed border-lab-border grid grid-cols-2 gap-2 animate-fadeIn">
-                        <div class="text-[10px] flex justify-between px-2"><span class="opacity-50 text-xs">尾數</span><span class="text-cyan-600">5.2.8.4.3</span></div>
-                        <div class="text-[10px] flex justify-between px-2"><span class="opacity-50 text-xs">單雙</span><span class="text-cyan-600">3:2</span></div>
-                    </div>
-                </div>
-            `;
-        }, 1000);
-    }
-});
+    if (!list) return;
 
-// 別忘了加上這個展開函數
+    // 模擬 3 筆數據，看會不會跑版
+    const mockItem = (period, date, nums, sum) => `
+        <div class="border-b border-lab-border p-4 hover:bg-white/5 transition-all cursor-pointer" onclick="toggleDetail(this)">
+            <div class="flex items-center justify-between">
+                <div class="flex flex-col w-14">
+                    <span class="text-[10px] font-mono text-cyan-500">#${period}</span>
+                    <span class="text-[9px] opacity-40 text-lab-text">${date}</span>
+                </div>
+                <div class="flex gap-1.5 flex-1 justify-center">
+                    ${nums.map(n => `<span class="w-7 h-7 flex items-center justify-center rounded-full bg-slate-900 border border-lab-border text-xs font-bold text-cyan-400">${n}</span>`).join('')}
+                </div>
+                <div class="text-right w-10">
+                    <div class="text-[10px] font-bold text-slate-300">Σ ${sum}</div>
+                </div>
+            </div>
+            <div class="detail-panel hidden mt-4 pt-4 border-t border-dashed border-lab-border grid grid-cols-2 gap-2">
+                <div class="text-[10px] flex justify-between px-2"><span class="opacity-50">尾數</span><span class="text-cyan-600">分析中...</span></div>
+                <div class="text-[10px] flex justify-between px-2"><span class="opacity-50">單雙</span><span class="text-cyan-600">3:2</span></div>
+            </div>
+        </div>
+    `;
+
+    list.innerHTML = 
+        mockItem('240030', '03/30', ['05','12','18','24','33'], 92) +
+        mockItem('240029', '03/29', ['01','10','15','22','39'], 87) +
+        mockItem('240028', '03/28', ['07','11','19','28','35'], 100);
+};
+
+// 修改你原本的 switchView，讓它在切換到 terminal 時自動渲染
+const originalSwitchView = window.switchView;
+window.switchView = (viewId) => {
+    originalSwitchView(viewId); // 執行原本的切換邏輯
+    if (viewId === 'terminal') {
+        window.renderMockData(); // 如果切換到終端機，立即刷出數據
+    }
+};
+
+// 展開函數
 window.toggleDetail = (el) => {
     const detail = el.querySelector('.detail-panel');
     if (detail) detail.classList.toggle('hidden');
