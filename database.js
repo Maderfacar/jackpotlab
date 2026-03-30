@@ -52,14 +52,16 @@ function updateUserUI(data) {
 
 // ====================== 提供給 main.js 使用的抓取函式 ======================
 
-window.getDrawsByType = async (type = "今彩539", limit = 300) => {
+// ====================== 抓取今彩539 開獎資料 ======================
+
+window.getDrawsByType = async (type = "今彩539", limit = 20) => {
     try {
         const { collection, getDocs } = await import("https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js");
 
         const drawsRef = collection(db, "draws");
         const querySnapshot = await getDocs(drawsRef);
 
-        const result = [];
+        let result = [];
 
         querySnapshot.forEach((docSnap) => {
             const data = docSnap.data();
@@ -71,20 +73,20 @@ window.getDrawsByType = async (type = "今彩539", limit = 300) => {
             }
         });
 
-        // 按期數降序排序（最新在前）
-        // result.sort((a, b) => (b.period || "").localeCompare(a.period || ""));
-        // 由舊到新排序（最新一期排在最下面）
-        //   result.sort((a, b) => a.period.localeCompare(b.period));
-        // 第一步：先按期數降序排序（最新的排在陣列前面）
+        if (result.length === 0) {
+            return [];
+        }
+
+        // 第一步：先按期數降序排序（最新的排在陣列最前面）
         result.sort((a, b) => (b.period || "").localeCompare(a.period || ""));
 
-        // 第二步：取出最新的 limit 筆
+        // 第二步：取出最新的 limit 筆資料
         result = result.slice(0, limit);
 
-        // 第三步：再把這 limit 筆改成升序（舊的在上面，最新在下面）
+        // 第三步：再改成升序排序（由舊到新），讓最新一期排在最下面
         result.sort((a, b) => (a.period || "").localeCompare(b.period || ""));
-      
-        return result.slice(0, limit);
+
+        return result;
 
     } catch (error) {
         console.error("抓取資料失敗:", error);
