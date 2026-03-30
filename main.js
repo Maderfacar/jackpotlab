@@ -268,11 +268,11 @@ window.showHighlightPanel = function(cellId, element) {
                     <div>
                         <div class="text-xs text-slate-400 mb-3">淺色背景</div>
                         <div class="grid grid-cols-5 gap-3">
-                            <button onclick="window.applyHighlight('${cellId}', 'bg', '#164e63')" class="h-11 rounded-2xl bg-[#164e63]"></button>
-                            <button onclick="window.applyHighlight('${cellId}', 'bg', '#1e40af')" class="h-11 rounded-2xl bg-[#1e40af]"></button>
-                            <button onclick="window.applyHighlight('${cellId}', 'bg', '#312e81')" class="h-11 rounded-2xl bg-[#312e81]"></button>
-                            <button onclick="window.applyHighlight('${cellId}', 'bg', '#4c1d95')" class="h-11 rounded-2xl bg-[#4c1d95]"></button>
-                            <button onclick="window.applyHighlight('${cellId}', 'bg', '#431407')" class="h-11 rounded-2xl bg-[#431407]"></button>
+                            <button onclick="window.applyHighlight('${cellId}', 'bg', '#EDEDE9')" class="h-11 rounded-2xl bg-[#EDEDE9]"></button>
+                            <button onclick="window.applyHighlight('${cellId}', 'bg', '#E3ECF3')" class="h-11 rounded-2xl bg-[#E3ECF3]"></button>
+                            <button onclick="window.applyHighlight('${cellId}', 'bg', '#E9EDC9')" class="h-11 rounded-2xl bg-[#E9EDC9]"></button>
+                            <button onclick="window.applyHighlight('${cellId}', 'bg', '#FEFAE0')" class="h-11 rounded-2xl bg-[#FEFAE0]"></button>
+                            <button onclick="window.applyHighlight('${cellId}', 'bg', '#EDE7ED')" class="h-11 rounded-2xl bg-[#EDE7ED]"></button>
                         </div>
                     </div>
                 </div>
