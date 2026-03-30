@@ -118,42 +118,45 @@
         </nav>
     </main>
 
-    <div id="toolbox" class="fixed bottom-6 right-6 w-80 glass-widget rounded-2xl z-50 flex flex-col overflow-hidden border border-lab-border shadow-2xl transition-all duration-500">
+    <div id="toolbox" class="fixed bottom-6 right-6 w-80 glass-widget rounded-2xl z-50 flex flex-col overflow-hidden border border-lab-border shadow-2xl transition-all duration-500 hidden translate-y-[120%] opacity-0">
         <div class="flex items-center justify-between px-6 py-4 bg-lab-card border-b border-lab-border cursor-pointer" onclick="minimizeToolbox()">
-            <span class="text-[11px] font-black tracking-widest text-cyan-500">TACTICAL SUITE</span>
+            <span class="text-[11px] font-black tracking-widest text-cyan-500 uppercase">Tactical Suite</span>
             <span class="text-lg">−</span>
         </div>
-        <div class="flex border-b border-lab-border">
-            <button id="tabNotes" class="flex-1 py-3 text-[10px] font-bold border-b-2 border-cyan-500 text-cyan-500">NOTES</button>
-            <button id="tabCalc" class="flex-1 py-3 text-[10px] font-bold text-slate-400">CALCULATOR</button>
+        <div class="flex border-b border-lab-border bg-lab-card">
+            <button id="tabNotes" class="flex-1 py-3 text-[10px] font-bold border-b-2 border-cyan-500 text-cyan-500">便條紙</button>
+            <button id="tabCalc" class="flex-1 py-3 text-[10px] font-bold text-slate-400">計算機</button>
         </div>
-        <div id="p-notes" class="p-4 h-64 block">
-            <textarea id="note-txt" placeholder="在此輸入分析記錄..." class="w-full h-full bg-transparent border-none text-sm outline-none resize-none leading-relaxed"></textarea>
+        
+        <div id="p-notes" class="p-4 h-64 block bg-lab-card/50">
+            <textarea id="note-txt" placeholder="在此輸入分析記錄..." class="w-full h-full bg-transparent border-none text-sm outline-none resize-none leading-relaxed text-lab-text"></textarea>
         </div>
-        <div id="p-calc" class="p-4 h-64 hidden flex flex-col">
-            <div id="disp" class="bg-black/5 dark:bg-black/20 p-4 rounded-xl text-right font-mono text-2xl mb-4 h-14 flex items-center justify-end">0</div>
+
+        <div id="p-calc" class="p-4 h-72 hidden flex flex-col bg-lab-card/50">
+            <div id="disp" class="bg-black/10 dark:bg-black/40 p-4 rounded-xl text-right font-mono text-2xl mb-4 h-14 flex items-center justify-end text-cyan-500">0</div>
             <div class="grid grid-cols-4 gap-2 flex-1">
-                <button onclick="cin('7')" class="bg-white/20 rounded-lg p-2 font-bold hover:bg-white/40">7</button>
-                <button onclick="cin('8')" class="bg-white/20 rounded-lg p-2 font-bold hover:bg-white/40">8</button>
-                <button onclick="cin('9')" class="bg-white/20 rounded-lg p-2 font-bold hover:bg-white/40">9</button>
-                <button onclick="cin('/')" class="text-cyan-500 font-bold p-2">/</button>
-                <button onclick="cin('4')" class="bg-white/20 rounded-lg p-2 font-bold hover:bg-white/40">4</button>
-                <button onclick="cin('5')" class="bg-white/20 rounded-lg p-2 font-bold hover:bg-white/40">5</button>
-                <button onclick="cin('6')" class="bg-white/20 rounded-lg p-2 font-bold hover:bg-white/40">6</button>
-                <button onclick="cin('*')" class="text-cyan-500 font-bold p-2">*</button>
-                <button onclick="cin('1')" class="bg-white/20 rounded-lg p-2 font-bold hover:bg-white/40">1</button>
-                <button onclick="cin('2')" class="bg-white/20 rounded-lg p-2 font-bold hover:bg-white/40">2</button>
-                <button onclick="cin('3')" class="bg-white/20 rounded-lg p-2 font-bold hover:bg-white/40">3</button>
-                <button onclick="cin('-')" class="text-cyan-500 font-bold p-2">-</button>
-                <button onclick="ccr()" class="text-red-500 font-bold p-2">C</button>
-                <button onclick="cin('0')" class="bg-white/20 rounded-lg p-2 font-bold hover:bg-white/40">0</button>
-                <button onclick="crs()" class="bg-cyan-500 text-white rounded-lg p-2 font-bold">=</button>
-                <button onclick="cin('+')" class="text-cyan-500 font-bold p-2">+</button>
+                <button onclick="cin('7')" class="calc-btn">7</button>
+                <button onclick="cin('8')" class="calc-btn">8</button>
+                <button onclick="cin('9')" class="calc-btn">9</button>
+                <button onclick="cin('/')" class="calc-op">/</button>
+                <button onclick="cin('4')" class="calc-btn">4</button>
+                <button onclick="cin('5')" class="calc-btn">5</button>
+                <button onclick="cin('6')" class="calc-btn">6</button>
+                <button onclick="cin('*')" class="calc-op">*</button>
+                <button onclick="cin('1')" class="calc-btn">1</button>
+                <button onclick="cin('2')" class="calc-btn">2</button>
+                <button onclick="cin('3')" class="calc-btn">3</button>
+                <button onclick="cin('-')" class="calc-op">-</button>
+                <button onclick="ccr()" class="calc-op text-red-500">C</button>
+                <button onclick="cin('0')" class="calc-btn">0</button>
+                <button onclick="crs()" class="bg-cyan-500 text-black rounded-lg p-2 font-bold hover:bg-cyan-400">=</button>
+                <button onclick="cin('+')" class="calc-op">+</button>
             </div>
         </div>
     </div>
 
-    <div id="dot" class="fixed bottom-8 right-8 w-14 h-14 rounded-full bg-cyan-500 items-center justify-center text-black font-black text-xs shadow-2xl z-50 cursor-pointer hidden" onclick="restoreToolbox()">工具</div>
+    <div id="dot" class="fixed bottom-8 right-8 w-14 h-14 rounded-full bg-cyan-500 flex items-center justify-center text-black font-black text-xs shadow-2xl z-50 cursor-pointer" onclick="restoreToolbox()">工具</div>
+
     <div id="overlay" class="fixed inset-0 bg-black/50 z-40 hidden opacity-0 transition-opacity lg:hidden" onclick="toggleSidebar()"></div>
 
     <script type="module" src="database.js"></script>
