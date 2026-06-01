@@ -46,7 +46,8 @@ function fromStored(stored: StoredDrawResult): DrawResult {
 
 /**
  * 寫入一批開獎紀錄。drawTerm 重複的會被覆蓋。
- * 同時把當批最新一期 mirror 到 latest/current。
+ * latest/current 只在這次 batch 的最高期 > 現存 latest 時才更新（避免 backfill
+ * 把舊 batch 的「該批最高」蓋過真正的最新）。
  */
 export async function upsertDraws(gameId: GameId, draws: DrawResult[]): Promise<void> {
   if (draws.length === 0) return
@@ -63,11 +64,20 @@ export async function upsertDraws(gameId: GameId, draws: DrawResult[]): Promise<
 
   await batch.commit()
 
-  const highest = draws.reduce((a, b) => (a.drawTerm > b.drawTerm ? a : b))
-  await firestore
+  const highestInBatch = draws.reduce((a, b) => (a.drawTerm > b.drawTerm ? a : b))
+  const latestRef = firestore
     .collection(COLLECTION).doc(gameId)
     .collection(LATEST_SUBCOLLECTION).doc(LATEST_DOC)
-    .set(toStored(highest))
+
+  await firestore.runTransaction(async (t) => {
+    const snap = await t.get(latestRef)
+    const existingDrawTerm = snap.exists
+      ? ((snap.data() as StoredDrawResult).drawTerm as number)
+      : 0
+    if (highestInBatch.drawTerm > existingDrawTerm) {
+      t.set(latestRef, toStored(highestInBatch))
+    }
+  })
 }
 
 /** 拉最新一期（讀 latest/current 鏡像 doc）。 */

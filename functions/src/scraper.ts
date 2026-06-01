@@ -160,8 +160,16 @@ async function writeDrawsBatch(draws: DrawResult[]): Promise<void> {
   }
   await batch.commit()
 
+  // latest 只在新批次最高期 > 現存時更新（避免被 backfill 舊批次蓋過）
   const top = draws.reduce((a, b) => (a.drawTerm > b.drawTerm ? a : b))
-  await db.collection('draws').doc(gameId).collection('latest').doc('current').set(top)
+  const latestRef = db.collection('draws').doc(gameId).collection('latest').doc('current')
+  await db.runTransaction(async (t) => {
+    const snap = await t.get(latestRef)
+    const existing = snap.exists ? ((snap.data()!.drawTerm as number) ?? 0) : 0
+    if (top.drawTerm > existing) {
+      t.set(latestRef, top)
+    }
+  })
 }
 
 async function writeHeartbeat(gameId: GameId, payload: Record<string, unknown>): Promise<void> {
