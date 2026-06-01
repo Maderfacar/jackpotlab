@@ -76,14 +76,16 @@ async function backfillDailyGame(gameId: GameId, years: number): Promise<void> {
   const buffer: DrawResult[] = []
   let totalSaved = 0
 
+  // 每年 sequence 從 SCAN_START 往下掃，足以涵蓋每日彩種（365）+ 緩衝
+  const SCAN_START = 400
   for (let rocYear = currentRocYear; rocYear >= oldestYear; rocYear--) {
-    log(`[${gameId}] scanning ROC year ${rocYear}`)
+    log(`[${gameId}] scanning ROC year ${rocYear} from seq ${SCAN_START}`)
     let consecutiveMisses = 0
-    const MAX_MISSES_TO_START = 100  // 還沒找到第一筆前的容忍度（年初空跑）
-    const MAX_MISSES_AFTER = 10     // 找到資料後的容忍度（年底結束）
+    const MAX_MISSES_TO_START = SCAN_START  // 還沒找到時就掃完整年
+    const MAX_MISSES_AFTER = 10              // 找到後 10 個 miss = 年底
     let foundFirst = false
 
-    for (let seq = 999; seq >= 1; seq--) {
+    for (let seq = SCAN_START; seq >= 1; seq--) {
       const period = rocYear * 1_000_000 + seq
       let raw: unknown
       try {
