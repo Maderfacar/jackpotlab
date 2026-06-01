@@ -192,7 +192,7 @@ export async function scrapeAndStore(gameId: GameId): Promise<ScrapeOutcome> {
   try {
     if (gameId === 'bingo_bingo') {
       const today = todayInTaipei()
-      const records = await fetchJson(`${API_BASE}/${GAMES.bingo_bingo.endpoint}?openDate=${today}`)
+      const records = await fetchJson(`${API_BASE}/${GAMES.bingo_bingo.endpoint}?openDate=${today}&pageNum=1&pageSize=500`)
       const arr = extractArray(records, GAMES.bingo_bingo.resultField)
       draws = arr.map(r => normalizeBingo(r, today))
     } else {

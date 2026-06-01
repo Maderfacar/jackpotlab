@@ -63,86 +63,77 @@ function log(message: string): void {
 }
 
 /**
- * 慢彩種 backfill：從最新一期往回掃，連續 N 期 404 視為「掃完了」。
+ * 慢彩種 backfill：用「年×期數」掃描。
+ * 每年從 sequence 999 往下掃，連續 N 個 miss 就跳到上一年。
+ * 比起跨年掃 period 數字，這樣不會浪費請求在年邊界的空隙上。
  */
 async function backfillDailyGame(gameId: GameId, years: number): Promise<void> {
   log(`[${gameId}] start — ${years} years`)
   const meta = GAMES[gameId]
 
-  const latest = await taiwanLottery.fetchLatestSnapshot()
-  const latestRaw
-    = gameId === 'lotto539' ? latest.daily539
-      : gameId === 'lotto649' ? latest.lotto649
-        : gameId === 'super_lotto638' ? latest.superLotto638
-          : null
-
-  if (!latestRaw) {
-    log(`[${gameId}] cannot determine latest period — abort`)
-    return
-  }
-
-  const topPeriod = latestRaw.period
-  const oldestYear = rocYearOf(new Date().getFullYear()) - years
+  const currentRocYear = rocYearOf(new Date().getFullYear())
+  const oldestYear = currentRocYear - (years - 1)
   const buffer: DrawResult[] = []
-  let consecutiveMisses = 0
-  const MAX_MISSES = 50  // 同年最多連 miss 50 期就跳到上一年從 max 開始
-  let scanPeriod = topPeriod
+  let totalSaved = 0
 
-  while (true) {
-    const rocYear = Math.floor(scanPeriod / 1_000_000)
-    if (rocYear < oldestYear) {
-      log(`[${gameId}] reached year ${rocYear} < oldestYear ${oldestYear} — stop`)
-      break
-    }
+  for (let rocYear = currentRocYear; rocYear >= oldestYear; rocYear--) {
+    log(`[${gameId}] scanning ROC year ${rocYear}`)
+    let consecutiveMisses = 0
+    const MAX_MISSES_TO_START = 100  // 還沒找到第一筆前的容忍度（年初空跑）
+    const MAX_MISSES_AFTER = 10     // 找到資料後的容忍度（年底結束）
+    let foundFirst = false
 
-    let raw: unknown
-    try {
-      raw = await fetchOne(gameId, scanPeriod)
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : 'unknown'
-      log(`[${gameId}] fetch ${scanPeriod} failed: ${msg}`)
-      await sleep(500)
-      scanPeriod--
-      continue
-    }
-
-    if (!raw) {
-      consecutiveMisses++
-      if (consecutiveMisses >= MAX_MISSES) {
-        // 跳到上一年最大期
-        const prevYear = rocYear - 1
-        scanPeriod = prevYear * 1_000_000 + 999
-        consecutiveMisses = 0
-        log(`[${gameId}] miss streak — jump to year ${prevYear}`)
+    for (let seq = 999; seq >= 1; seq--) {
+      const period = rocYear * 1_000_000 + seq
+      let raw: unknown
+      try {
+        raw = await fetchOne(gameId, period)
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : 'unknown'
+        log(`[${gameId}] fetch ${period} failed: ${msg}`)
+        await sleep(500)
         continue
       }
-      scanPeriod--
-      continue
-    }
 
-    consecutiveMisses = 0
-    try {
-      const normalized = normalizeOne(gameId, raw as Record<string, unknown>)
-      buffer.push(normalized)
-      if (buffer.length >= 50) {
-        await upsertDraws(gameId, buffer)
-        log(`[${gameId}] saved ${buffer.length}, latest=${meta.shortName} ${buffer[0]!.drawTerm}`)
-        buffer.length = 0
+      if (!raw) {
+        consecutiveMisses++
+        const limit = foundFirst ? MAX_MISSES_AFTER : MAX_MISSES_TO_START
+        if (consecutiveMisses >= limit) {
+          if (!foundFirst) {
+            log(`[${gameId}] year ${rocYear} miss limit @ seq ${seq} — skip year`)
+          } else {
+            log(`[${gameId}] year ${rocYear} ended @ seq ${seq + limit} — flush`)
+          }
+          break
+        }
+        continue
       }
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : 'unknown'
-      log(`[${gameId}] normalize ${scanPeriod} failed: ${msg}`)
-    }
 
-    scanPeriod--
-    await sleep(150)  // 對台彩客氣一點
+      consecutiveMisses = 0
+      foundFirst = true
+      try {
+        const normalized = normalizeOne(gameId, raw as Record<string, unknown>)
+        buffer.push(normalized)
+        if (buffer.length >= 50) {
+          await upsertDraws(gameId, buffer)
+          totalSaved += buffer.length
+          log(`[${gameId}] saved ${buffer.length} (total ${totalSaved}), latest=${meta.shortName} ${buffer[0]!.drawTerm}`)
+          buffer.length = 0
+        }
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : 'unknown'
+        log(`[${gameId}] normalize ${period} failed: ${msg}`)
+      }
+      await sleep(120)
+    }
   }
 
   if (buffer.length > 0) {
     await upsertDraws(gameId, buffer)
-    log(`[${gameId}] final saved ${buffer.length}`)
+    totalSaved += buffer.length
+    log(`[${gameId}] final saved ${buffer.length} (total ${totalSaved})`)
   }
-  log(`[${gameId}] done`)
+  log(`[${gameId}] done — total ${totalSaved} records`)
 }
 
 /**

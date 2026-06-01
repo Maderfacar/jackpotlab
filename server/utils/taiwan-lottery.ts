@@ -82,10 +82,11 @@ export async function fetchSuperLotto638ByPeriod(period: number): Promise<SuperL
 
 /**
  * 賓果賓果 — 用日期查當日全部期數（通常 200+ 筆）。
+ * 注意：API 預設 pageSize=10，必須明指 pageSize 才能拿全部。
  * @param date YYYY-MM-DD (台北時區)
  */
 export async function fetchBingoByDate(date: string): Promise<BingoBingoRecord[]> {
-  const url = `${API_BASE}/${GAMES.bingo_bingo.endpoint}?openDate=${date}`
+  const url = `${API_BASE}/${GAMES.bingo_bingo.endpoint}?openDate=${date}&pageNum=1&pageSize=500`
   return extractArray(await fetchJson(url), GAMES.bingo_bingo.resultField, bingoBingoRecordSchema)
 }
 
