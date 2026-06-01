@@ -41,6 +41,24 @@ useSeoMeta({
       </template>
 
       <template #right>
+        <UButton
+          to="/draws"
+          color="neutral"
+          variant="ghost"
+          icon="i-lucide-list-checks"
+          size="sm"
+        >
+          開獎號碼
+        </UButton>
+        <UButton
+          to="/admin/health"
+          color="neutral"
+          variant="ghost"
+          icon="i-lucide-activity"
+          size="sm"
+        >
+          系統健康
+        </UButton>
         <UColorModeButton />
       </template>
     </UHeader>

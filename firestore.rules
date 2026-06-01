@@ -1,0 +1,66 @@
+rules_version = '2';
+
+// Firestore 安全規則。
+// 寫入一律走 admin SDK（Cloud Functions / Nuxt server route），不受規則限制 — 規則只管 client SDK。
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    /**
+     * draws/{gameId}/results/{drawTerm}
+     * draws/{gameId}/latest/current
+     *
+     * 開獎號碼 = 公開資料。任何人（含匿名 anon user）可讀。
+     * 寫入 client 一律拒絕 — 只有 admin SDK 可寫。
+     */
+    match /draws/{gameId} {
+      allow read: if true;
+
+      match /results/{drawTerm} {
+        allow read: if true;
+        allow write: if false;
+      }
+
+      match /latest/{docId} {
+        allow read: if true;
+        allow write: if false;
+      }
+
+      // 元資料（meta、稽核紀錄）只給 admin 讀寫
+      match /meta/{docId} {
+        allow read, write: if false;
+      }
+      match /errors/{errorId} {
+        allow read, write: if false;
+      }
+    }
+
+    /**
+     * settings/{doc}
+     * 主題設定 doc — 所有人可讀（套用樣式給訪客）、admin 才能改。
+     * admin 透過 server route + ADMIN_EMAILS 驗證後用 admin SDK 寫入。
+     */
+    match /settings/{docId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    /**
+     * users/{uid}
+     * 使用者個人偏好 — 只能讀寫自己的。
+     */
+    match /users/{uid} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+
+      match /{subcoll=**}/{docId} {
+        allow read, write: if request.auth != null && request.auth.uid == uid;
+      }
+    }
+
+    /**
+     * 預設拒絕。
+     */
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

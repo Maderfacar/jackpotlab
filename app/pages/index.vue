@@ -34,8 +34,18 @@ const status = computed(() => {
         {{ status.label }}
       </UBadge>
 
+      <UButton
+        to="/draws"
+        color="primary"
+        size="lg"
+        icon="i-lucide-list-checks"
+        trailing-icon="i-lucide-arrow-right"
+      >
+        查看開獎號碼
+      </UButton>
+
       <div class="mt-4 text-xs text-muted">
-        環境連線測試頁 — 開發範圍待定
+        539 / 大樂透 / 威力彩 / 賓果賓果 — 即時 + 歷史查詢
       </div>
     </div>
   </UContainer>

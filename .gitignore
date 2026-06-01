@@ -25,11 +25,12 @@ logs
 
 # Firebase
 .firebase
-.firebaserc
 firebase-debug.log
 firestore-debug.log
 *serviceAccountKey*.json
 *-adminsdk-*.json
 
 # Vercel
+.vercel
+
 .vercel
