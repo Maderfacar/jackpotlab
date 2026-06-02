@@ -103,6 +103,28 @@ function formatTime(iso: string | null): string {
     hour12: false
   }).format(d)
 }
+
+/**
+ * 賓果賓果每日從 05:05 開始，每 5 分鐘一期，drawTerm 連號跨日遞增。
+ * 同日 list 內最小 drawTerm 即當日第一期（05:05），其他由偏移量推算。
+ */
+const BINGO_START_MIN = 5 * 60 + 5
+const BINGO_INTERVAL_MIN = 5
+
+const minBingoTerm = computed<number | null>(() => {
+  if (gameId.value !== 'bingo_bingo' || allResults.value.length === 0) return null
+  return allResults.value.reduce((min, r) => Math.min(min, r.drawTerm), Number.POSITIVE_INFINITY)
+})
+
+function bingoDrawTime(drawTerm: number): string {
+  const base = minBingoTerm.value
+  if (base == null) return ''
+  const offset = drawTerm - base
+  const totalMin = BINGO_START_MIN + offset * BINGO_INTERVAL_MIN
+  const h = Math.floor(totalMin / 60) % 24
+  const m = totalMin % 60
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+}
 </script>
 
 <template>
@@ -258,6 +280,12 @@ function formatTime(iso: string | null): string {
             <span class="text-xs uppercase tracking-wider text-muted">期別</span>
             <span class="font-mono text-base font-semibold">{{ result.drawTerm }}</span>
             <span class="text-xs text-muted">{{ result.drawDate }}</span>
+            <span
+              v-if="gameId === 'bingo_bingo'"
+              class="font-mono text-xs text-muted"
+            >
+              {{ bingoDrawTime(result.drawTerm) }}
+            </span>
           </div>
 
           <div class="flex flex-wrap items-center gap-1.5">
