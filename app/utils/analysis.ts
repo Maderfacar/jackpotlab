@@ -4,10 +4,17 @@
  * Ported 539.htm 的 PeriodTable 邏輯。所有 function 回傳新 state；
  * 禁止 mutate 傳入的 state。
  *
- * 規格 deviation 註記：
- *   spec step 2 寫「首筆放 index n-1」，但 spec step c shift right
- *   (`periods[i] = periods[i-1]`, i=n-1→1) 與 step d (`periods[0] = 新 entry`)
- *   會讓首筆在第二筆即被覆蓋。實作以 index 0 為準，與 shift / step d 一致。
+ * 對齊 reference/539.htm（commit `cadf635` 之後）：
+ *   - 首筆放 slot[n-1]
+ *   - step c shift right 只搬 descriptor (issue/date/dateDay/prizes/hasEverMatched)，
+ *     `record` 與 `period` 留在原 slot
+ *   - step d 不重置 slot[0].record（保留 step b 算出來的值）
+ *   - updateRecord 完全照 539.htm（含 filter(Boolean)）
+ *   - 「獎號關聯」總和 = 該期所有 foundIdx 加總；全 0 顯示 ''
+ *
+ * 與 539.htm 唯一仍有差異：history 為了相容於前一輪 spec 採 merged single entry
+ * per draw（539.htm 是 periods-entry + tailEntry 拆兩筆 push）。
+ * 顯示端的 filter 條件等價，使用者觀察不到差別。
  */
 
 export interface AnalysisPeriod {
@@ -26,13 +33,14 @@ export interface HistoryEntry {
   prizes: string
   tails: number[]
   periods?: string
-  sum?: number
+  /** 539.htm: `periods.filter(n => n !== '').reduce(+) || ''` — 可能是正數或空字串。 */
+  sum?: number | ''
   values?: string
   positions?: string
 }
 
 export interface AnalysisState {
-  v: 1
+  v: 2
   gameId: string
   n: number
   lastProcessedTerm: number | null
@@ -49,7 +57,7 @@ export interface AnalysisDrawInput {
 const STORAGE_PREFIX = 'jackpotlab-analysis'
 
 export function stateKey(gameId: string, n: number): string {
-  return `${STORAGE_PREFIX}-${gameId}-v1-n${n}`
+  return `${STORAGE_PREFIX}-${gameId}-v2-n${n}`
 }
 
 export function createInitialState(gameId: string, n: number): AnalysisState {
@@ -66,7 +74,7 @@ export function createInitialState(gameId: string, n: number): AnalysisState {
     })
   }
   return {
-    v: 1,
+    v: 2,
     gameId,
     n,
     lastProcessedTerm: null,
@@ -98,6 +106,24 @@ function parseLeftValue(record: string): number {
   return Number.isFinite(v) ? v : 0
 }
 
+/**
+ * 539.htm:246-257 updateRecord — 完全照搬：
+ *   hasMatch=true  → `0,${recordStr}`（即使 recordStr 為空也是 '0,'，保留 trailing comma）
+ *   hasMatch=false → split + filter(Boolean) + 首位 +1；無項時回 '1'
+ */
+function updateRecord(recordStr: string, hasMatch: boolean): string {
+  if (hasMatch) {
+    return `0,${recordStr}`
+  }
+  const parts = recordStr ? recordStr.split(',').filter(Boolean) : []
+  if (parts.length === 0) {
+    return '1'
+  }
+  const first = Number.parseInt(parts[0]!, 10)
+  parts[0] = String((Number.isFinite(first) ? first : 0) + 1)
+  return parts.join(',')
+}
+
 export function processDraw(state: AnalysisState, draw: AnalysisDrawInput): AnalysisState {
   const n = state.n
   const newPrizes = [...draw.prizes].sort((a, b) => a - b)
@@ -107,41 +133,37 @@ export function processDraw(state: AnalysisState, draw: AnalysisDrawInput): Anal
   const issue = String(draw.drawTerm)
   const date = draw.drawDate
 
-  if (state.lastProcessedTerm == null) {
-    const newPeriods: AnalysisPeriod[] = state.periods.map((p, i) => i === 0
+  const isEmpty = state.periods.every(p => !p.issue)
+
+  if (isEmpty) {
+    // 539.htm: this.periods[lastIdx] = { ...new desc }。其他 slot 不動（record 也不動）。
+    const lastIdx = n - 1
+    const newPeriods: AnalysisPeriod[] = state.periods.map((p, i) => i === lastIdx
       ? {
-          period: 0,
+          ...p,
           issue,
           date,
           dateDay,
           prizes: [...newPrizes],
-          record: '',
           hasEverMatched: dateDay != null && newPrizesSet.has(dateDay)
         }
-      : { ...p, period: i })
-    const history: HistoryEntry[] = [
-      ...state.history,
-      {
-        issue,
-        date,
-        prizes: newPrizes.join(','),
-        tails
-      }
-    ]
+      : p)
     return {
       ...state,
       lastProcessedTerm: draw.drawTerm,
       periods: newPeriods,
-      history
+      history: [
+        ...state.history,
+        { issue, date, prizes: newPrizes.join(','), tails }
+      ]
     }
   }
 
-  // Step a: per-row tempPrizes snapshot for multi-prize-same-row accounting
+  // Step a: tempPrizes per row。掃描 i = n-1 → 0 找第一個含 p 的 slot。
   const tempPrizes: number[][] = state.periods.map(p => [...p.prizes])
   const periodsCsv: string[] = []
   const valuesCsv: string[] = []
   const positionsCsv: string[] = []
-  let sum = 0
 
   for (const p of newPrizes) {
     let foundIdx = -1
@@ -167,70 +189,80 @@ export function processDraw(state: AnalysisState, draw: AnalysisDrawInput): Anal
     periodsCsv.push(String(foundIdx))
     valuesCsv.push(String(leftVal))
     positionsCsv.push(`${remaining}-${origPos}`)
-    sum += leftVal
 
     tempPrizes[foundIdx] = tempPrizes[foundIdx]!.filter(x => x !== p)
   }
 
-  // Step b: update REAL state.periods — every row gets hasMatch / record / prizes update
-  const updatedPeriods: AnalysisPeriod[] = state.periods.map((row) => {
-    const hasMatch = row.prizes.some(x => newPrizesSet.has(x))
-    let newRecord: string
-    if (hasMatch) {
-      newRecord = row.record === '' ? '0' : '0,' + row.record
-    } else if (row.record === '') {
-      newRecord = '1'
-    } else {
-      const parts = row.record.split(',')
-      const first = Number.parseInt(parts[0] ?? '0', 10)
-      parts[0] = String((Number.isFinite(first) ? first : 0) + 1)
-      newRecord = parts.join(',')
+  // Step b: 每個 slot 跑一次 — 更新該 slot 的 record + 真實扣掉中獎號。
+  const stepB: AnalysisPeriod[] = state.periods.map((row) => {
+    let hasMatch = false
+    const toRemove: number[] = []
+    if (row.prizes.length > 0) {
+      for (const p of newPrizesSet) {
+        if (row.prizes.includes(p)) {
+          toRemove.push(p)
+          hasMatch = true
+        }
+      }
     }
-    const newRowPrizes = hasMatch ? row.prizes.filter(x => !newPrizesSet.has(x)) : row.prizes
+    const newRowPrizes = hasMatch ? row.prizes.filter(x => !toRemove.includes(x)) : row.prizes
     return {
       ...row,
       prizes: newRowPrizes,
-      record: newRecord
+      record: updateRecord(row.record, hasMatch)
     }
   })
 
-  // Step c: shift right (newest stays at index 0, oldest pushed off at n-1)
+  // Step c: shift right — 只搬 descriptor (issue/date/dateDay/prizes/hasEverMatched)。
+  // record + period 留在原 slot。
   const shifted: AnalysisPeriod[] = new Array<AnalysisPeriod>(n)
   for (let i = n - 1; i >= 1; i--) {
-    shifted[i] = updatedPeriods[i - 1]!
+    const src = stepB[i - 1]!
+    const own = stepB[i]!
+    shifted[i] = {
+      period: i,
+      issue: src.issue,
+      date: src.date,
+      dateDay: src.dateDay,
+      prizes: [...src.prizes],
+      hasEverMatched: src.hasEverMatched,
+      record: own.record
+    }
   }
+  // Step d: slot[0] 給新 desc；record 保留 stepB[0]（不重置）。
   shifted[0] = {
     period: 0,
     issue,
     date,
     dateDay,
     prizes: [...newPrizes],
-    record: '',
-    hasEverMatched: dateDay != null && newPrizesSet.has(dateDay)
+    hasEverMatched: dateDay != null && newPrizesSet.has(dateDay),
+    record: stepB[0]!.record
   }
 
-  // Step 4: renumber
-  const finalPeriods = shifted.map((p, i) => ({ ...p, period: i }))
-
-  const history: HistoryEntry[] = [
-    ...state.history,
-    {
-      issue,
-      date,
-      prizes: newPrizes.join(','),
-      tails,
-      periods: periodsCsv.join(','),
-      sum,
-      values: valuesCsv.join(','),
-      positions: positionsCsv.join(',')
-    }
-  ]
+  // 539.htm: `const sum = periods.filter(n => n !== '').reduce((a, b) => a + parseInt(b), 0) || '';`
+  const sumNum = periodsCsv
+    .filter(x => x !== '')
+    .reduce((a, b) => a + Number.parseInt(b, 10), 0)
+  const sum: number | '' = sumNum > 0 ? sumNum : ''
 
   return {
     ...state,
     lastProcessedTerm: draw.drawTerm,
-    periods: finalPeriods,
-    history
+    periods: shifted,
+    history: [
+      ...state.history,
+      {
+        issue,
+        date,
+        prizes: newPrizes.join(','),
+        tails,
+        periods: periodsCsv.join(','),
+        sum,
+        values: valuesCsv.join(','),
+        positions: positionsCsv.join(',')
+      }
+    ]
   }
 }
 
@@ -264,7 +296,7 @@ export function loadState(gameId: string, n: number): AnalysisState | null {
     const raw = window.localStorage.getItem(stateKey(gameId, n))
     if (!raw) return null
     const parsed = JSON.parse(raw) as Partial<AnalysisState>
-    if (!parsed || parsed.v !== 1 || parsed.gameId !== gameId || parsed.n !== n) return null
+    if (!parsed || parsed.v !== 2 || parsed.gameId !== gameId || parsed.n !== n) return null
     if (!Array.isArray(parsed.periods) || !Array.isArray(parsed.history)) return null
     return parsed as AnalysisState
   } catch {
