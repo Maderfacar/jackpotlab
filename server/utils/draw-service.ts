@@ -89,7 +89,7 @@ export async function getDrawsByDate(
 
 /** 抓最近 N 期 — 純讀 Firestore，不打 taiwanlottery（避免 N 次 HTTP）。 */
 export async function getRecentDraws(gameId: GameId, limit: number): Promise<DrawResult[]> {
-  return getRecent(gameId, Math.min(limit, 100))
+  return getRecent(gameId, Math.min(limit, 5000))
 }
 
 // ---------- internal helpers ----------

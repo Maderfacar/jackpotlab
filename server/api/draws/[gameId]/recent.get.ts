@@ -10,7 +10,7 @@ export default defineEventHandler(async (event): Promise<DrawQueryResponse> => {
 
   const query = getQuery(event)
   const rawLimit = typeof query.limit === 'string' ? Number.parseInt(query.limit, 10) : 50
-  const limit = Number.isFinite(rawLimit) ? Math.max(1, Math.min(100, rawLimit)) : 50
+  const limit = Number.isFinite(rawLimit) ? Math.max(1, Math.min(5000, rawLimit)) : 50
 
   const draws = await getRecentDraws(gameId, limit)
   return { gameId, results: draws, fromCache: true }
