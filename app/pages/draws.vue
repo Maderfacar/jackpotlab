@@ -141,11 +141,16 @@ async function hydrateAnalysis() {
       params: { limit: d }
     })
     const drawsAsc = [...res.results].sort((a, b) => a.drawTerm - b.drawTerm)
-    const inputs: AnalysisDrawInput[] = drawsAsc.map(r => ({
-      drawTerm: r.drawTerm,
-      drawDate: r.drawDate,
-      prizes: r.special != null ? [...r.numbers, r.special] : [...r.numbers]
-    }))
+    const inputs: AnalysisDrawInput[] = drawsAsc.map((r) => {
+      // 賓果的「中央彩球」(special) 本來就是 20 主號之一，直接 push 會 dup。
+      // 用 Set 去重 — 對 539（無 special）、大樂透、威力彩都無副作用。
+      const merged = r.special != null ? [...r.numbers, r.special] : r.numbers
+      return {
+        drawTerm: r.drawTerm,
+        drawDate: r.drawDate,
+        prizes: [...new Set(merged)]
+      }
+    })
 
     const cached = loadState(g, n)
     if (cached && cached.lastProcessedTerm != null) {

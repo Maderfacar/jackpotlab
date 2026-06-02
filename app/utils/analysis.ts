@@ -126,8 +126,10 @@ function updateRecord(recordStr: string, hasMatch: boolean): string {
 
 export function processDraw(state: AnalysisState, draw: AnalysisDrawInput): AnalysisState {
   const n = state.n
-  const newPrizes = [...draw.prizes].sort((a, b) => a - b)
-  const newPrizesSet = new Set(newPrizes)
+  // 539.htm 用 `new Set(newPrizesArr)` 自動去重；輸入端如賓果中央彩球（本來就在 20 主號裡）
+  // 會帶 1 個 dup，這裡防禦性 dedupe，避免 prizes 陣列污染 step a 的 remaining / origPos。
+  const newPrizesSet = new Set(draw.prizes)
+  const newPrizes = [...newPrizesSet].sort((a, b) => a - b)
   const dateDay = parseDateDay(draw.drawDate)
   const tails = computeTails(newPrizes)
   const issue = String(draw.drawTerm)
