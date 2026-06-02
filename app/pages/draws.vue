@@ -1,17 +1,16 @@
 <script setup lang="ts">
 import { GAMES, GAME_IDS, type GameId } from '~~/shared/lotto/games'
-import type { DrawResult } from '~~/shared/lotto/types'
+import type { DrawResult, DrawQueryResponse } from '~~/shared/lotto/types'
 
 definePageMeta({
   title: '開獎號碼'
 })
 
 const gameId = ref<GameId>('lotto539')
-const mode = ref<'latest' | 'by-date'>('latest')
-const date = ref<string>(todayInTaipei())
 const showAll = ref(false)
 
 const game = computed(() => GAMES[gameId.value])
+const isBingo = computed(() => gameId.value === 'bingo_bingo')
 
 const tabs = GAME_IDS.map(id => ({
   label: GAMES[id].name,
@@ -19,71 +18,81 @@ const tabs = GAME_IDS.map(id => ({
   description: GAMES[id].cadenceLabel
 }))
 
-const modeOptions = [
-  { label: '最新', value: 'latest' as const, icon: 'i-lucide-sparkles' },
-  { label: '日期查詢', value: 'by-date' as const, icon: 'i-lucide-calendar' }
-]
+/**
+ * 賓果賓果：用 by-date 查今日全部期；其他彩種：用 recent 取最新 5 期。
+ * 切彩種時 useFetch 會自動 watch 並重撈。
+ */
+const BINGO_REFRESH_SEC = 60
+const NON_BINGO_LIMIT = 5
+const BINGO_PAGE_SIZE = 20
 
-/** 賓果賓果 + 最新模式 → 每 60 秒自動 refresh。其他不輪詢。 */
-const pollMs = computed(() => (game.value.realtime && mode.value === 'latest' ? 60_000 : 0))
-const latestQuery = useLatestDraw(gameId, { pollMs })
-const dateQuery = useDrawsByDate(gameId, date)
+const remainingSec = ref(BINGO_REFRESH_SEC)
 
-watch([mode, date, gameId], () => {
-  if (mode.value === 'by-date' && /^\d{4}-\d{2}-\d{2}$/.test(date.value)) {
-    dateQuery.refresh()
-  } else if (mode.value === 'latest') {
-    latestQuery.refresh()
+const drawsQuery = useFetch<DrawQueryResponse>(
+  () => isBingo.value
+    ? `/api/draws/bingo_bingo/by-date?date=${todayInTaipei()}`
+    : `/api/draws/${gameId.value}/recent?limit=${NON_BINGO_LIMIT}`,
+  {
+    key: () => `draws-page-${gameId.value}`,
+    watch: [gameId],
+    server: false
   }
+)
+
+watch(gameId, () => {
   showAll.value = false
-}, { immediate: false })
-
-const allResults = computed<DrawResult[]>(() => {
-  if (mode.value === 'latest') {
-    return latestQuery.data.value?.results ?? []
-  }
-  return dateQuery.data.value?.results ?? []
+  remainingSec.value = BINGO_REFRESH_SEC
 })
 
-/** 賓果賓果一天 226 期，預設顯示前 20 期，展開後全部。 */
-const DEFAULT_LIMIT = 20
+const allResults = computed<DrawResult[]>(() => drawsQuery.data.value?.results ?? [])
 
 const visibleResults = computed<DrawResult[]>(() => {
-  if (showAll.value || allResults.value.length <= DEFAULT_LIMIT) {
+  if (!isBingo.value) return allResults.value
+  if (showAll.value || allResults.value.length <= BINGO_PAGE_SIZE) {
     return allResults.value
   }
-  return allResults.value.slice(0, DEFAULT_LIMIT)
+  return allResults.value.slice(0, BINGO_PAGE_SIZE)
 })
 
 const hiddenCount = computed(() => Math.max(0, allResults.value.length - visibleResults.value.length))
 
-const loading = computed(() => {
-  return mode.value === 'latest' ? latestQuery.status.value === 'pending' : dateQuery.status.value === 'pending'
-})
+const loading = computed(() => drawsQuery.status.value === 'pending')
+const error = computed(() => drawsQuery.error.value)
+const fromCache = computed(() => drawsQuery.data.value?.fromCache)
+const isLive = computed(() => isBingo.value)
 
-const error = computed(() => {
-  return mode.value === 'latest' ? latestQuery.error.value : dateQuery.error.value
-})
-
-const fromCache = computed(() => {
-  return mode.value === 'latest'
-    ? latestQuery.data.value?.fromCache
-    : dateQuery.data.value?.fromCache
-})
-
-const isLive = computed(() => pollMs.value > 0)
-
-const lastFetchedAt = computed<string | null>(() => {
-  const top = allResults.value[0]
-  return top?.fetchedAt ?? null
-})
+const lastFetchedAt = computed<string | null>(() => allResults.value[0]?.fetchedAt ?? null)
 
 function refresh() {
-  if (mode.value === 'latest') {
-    latestQuery.refresh()
-  } else {
-    dateQuery.refresh()
+  drawsQuery.refresh()
+  remainingSec.value = BINGO_REFRESH_SEC
+}
+
+/**
+ * 賓果賓果頁面端 60 秒自動重抓 + 1Hz 倒數。
+ * 彩種非賓果時停止 timer；切換時重置倒數。
+ */
+if (import.meta.client) {
+  let timer: ReturnType<typeof setInterval> | null = null
+  const stop = () => {
+    if (timer) {
+      clearInterval(timer)
+      timer = null
+    }
   }
+  watchEffect(() => {
+    stop()
+    if (!isBingo.value) return
+    remainingSec.value = BINGO_REFRESH_SEC
+    timer = setInterval(() => {
+      remainingSec.value -= 1
+      if (remainingSec.value <= 0) {
+        drawsQuery.refresh()
+        remainingSec.value = BINGO_REFRESH_SEC
+      }
+    }, 1000)
+  })
+  onBeforeUnmount(stop)
 }
 
 function todayInTaipei(): string {
@@ -142,20 +151,20 @@ function isBingoConnect(drawTerm: number, num: number): boolean {
   return bingoConnectByTerm.value.get(drawTerm)?.has(num) ?? false
 }
 
-/** 1–40 ≥ 13 → 小，否則 → 大（二分，按用戶定義）。 */
-function bingoBigSmall(numbers: number[]): { label: '大' | '小', class: string } {
+/** 1–40 ≥ 13 → 小；41–80 ≥ 13 → 大；都 <13 → null（不顯示）。 */
+function bingoBigSmall(numbers: number[]): { label: '大' | '小', class: string } | null {
   const smallCount = numbers.reduce((c, n) => c + (n <= 40 ? 1 : 0), 0)
-  return smallCount >= 13
-    ? { label: '小', class: 'text-sky-600' }
-    : { label: '大', class: 'text-rose-600' }
+  if (smallCount >= 13) return { label: '小', class: 'text-sky-600' }
+  if (numbers.length - smallCount >= 13) return { label: '大', class: 'text-rose-600' }
+  return null
 }
 
-/** 奇數 ≥ 13 → 單，否則 → 雙。 */
-function bingoOddEven(numbers: number[]): { label: '單' | '雙', class: string } {
+/** 奇 ≥ 13 → 單；偶 ≥ 13 → 雙；都 <13 → null（不顯示）。 */
+function bingoOddEven(numbers: number[]): { label: '單' | '雙', class: string } | null {
   const oddCount = numbers.reduce((c, n) => c + (n % 2 === 1 ? 1 : 0), 0)
-  return oddCount >= 13
-    ? { label: '單', class: 'text-fuchsia-600' }
-    : { label: '雙', class: 'text-emerald-600' }
+  if (oddCount >= 13) return { label: '單', class: 'text-fuchsia-600' }
+  if (numbers.length - oddCount >= 13) return { label: '雙', class: 'text-emerald-600' }
+  return null
 }
 
 /** 20 主號的個位數 (0–9) 出現次數。 */
@@ -206,29 +215,7 @@ function formatFetchedAt(iso: string | null | undefined): string {
           color="primary"
         />
 
-        <div class="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-          <div class="space-y-1">
-            <p class="text-xs uppercase tracking-wider text-muted">查詢模式</p>
-            <URadioGroup
-              v-model="mode"
-              orientation="horizontal"
-              :items="modeOptions"
-              variant="card"
-              size="sm"
-            />
-          </div>
-
-          <UFormField
-            v-if="mode === 'by-date'"
-            label="開獎日期"
-            class="sm:w-56"
-          >
-            <UInput
-              v-model="date"
-              type="date"
-            />
-          </UFormField>
-
+        <div class="flex flex-wrap items-center justify-end gap-3">
           <UButton
             color="neutral"
             variant="outline"
@@ -253,18 +240,10 @@ function formatFetchedAt(iso: string | null | undefined): string {
             variant="subtle"
             class="animate-pulse"
           >
-            <span class="inline-flex items-center gap-1">
+            <span class="inline-flex items-center gap-1 font-mono">
               <span class="size-1.5 rounded-full bg-warning" />
-              LIVE · 60s 自動更新
+              LIVE · {{ String(remainingSec).padStart(2, '0') }}s 後更新
             </span>
-          </UBadge>
-          <UBadge
-            v-else-if="game.realtime"
-            color="warning"
-            variant="subtle"
-            icon="i-lucide-radio"
-          >
-            即時
           </UBadge>
           <UBadge
             v-if="fromCache !== undefined"
@@ -315,10 +294,10 @@ function formatFetchedAt(iso: string | null | undefined): string {
       />
       <p>沒有符合的開獎紀錄</p>
       <p
-        v-if="mode === 'by-date'"
+        v-if="isBingo"
         class="mt-1 text-xs"
       >
-        {{ game.shortName }} 在 {{ date }} 沒有開獎，或資料尚未公告
+        賓果賓果今日尚未開出第一期，或資料尚未公告
       </p>
     </div>
 
@@ -344,18 +323,24 @@ function formatFetchedAt(iso: string | null | undefined): string {
               <span class="font-mono text-base font-semibold">{{ result.drawTerm }}</span>
               <span class="text-xs text-muted">{{ result.drawDate }}</span>
               <span
-                v-if="gameId === 'bingo_bingo'"
+                v-if="isBingo"
                 class="font-mono text-xs text-muted"
               >
                 {{ bingoDrawTime(result.drawTerm) }}
               </span>
             </div>
             <div
-              v-if="gameId === 'bingo_bingo'"
+              v-if="isBingo"
               class="flex items-baseline gap-2 font-mono text-sm font-bold"
             >
-              <span :class="bingoBigSmall(result.numbers).class">{{ bingoBigSmall(result.numbers).label }}</span>
-              <span :class="bingoOddEven(result.numbers).class">{{ bingoOddEven(result.numbers).label }}</span>
+              <span
+                v-if="bingoBigSmall(result.numbers)"
+                :class="bingoBigSmall(result.numbers)!.class"
+              >{{ bingoBigSmall(result.numbers)!.label }}</span>
+              <span
+                v-if="bingoOddEven(result.numbers)"
+                :class="bingoOddEven(result.numbers)!.class"
+              >{{ bingoOddEven(result.numbers)!.label }}</span>
             </div>
           </div>
 
@@ -363,11 +348,11 @@ function formatFetchedAt(iso: string | null | undefined): string {
             <UBadge
               v-for="(n, i) in result.numbers"
               :key="`${result.drawTerm}-n-${i}`"
-              color="primary"
+              color="warning"
               variant="solid"
               size="lg"
               class="min-w-9 justify-center font-mono"
-              :class="isBingoConnect(result.drawTerm, n) ? 'ring-1 ring-red-500' : ''"
+              :class="isBingoConnect(result.drawTerm, n) ? 'ring-2 ring-red-500' : ''"
             >
               {{ n.toString().padStart(2, '0') }}
             </UBadge>
@@ -375,7 +360,7 @@ function formatFetchedAt(iso: string | null | undefined): string {
             <template v-if="result.special !== null">
               <span class="mx-1 text-muted">+</span>
               <UBadge
-                color="warning"
+                color="primary"
                 variant="solid"
                 size="lg"
                 class="min-w-9 justify-center font-mono"
@@ -398,7 +383,7 @@ function formatFetchedAt(iso: string | null | undefined): string {
                 <span class="text-muted">開出順序：</span>
                 <span class="font-mono">{{ result.drawOrder.join(' → ') }}</span>
               </div>
-              <div v-if="gameId === 'bingo_bingo'">
+              <div v-if="isBingo">
                 <span class="text-muted">尾數：</span>
                 <div class="mt-1 flex flex-wrap items-center gap-1">
                   <div
