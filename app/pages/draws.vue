@@ -105,10 +105,10 @@ function formatTime(iso: string | null): string {
 }
 
 /**
- * 賓果賓果每日從 05:05 開始，每 5 分鐘一期，drawTerm 連號跨日遞增。
- * 同日 list 內最小 drawTerm 即當日第一期（05:05），其他由偏移量推算。
+ * 賓果賓果每日從 07:05 開始，每 5 分鐘一期，全日 203 期至 23:55，drawTerm 連號跨日遞增。
+ * 同日 list 內最小 drawTerm 即當日第一期（07:05），其他由偏移量推算。
  */
-const BINGO_START_MIN = 5 * 60 + 5
+const BINGO_START_MIN = 7 * 60 + 5
 const BINGO_INTERVAL_MIN = 5
 
 const minBingoTerm = computed<number | null>(() => {

@@ -87,7 +87,7 @@ export const GAMES: Record<GameId, GameMeta> = {
     shortName: '賓果',
     endpoint: 'BingoResult',
     resultField: 'bingoQueryResult',
-    drawSchedule: '每日 05:05–24:00，每 5 分鐘一期',
+    drawSchedule: '每日 07:05–23:55，每 5 分鐘一期',
     cadenceLabel: '5 分鐘',
     numbersCount: 20,
     numberMin: 1,
