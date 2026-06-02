@@ -4,6 +4,7 @@ import type { DrawResult, DrawQueryResponse } from '~~/shared/lotto/types'
 import {
   type AnalysisState, type AnalysisDrawInput,
   hydrateFromDraws, applyNewDraws, loadState, saveState, stateKey,
+  sweepStaleAnalysisStorage,
   defaultD, defaultN, clampD, clampN, averageOfCsvFirst
 } from '~/utils/analysis'
 
@@ -200,6 +201,7 @@ watch(gameId, async (g) => {
 })
 
 onMounted(() => {
+  sweepStaleAnalysisStorage()
   loadDNFor(gameId.value)
   hydrateAnalysis()
 })

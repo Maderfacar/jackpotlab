@@ -40,7 +40,7 @@ export interface HistoryEntry {
 }
 
 export interface AnalysisState {
-  v: 2
+  v: 3
   gameId: string
   n: number
   lastProcessedTerm: number | null
@@ -55,9 +55,33 @@ export interface AnalysisDrawInput {
 }
 
 const STORAGE_PREFIX = 'jackpotlab-analysis'
+const STORAGE_VERSION = 3
 
 export function stateKey(gameId: string, n: number): string {
-  return `${STORAGE_PREFIX}-${gameId}-v2-n${n}`
+  return `${STORAGE_PREFIX}-${gameId}-v${STORAGE_VERSION}-n${n}`
+}
+
+/**
+ * 把 localStorage 裡所有 `jackpotlab-analysis-` 開頭、但不是當前 version 的 key 掃掉。
+ * 每次 mount 跑一次，避免使用者卡在舊 schema 的 state。
+ */
+export function sweepStaleAnalysisStorage(): void {
+  if (typeof window === 'undefined') return
+  const versionMarker = `-v${STORAGE_VERSION}-`
+  const toRemove: string[] = []
+  for (let i = 0; i < window.localStorage.length; i++) {
+    const k = window.localStorage.key(i)
+    if (k && k.startsWith(`${STORAGE_PREFIX}-`) && !k.includes(versionMarker)) {
+      toRemove.push(k)
+    }
+  }
+  for (const k of toRemove) {
+    try {
+      window.localStorage.removeItem(k)
+    } catch {
+      // ignore
+    }
+  }
 }
 
 export function createInitialState(gameId: string, n: number): AnalysisState {
@@ -74,7 +98,7 @@ export function createInitialState(gameId: string, n: number): AnalysisState {
     })
   }
   return {
-    v: 2,
+    v: 3,
     gameId,
     n,
     lastProcessedTerm: null,
@@ -298,7 +322,7 @@ export function loadState(gameId: string, n: number): AnalysisState | null {
     const raw = window.localStorage.getItem(stateKey(gameId, n))
     if (!raw) return null
     const parsed = JSON.parse(raw) as Partial<AnalysisState>
-    if (!parsed || parsed.v !== 2 || parsed.gameId !== gameId || parsed.n !== n) return null
+    if (!parsed || parsed.v !== 3 || parsed.gameId !== gameId || parsed.n !== n) return null
     if (!Array.isArray(parsed.periods) || !Array.isArray(parsed.history)) return null
     return parsed as AnalysisState
   } catch {
