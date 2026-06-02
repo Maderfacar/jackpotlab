@@ -94,16 +94,6 @@ function todayInTaipei(): string {
   return fmt.format(new Date())
 }
 
-function formatTime(iso: string | null): string {
-  if (!iso) return '—'
-  const d = new Date(iso)
-  return new Intl.DateTimeFormat('zh-TW', {
-    timeZone: 'Asia/Taipei',
-    hour: '2-digit', minute: '2-digit', second: '2-digit',
-    hour12: false
-  }).format(d)
-}
-
 /**
  * 賓果賓果每日從 07:05 開始，每 5 分鐘一期，全日 203 期至 23:55，drawTerm 連號跨日遞增。
  * 同日 list 內最小 drawTerm 即當日第一期（07:05），其他由偏移量推算。
@@ -124,6 +114,78 @@ function bingoDrawTime(drawTerm: number): string {
   const h = Math.floor(totalMin / 60) % 24
   const m = totalMin % 60
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+}
+
+/** drawTerm → numbers map，用來找前一期（drawTerm - 1）以判斷連莊。 */
+const bingoNumbersByTerm = computed<Map<number, number[]>>(() => {
+  const m = new Map<number, number[]>()
+  if (gameId.value !== 'bingo_bingo') return m
+  for (const r of allResults.value) m.set(r.drawTerm, r.numbers)
+  return m
+})
+
+/** 預先計算每期的連莊號碼 set — 避免在 template 重複建構 Set。 */
+const bingoConnectByTerm = computed<Map<number, Set<number>>>(() => {
+  const out = new Map<number, Set<number>>()
+  if (gameId.value !== 'bingo_bingo') return out
+  const numsByTerm = bingoNumbersByTerm.value
+  for (const r of allResults.value) {
+    const prev = numsByTerm.get(r.drawTerm - 1)
+    if (!prev) continue
+    const prevSet = new Set(prev)
+    out.set(r.drawTerm, new Set(r.numbers.filter(n => prevSet.has(n))))
+  }
+  return out
+})
+
+function isBingoConnect(drawTerm: number, num: number): boolean {
+  return bingoConnectByTerm.value.get(drawTerm)?.has(num) ?? false
+}
+
+/** 1–40 ≥ 13 → 小，否則 → 大（二分，按用戶定義）。 */
+function bingoBigSmall(numbers: number[]): { label: '大' | '小', class: string } {
+  const smallCount = numbers.reduce((c, n) => c + (n <= 40 ? 1 : 0), 0)
+  return smallCount >= 13
+    ? { label: '小', class: 'text-sky-600' }
+    : { label: '大', class: 'text-rose-600' }
+}
+
+/** 奇數 ≥ 13 → 單，否則 → 雙。 */
+function bingoOddEven(numbers: number[]): { label: '單' | '雙', class: string } {
+  const oddCount = numbers.reduce((c, n) => c + (n % 2 === 1 ? 1 : 0), 0)
+  return oddCount >= 13
+    ? { label: '單', class: 'text-fuchsia-600' }
+    : { label: '雙', class: 'text-emerald-600' }
+}
+
+/** 20 主號的個位數 (0–9) 出現次數。 */
+function bingoTailDigits(numbers: number[]): number[] {
+  const counts = new Array(10).fill(0)
+  for (const n of numbers) counts[n % 10]++
+  return counts
+}
+
+/** 尾數出現次數的背景色階：≥2 起漸進，0–1 用底色。 */
+function bingoTailClass(count: number): string {
+  if (count >= 5) return 'bg-sky-700 text-white'
+  if (count >= 4) return 'bg-sky-500 text-white'
+  if (count >= 3) return 'bg-sky-400 text-white'
+  if (count >= 2) return 'bg-sky-200 text-sky-900'
+  return 'bg-elevated text-muted'
+}
+
+/** ISO timestamp → "YYYY-MM-DD HH:MM"（台北時區）。 */
+function formatFetchedAt(iso: string | null | undefined): string {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Taipei',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit',
+    hour12: false
+  }).formatToParts(d)
+  const get = (type: string): string => parts.find(p => p.type === type)?.value ?? ''
+  return `${get('year')}-${get('month')}-${get('day')} ${get('hour')}:${get('minute')}`
 }
 </script>
 
@@ -218,7 +280,7 @@ function bingoDrawTime(drawTerm: number): string {
             variant="subtle"
             icon="i-lucide-clock"
           >
-            {{ formatTime(lastFetchedAt) }}
+            {{ formatFetchedAt(lastFetchedAt) }}
           </UBadge>
         </div>
       </div>
@@ -276,16 +338,25 @@ function bingoDrawTime(drawTerm: number): string {
         :ui="{ body: 'p-4 sm:p-5' }"
       >
         <div class="space-y-3">
-          <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-            <span class="text-xs uppercase tracking-wider text-muted">期別</span>
-            <span class="font-mono text-base font-semibold">{{ result.drawTerm }}</span>
-            <span class="text-xs text-muted">{{ result.drawDate }}</span>
-            <span
+          <div class="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+            <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+              <span class="text-xs uppercase tracking-wider text-muted">期別</span>
+              <span class="font-mono text-base font-semibold">{{ result.drawTerm }}</span>
+              <span class="text-xs text-muted">{{ result.drawDate }}</span>
+              <span
+                v-if="gameId === 'bingo_bingo'"
+                class="font-mono text-xs text-muted"
+              >
+                {{ bingoDrawTime(result.drawTerm) }}
+              </span>
+            </div>
+            <div
               v-if="gameId === 'bingo_bingo'"
-              class="font-mono text-xs text-muted"
+              class="flex items-baseline gap-2 font-mono text-sm font-bold"
             >
-              {{ bingoDrawTime(result.drawTerm) }}
-            </span>
+              <span :class="bingoBigSmall(result.numbers).class">{{ bingoBigSmall(result.numbers).label }}</span>
+              <span :class="bingoOddEven(result.numbers).class">{{ bingoOddEven(result.numbers).label }}</span>
+            </div>
           </div>
 
           <div class="flex flex-wrap items-center gap-1.5">
@@ -296,6 +367,7 @@ function bingoDrawTime(drawTerm: number): string {
               variant="solid"
               size="lg"
               class="min-w-9 justify-center font-mono"
+              :class="isBingoConnect(result.drawTerm, n) ? 'ring-1 ring-red-500' : ''"
             >
               {{ n.toString().padStart(2, '0') }}
             </UBadge>
@@ -321,14 +393,28 @@ function bingoDrawTime(drawTerm: number): string {
 
           <details class="text-xs text-muted">
             <summary class="cursor-pointer select-none">開出順序 / 詳細</summary>
-            <div class="mt-2 space-y-1">
+            <div class="mt-2 space-y-2">
               <div>
                 <span class="text-muted">開出順序：</span>
                 <span class="font-mono">{{ result.drawOrder.join(' → ') }}</span>
               </div>
+              <div v-if="gameId === 'bingo_bingo'">
+                <span class="text-muted">尾數：</span>
+                <div class="mt-1 flex flex-wrap items-center gap-1">
+                  <div
+                    v-for="(count, digit) in bingoTailDigits(result.numbers)"
+                    :key="`${result.drawTerm}-t-${digit}`"
+                    class="flex h-8 min-w-8 flex-col items-center justify-center rounded px-1 font-mono leading-tight"
+                    :class="bingoTailClass(count)"
+                  >
+                    <span class="text-xs font-semibold">{{ digit }}</span>
+                    <span class="text-[9px] opacity-80">×{{ count }}</span>
+                  </div>
+                </div>
+              </div>
               <div>
                 <span class="text-muted">抓取時間：</span>
-                <span class="font-mono">{{ result.fetchedAt }}</span>
+                <span class="font-mono">{{ formatFetchedAt(result.fetchedAt) }}</span>
               </div>
             </div>
           </details>
