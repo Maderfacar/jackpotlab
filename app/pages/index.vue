@@ -34,15 +34,26 @@ const status = computed(() => {
         {{ status.label }}
       </UBadge>
 
-      <UButton
-        to="/draws"
-        color="primary"
-        size="lg"
-        icon="i-lucide-list-checks"
-        trailing-icon="i-lucide-arrow-right"
-      >
-        查看開獎號碼
-      </UButton>
+      <div class="flex flex-wrap items-center justify-center gap-3">
+        <UButton
+          to="/draws"
+          color="primary"
+          size="lg"
+          icon="i-lucide-list-checks"
+          trailing-icon="i-lucide-arrow-right"
+        >
+          查看開獎號碼
+        </UButton>
+        <UButton
+          to="/hindsight"
+          color="neutral"
+          variant="outline"
+          size="lg"
+          icon="i-lucide-brain"
+        >
+          開啟鑑古
+        </UButton>
+      </div>
 
       <div class="mt-4 text-xs text-muted">
         539 / 大樂透 / 威力彩 / 賓果賓果 — 即時 + 歷史查詢

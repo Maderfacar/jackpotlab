@@ -51,6 +51,15 @@ useSeoMeta({
           開獎號碼
         </UButton>
         <UButton
+          to="/hindsight"
+          color="neutral"
+          variant="ghost"
+          icon="i-lucide-brain"
+          size="sm"
+        >
+          鑑古
+        </UButton>
+        <UButton
           to="/admin/health"
           color="neutral"
           variant="ghost"

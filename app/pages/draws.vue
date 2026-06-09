@@ -16,6 +16,24 @@ const gameId = ref<GameId>('lotto539')
 const showAll = ref(false)
 const subTab = ref<'list' | 'periods' | 'relations' | 'tails'>('list')
 
+const LEGACY_STORAGE_KEY = 'jackpotlab-show-legacy-analysis'
+
+const showLegacyAnalysis = ref(false)
+
+function loadLegacyPref() {
+  if (typeof window === 'undefined') return
+  showLegacyAnalysis.value = window.localStorage.getItem(LEGACY_STORAGE_KEY) === 'true'
+}
+
+watch(showLegacyAnalysis, (val) => {
+  if (typeof window !== 'undefined') {
+    window.localStorage.setItem(LEGACY_STORAGE_KEY, String(val))
+  }
+  if (!val && subTab.value !== 'list') {
+    subTab.value = 'list'
+  }
+})
+
 const game = computed(() => GAMES[gameId.value])
 const isBingo = computed(() => gameId.value === 'bingo_bingo')
 
@@ -25,12 +43,20 @@ const tabs = GAME_IDS.map(id => ({
   description: GAMES[id].cadenceLabel
 }))
 
-const subTabItems = [
-  { label: '各期獎號列表', value: 'list' as const },
-  { label: '隔期狀態', value: 'periods' as const },
-  { label: '獎號關聯', value: 'relations' as const },
-  { label: '尾數', value: 'tails' as const }
-]
+type SubTabValue = 'list' | 'periods' | 'relations' | 'tails'
+const subTabItems = computed((): Array<{ label: string, value: SubTabValue }> => {
+  const base: Array<{ label: string, value: SubTabValue }> = [
+    { label: '各期獎號列表', value: 'list' }
+  ]
+  if (showLegacyAnalysis.value) {
+    base.push(
+      { label: '隔期狀態', value: 'periods' },
+      { label: '獎號關聯', value: 'relations' },
+      { label: '尾數', value: 'tails' }
+    )
+  }
+  return base
+})
 
 const BINGO_REFRESH_SEC = 60
 const NON_BINGO_LIMIT = 5
@@ -203,6 +229,7 @@ watch(gameId, async (g) => {
 onMounted(() => {
   sweepStaleAnalysisStorage()
   loadDNFor(gameId.value)
+  loadLegacyPref()
   hydrateAnalysis()
 })
 
@@ -454,14 +481,23 @@ function tailCellClass(count: number): string {
 
         <USeparator />
 
-        <UTabs
-          v-model="subTab"
-          :items="subTabItems"
-          :unmount-on-hide="false"
-          variant="pill"
-          color="neutral"
-          size="sm"
-        />
+        <div class="flex items-center gap-3">
+          <UTabs
+            v-model="subTab"
+            :items="subTabItems"
+            :unmount-on-hide="false"
+            variant="pill"
+            color="neutral"
+            size="sm"
+          />
+          <div class="ml-auto">
+            <USwitch
+              v-model="showLegacyAnalysis"
+              label="顯示原始分析"
+              size="sm"
+            />
+          </div>
+        </div>
 
         <div
           v-if="subTab !== 'list'"
