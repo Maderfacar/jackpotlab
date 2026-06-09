@@ -35,3 +35,6 @@ firestore-debug.log
 
 .vercel
 sa.tmp.json
+
+# Claude Code (local config — auto-allow, launch config)
+.claude/
