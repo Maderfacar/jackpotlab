@@ -133,7 +133,7 @@ function formatTime(iso: string | null): string {
           />
         </div>
         <div class="flex items-center gap-4">
-          <SparkLine
+          <HindsightSparkLine
             :data="series"
             :width="220"
             :height="36"

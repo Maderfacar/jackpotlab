@@ -122,11 +122,11 @@ function closeSignal() {
         <template v-else>
           <!-- 當下 -->
           <template v-if="subTab === 'now'">
-            <AlertBanner
+            <HindsightAlertBanner
               v-if="currentAlerts.length > 0"
               :alerts="currentAlerts"
             />
-            <RightNowTab
+            <HindsightRightNowTab
               :game-id="gameId"
               :draws-asc="drawsAsc"
               :brain-state="brainState"
@@ -137,7 +137,7 @@ function closeSignal() {
 
           <!-- 訊號簿 -->
           <template v-else-if="subTab === 'book'">
-            <SignalDetail
+            <HindsightSignalDetail
               v-if="openedSignalId"
               :game-id="gameId"
               :signal-id="openedSignalId"
@@ -145,7 +145,7 @@ function closeSignal() {
               :draws-asc="drawsAsc"
               @close="closeSignal"
             />
-            <SignalBookTab
+            <HindsightSignalBookTab
               v-else
               :game-id="gameId"
               :brain-state="brainState"
@@ -155,7 +155,7 @@ function closeSignal() {
 
           <!-- 大局 -->
           <template v-else>
-            <BigPictureTab :brain-state="brainState" />
+            <HindsightBigPictureTab :brain-state="brainState" />
           </template>
         </template>
       </div>

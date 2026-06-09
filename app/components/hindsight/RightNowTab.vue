@@ -270,7 +270,7 @@ function supportingFor(num: number): string[] {
             <div class="flex items-center gap-3 text-xs text-muted tabular-nums">
               <span>近期 {{ rateText(card.recentRate) }}</span>
               <span>累積 {{ rateText(card.cumulativeRate) }}</span>
-              <SparkLine
+              <HindsightSparkLine
                 :data="card.recentSeries"
                 :width="60"
                 :height="18"
