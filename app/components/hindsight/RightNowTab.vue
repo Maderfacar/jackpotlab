@@ -7,9 +7,15 @@
  *   - 上一期表現永遠顯示，包括「中 0 顆」
  *   - conditionMetButEmpty 也要 show，但半透明 + 「條件成立、無號可推」
  *   - 沒算過顯示「—」
+ *
+ * 顯示細節：
+ *   - 標題列顯示下一期推算日期（539/賓果 = 上期+1 天；649 = 下個週二/五；威力 = 下個週一/四）
+ *   - 號碼下方列出「推此號的訊號名稱」（即 supportingSignals）
+ *   - interval_mean 的 pickGroup 標籤後綴顯示「當前 X / 均值 Y」
  */
 
-import type { GameId } from '~~/shared/lotto/games'
+import { GAMES, type GameId } from '~~/shared/lotto/games'
+import type { AnalysisPeriod, AnalysisState } from '~/utils/analysis'
 import type { NumberRanking } from '~/hindsight/ensemble'
 import { N0, baselineHitRate } from '~/hindsight/config'
 import { recentHitRate, smoothedHitRate } from '~/hindsight/scorecard'
@@ -24,6 +30,7 @@ interface Props {
   gameId: GameId
   drawsAsc: BrainDraw[]
   brainState: BrainState | null
+  analysisState: AnalysisState | null
   currentFirings: CurrentSignalFiring[]
   ranking: NumberRanking[]
 }
@@ -46,6 +53,74 @@ function signalName(signalId: string): string {
   return found?.signal.nameZh ?? signalId
 }
 
+// ---- 下一期日期推算 -------------------------------------------------------
+
+function pad2(n: number): string {
+  return n.toString().padStart(2, '0')
+}
+
+function fmtDate(d: Date): string {
+  return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`
+}
+
+function nextOnWeekdays(from: Date, weekdays: number[]): Date {
+  for (let i = 1; i <= 7; i++) {
+    const d = new Date(from.getTime())
+    d.setUTCDate(from.getUTCDate() + i)
+    if (weekdays.includes(d.getUTCDay())) return d
+  }
+  return from
+}
+
+function parseUTC(dateStr: string): Date | null {
+  if (!dateStr || dateStr.length < 10) return null
+  const y = Number.parseInt(dateStr.slice(0, 4), 10)
+  const m = Number.parseInt(dateStr.slice(5, 7), 10)
+  const d = Number.parseInt(dateStr.slice(8, 10), 10)
+  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) return null
+  return new Date(Date.UTC(y, m - 1, d))
+}
+
+const lastDraw = computed<BrainDraw | null>(() => {
+  if (props.drawsAsc.length === 0) return null
+  return props.drawsAsc[props.drawsAsc.length - 1] ?? null
+})
+
+const nextDrawLabel = computed<string>(() => {
+  const last = lastDraw.value
+  if (!last) return ''
+  const baseDate = parseUTC(last.drawDate)
+  if (!baseDate) return ''
+  let next: Date
+  switch (props.gameId) {
+    case 'lotto539':
+    case 'bingo_bingo': {
+      next = new Date(baseDate.getTime())
+      next.setUTCDate(baseDate.getUTCDate() + 1)
+      break
+    }
+    case 'lotto649': {
+      // 週二(2)、週五(5)
+      next = nextOnWeekdays(baseDate, [2, 5])
+      break
+    }
+    case 'super_lotto638': {
+      // 週一(1)、週四(4)
+      next = nextOnWeekdays(baseDate, [1, 4])
+      break
+    }
+    default: return ''
+  }
+  return `${fmtDate(next).slice(5).replace('-', '/')}（推算）`
+})
+
+const nextDrawTerm = computed<number | null>(() => {
+  const last = lastDraw.value
+  return last ? last.drawTerm + 1 : null
+})
+
+// ---- 亮燈卡片 -------------------------------------------------------------
+
 interface CardData {
   signalId: string
   nameZh: string
@@ -58,6 +133,42 @@ interface CardData {
   cumulativeRate: number
   sampleLow: boolean
   recentSeries: Array<number | null>
+}
+
+function parseRecord(record: string): number[] {
+  if (!record) return []
+  const out: number[] = []
+  for (const part of record.split(',')) {
+    if (!part) continue
+    const v = Number.parseInt(part, 10)
+    if (Number.isFinite(v)) out.push(v)
+  }
+  return out
+}
+
+function slotByLabel(label: string): AnalysisPeriod | null {
+  // label 形如「隔期 N」或「隔期 N (...)」
+  const m = label.match(/^隔期\s+(\d+)/)
+  if (!m) return null
+  const period = Number.parseInt(m[1]!, 10)
+  if (!Number.isFinite(period)) return null
+  const periods = props.analysisState?.periods ?? []
+  return periods.find(p => p.period === period) ?? null
+}
+
+/**
+ * interval_mean 專屬：對 pickGroup label 後綴顯示「當前 X / 均值 Y」。
+ * 其他訊號 label 原樣回傳。
+ */
+function decorateGroupLabel(signalId: string, label: string): string {
+  if (signalId !== 'interval_mean') return label
+  const slot = slotByLabel(label)
+  if (!slot) return label
+  const vs = parseRecord(slot.record)
+  if (vs.length === 0) return label
+  const current = vs[0]!
+  const mean = vs.reduce((a, b) => a + b, 0) / vs.length
+  return `${label}（當前 ${current} / 均值 ${mean.toFixed(2)}）`
 }
 
 const litCards = computed<CardData[]>(() => {
@@ -81,10 +192,18 @@ const litCards = computed<CardData[]>(() => {
         })
       : []
 
+    // 對 pickGroups 做 label decoration（interval_mean）
+    const decoratedGroups = cf.evaluation.pickGroups
+      ? cf.evaluation.pickGroups.map(g => ({
+          label: decorateGroupLabel(cf.signal.id, g.label),
+          numbers: g.numbers
+        }))
+      : null
+
     out.push({
       signalId: cf.signal.id,
       nameZh: cf.signal.nameZh,
-      pickGroups: cf.evaluation.pickGroups ?? null,
+      pickGroups: decoratedGroups,
       picks: cf.evaluation.picks,
       conditionMetButEmpty: !!cf.evaluation.conditionMetButEmpty,
       emptyGroupLabels: cf.evaluation.emptyGroupLabels ?? [],
@@ -107,11 +226,6 @@ interface LastFiring {
   hits: number
   hitNumbers: number[]
 }
-
-const lastDraw = computed<BrainDraw | null>(() => {
-  if (props.drawsAsc.length === 0) return null
-  return props.drawsAsc[props.drawsAsc.length - 1] ?? null
-})
 
 const lastFirings = computed<LastFiring[]>(() => {
   const out: LastFiring[] = []
@@ -136,10 +250,6 @@ function rateText(v: number | null): string {
   return `${(v * 100).toFixed(1)}%`
 }
 
-function pad(n: number): string {
-  return n.toString().padStart(2, '0')
-}
-
 function isHit(num: number, hits: number[]): boolean {
   return hits.includes(num)
 }
@@ -148,6 +258,34 @@ function supportingFor(num: number): string[] {
   const found = props.ranking.find(r => r.number === num)
   return found?.supportingSignals ?? []
 }
+
+function supportingNamesText(num: number): string {
+  const ids = supportingFor(num)
+  if (ids.length === 0) return ''
+  return [...new Set(ids.map(signalName))].join(' · ')
+}
+
+// 中文短名（避免 chip 太長）
+const SHORT_NAME_MAP: Record<string, string> = {
+  interval_mean: '均',
+  date_number: '日',
+  consecutive_chain: '鏈',
+  interval_sum: '和',
+  tail_pair: '尾',
+  cold_number: '冷',
+  position_distribution: '位'
+}
+
+function supportingShortChips(num: number): Array<{ id: string, short: string, full: string }> {
+  const ids = [...new Set(supportingFor(num))]
+  return ids.map(id => ({
+    id,
+    short: SHORT_NAME_MAP[id] ?? signalName(id).slice(0, 1),
+    full: signalName(id)
+  }))
+}
+
+const gameName = computed(() => GAMES[props.gameId].name)
 </script>
 
 <template>
@@ -157,9 +295,17 @@ function supportingFor(num: number): string[] {
       <UCard :ui="{ body: 'p-4 sm:p-5' }">
         <div class="space-y-3">
           <div class="flex items-baseline justify-between gap-2">
-            <h3 class="text-sm font-semibold">
-              下一期建議排名
-            </h3>
+            <div class="flex items-baseline gap-2 flex-wrap">
+              <h3 class="text-sm font-semibold">
+                下一期建議排名
+              </h3>
+              <span
+                v-if="nextDrawTerm !== null"
+                class="text-xs text-muted tabular-nums"
+              >
+                第 {{ nextDrawTerm }} 期 · {{ nextDrawLabel || '—' }} · {{ gameName }}
+              </span>
+            </div>
             <span class="text-xs text-muted">
               {{ topRanking.length === 0 ? '尚無亮燈訊號' : `共 ${ranking.length} 個候選 · 顯示前 ${topRanking.length}` }}
             </span>
@@ -172,13 +318,13 @@ function supportingFor(num: number): string[] {
           </div>
           <div
             v-else
-            class="flex flex-wrap items-center gap-1.5"
+            class="flex flex-wrap items-start gap-2"
           >
             <button
               v-for="(r, idx) in topRanking"
               :key="r.number"
               type="button"
-              class="group inline-flex flex-col items-center gap-1 rounded-md p-1 transition hover:bg-elevated"
+              class="group inline-flex flex-col items-center gap-1 rounded-md p-1.5 transition hover:bg-elevated"
               :class="expandedNumber === r.number ? 'bg-elevated ring-1 ring-primary' : ''"
               @click="toggleNumber(r.number)"
             >
@@ -191,11 +337,25 @@ function supportingFor(num: number): string[] {
                 size="lg"
                 class="min-w-9 justify-center font-mono"
               >
-                {{ pad(r.number) }}
+                {{ pad2(r.number) }}
               </UBadge>
               <span class="text-[10px] text-muted tabular-nums">
                 {{ r.score.toFixed(2) }} 票
               </span>
+              <!-- 訊號來源 chips -->
+              <div
+                v-if="supportingShortChips(r.number).length > 0"
+                class="flex flex-wrap justify-center gap-0.5 max-w-[60px]"
+              >
+                <span
+                  v-for="chip in supportingShortChips(r.number)"
+                  :key="`${r.number}-${chip.id}`"
+                  class="inline-flex items-center justify-center rounded bg-elevated px-1 py-0.5 text-[9px] leading-none text-muted"
+                  :title="chip.full"
+                >
+                  {{ chip.short }}
+                </span>
+              </div>
             </button>
           </div>
           <!-- 為什麼是這個 -->
@@ -204,7 +364,13 @@ function supportingFor(num: number): string[] {
             class="rounded-md border border-default bg-elevated p-3 text-xs"
           >
             <div class="mb-1 font-medium">
-              為什麼是 {{ pad(expandedNumber) }}？
+              為什麼是 {{ pad2(expandedNumber) }}？
+              <span
+                v-if="supportingNamesText(expandedNumber)"
+                class="ml-1 text-muted"
+              >
+                — {{ supportingNamesText(expandedNumber) }}
+              </span>
             </div>
             <ul class="space-y-1">
               <li
@@ -289,7 +455,7 @@ function supportingFor(num: number): string[] {
               :key="g.label"
               class="flex flex-wrap items-center gap-1.5"
             >
-              <span class="min-w-16 text-xs text-muted">{{ g.label }}</span>
+              <span class="min-w-24 text-xs text-muted">{{ g.label }}</span>
               <UBadge
                 v-for="n in g.numbers"
                 :key="`${card.signalId}-${g.label}-${n}`"
@@ -298,7 +464,7 @@ function supportingFor(num: number): string[] {
                 size="md"
                 class="min-w-8 justify-center font-mono"
               >
-                {{ pad(n) }}
+                {{ pad2(n) }}
               </UBadge>
             </div>
           </div>
@@ -314,20 +480,19 @@ function supportingFor(num: number): string[] {
               size="md"
               class="min-w-8 justify-center font-mono"
             >
-              {{ pad(n) }}
+              {{ pad2(n) }}
             </UBadge>
           </div>
 
-          <!-- 條件成立但無號可推時，列空 slot 標籤 -->
+          <!-- 觀察訊息 / 條件成立但無號可推 -->
           <div
             v-if="card.emptyGroupLabels.length > 0"
-            class="flex flex-wrap items-center gap-1.5 text-xs text-muted"
+            class="flex flex-col gap-1 text-xs text-muted"
           >
-            <span class="min-w-16">無號 slot</span>
             <span
               v-for="lbl in card.emptyGroupLabels"
               :key="lbl"
-              class="rounded border border-default px-2 py-0.5"
+              class="rounded border border-default px-2 py-1"
             >
               {{ lbl }}
             </span>
@@ -364,7 +529,7 @@ function supportingFor(num: number): string[] {
                 size="md"
                 class="min-w-8 justify-center font-mono"
               >
-                {{ pad(n) }}
+                {{ pad2(n) }}
               </UBadge>
             </div>
           </div>
@@ -401,7 +566,7 @@ function supportingFor(num: number): string[] {
                   size="sm"
                   class="min-w-7 justify-center font-mono"
                 >
-                  {{ pad(n) }}
+                  {{ pad2(n) }}
                 </UBadge>
               </div>
             </div>

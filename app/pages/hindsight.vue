@@ -3,7 +3,7 @@
  * 鑑古主頁 /hindsight
  *
  * - 彩種小框框 UTabs（沿用 draws.vue 寫法）
- * - 三個次分頁：當下 / 訊號簿 / 大局
+ * - 三個次分頁：當下 / 訊號牆 / 大局
  * - 釘選頂部 tabs
  * - 警示橫幅釘在當下頁頂部
  */
@@ -27,7 +27,7 @@ const tabs = GAME_IDS.map(id => ({
 
 const subTabItems = [
   { label: '當下', value: 'now' as const },
-  { label: '訊號簿', value: 'book' as const },
+  { label: '訊號牆', value: 'book' as const },
   { label: '大局', value: 'big' as const }
 ]
 
@@ -36,6 +36,7 @@ const {
   error,
   drawsAsc,
   brainState,
+  analysisState,
   currentFirings,
   ranking,
   currentAlerts,
@@ -130,12 +131,13 @@ function closeSignal() {
               :game-id="gameId"
               :draws-asc="drawsAsc"
               :brain-state="brainState"
+              :analysis-state="analysisState"
               :current-firings="currentFirings"
               :ranking="ranking"
             />
           </template>
 
-          <!-- 訊號簿 -->
+          <!-- 訊號牆 -->
           <template v-else-if="subTab === 'book'">
             <HindsightSignalDetail
               v-if="openedSignalId"

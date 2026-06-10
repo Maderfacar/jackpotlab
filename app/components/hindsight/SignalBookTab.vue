@@ -1,7 +1,8 @@
 <script setup lang="ts">
 /**
- * 訊號簿：列出當彩種所有訊號的成績單卡片。
- * 排序選項：最近 / 累積 / 觸發頻率（按 totalFires 由高到低）。
+ * 訊號牆：列出當彩種所有訊號的成績單卡片。
+ * 排序預設按「近 20 期命中率」由高到低（樣本不足／無資料的拉到尾端）；
+ * 也可切換到累積命中率或觸發頻率。
  * 點卡片 → emit('open', signalId) 由父頁面展開 SignalDetail。
  */
 
@@ -22,11 +23,11 @@ const emit = defineEmits<{
 }>()
 
 type SortKey = 'recent' | 'cumulative' | 'frequency'
-const sortKey = ref<SortKey>('cumulative')
+const sortKey = ref<SortKey>('recent')
 const SAMPLE_FLOOR = 30
 
 const sortItems = [
-  { label: '最近表現', value: 'recent' as const },
+  { label: '近 20 期', value: 'recent' as const },
   { label: '累積', value: 'cumulative' as const },
   { label: '觸發頻率', value: 'frequency' as const }
 ]

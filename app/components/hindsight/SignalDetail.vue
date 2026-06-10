@@ -124,7 +124,7 @@ function isHit(num: number, hits: number[]): boolean {
         icon="i-lucide-arrow-left"
         @click="emit('close')"
       >
-        回訊號簿
+        回訊號牆
       </UButton>
     </div>
 
