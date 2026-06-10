@@ -8,9 +8,11 @@ import { registerSignal } from '../registry'
 import { coldNumberSignal } from './cold-number'
 import { consecutiveChainSignal } from './consecutive-chain'
 import { dateNumberSignal } from './date-number'
+import { firstPositionSignal } from './first-position'
 import { intervalMeanSignal } from './interval-mean'
 import { intervalSumSignal } from './interval-sum'
 import { positionDistributionSignal } from './position-distribution'
+import { streakAlertSignal } from './bingo-streak-alert'
 import { tailPairSignal } from './tail-pair'
 
 export function registerAllSignals(): void {
@@ -21,14 +23,18 @@ export function registerAllSignals(): void {
   registerSignal(tailPairSignal)
   registerSignal(coldNumberSignal)
   registerSignal(positionDistributionSignal)
+  registerSignal(streakAlertSignal)
+  registerSignal(firstPositionSignal)
 }
 
 export {
   coldNumberSignal,
   consecutiveChainSignal,
   dateNumberSignal,
+  firstPositionSignal,
   intervalMeanSignal,
   intervalSumSignal,
   positionDistributionSignal,
+  streakAlertSignal,
   tailPairSignal
 }
