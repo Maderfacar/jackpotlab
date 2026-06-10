@@ -162,12 +162,27 @@ interface CardData {
   picks: number[]
   conditionMetButEmpty: boolean
   emptyGroupLabels: string[]
+  /** 訊號 7 結構化 y 值，UI 用染色 chip 顯示。其他訊號為空。 */
+  latestYs: number[]
   totalFires: number
   totalPicks: number
   recentRate: number | null
   cumulativeRate: number
   sampleLow: boolean
   recentSeries: Array<number | null>
+}
+
+// 2026-06-11 拍板：訊號 7 y 值染色 mapping（紅橙綠藍紫粉，Nuxt UI 4 text-{color}-500）
+const Y_COLOR_CLASS: Record<number, string> = {
+  1: 'text-red-500',
+  2: 'text-orange-500',
+  3: 'text-emerald-500',
+  4: 'text-sky-500',
+  5: 'text-violet-500',
+  6: 'text-pink-500'
+}
+function yColorClass(y: number): string {
+  return Y_COLOR_CLASS[y] ?? 'text-muted'
 }
 
 function parseRecord(record: string): number[] {
@@ -235,6 +250,14 @@ const litCards = computed<CardData[]>(() => {
         }))
       : null
 
+    // 訊號 7 latestYs：UI 用染色 chip 顯示。若有 latestYs，移除 emptyGroupLabels
+    // 中以「本期 y 組成」開頭那條（已被結構化資料取代），避免重複顯示。
+    const latestYs = cf.evaluation.observationData?.latestYs ?? []
+    const rawLabels = cf.evaluation.emptyGroupLabels ?? []
+    const filteredLabels = latestYs.length > 0
+      ? rawLabels.filter(l => !l.startsWith('本期 y 組成'))
+      : rawLabels
+
     out.push({
       signalId: cf.signal.id,
       nameZh: cf.signal.nameZh,
@@ -242,7 +265,8 @@ const litCards = computed<CardData[]>(() => {
       pickGroups: decoratedGroups,
       picks: cf.evaluation.picks,
       conditionMetButEmpty: !!cf.evaluation.conditionMetButEmpty,
-      emptyGroupLabels: cf.evaluation.emptyGroupLabels ?? [],
+      emptyGroupLabels: filteredLabels,
+      latestYs,
       totalFires: sc?.totalFires ?? 0,
       totalPicks,
       recentRate: recent,
@@ -538,6 +562,25 @@ const gameName = computed(() => GAMES[props.gameId].name)
             >
               {{ pad2(n) }}
             </UBadge>
+          </div>
+
+          <!-- 訊號 7：本期 y 組成染色 chip（紅橙綠藍紫粉，2026-06-11 拍板） -->
+          <div
+            v-if="card.latestYs.length > 0"
+            class="space-y-1"
+          >
+            <div class="text-xs text-muted">
+              本期 y 組成
+            </div>
+            <div class="flex flex-wrap items-center gap-1.5">
+              <span
+                v-for="(y, i) in card.latestYs"
+                :key="`y-${card.signalId}-${i}`"
+                :class="['inline-flex min-w-6 justify-center rounded border border-default px-2 py-0.5 text-xs font-mono font-semibold', yColorClass(y)]"
+              >
+                {{ y }}
+              </span>
+            </div>
           </div>
 
           <!-- 觀察訊息 / 條件成立但無號可推 -->

@@ -39,6 +39,10 @@ export interface SignalEvaluation {
   pickGroups?: PickGroup[]
   conditionMetButEmpty?: boolean
   emptyGroupLabels?: string[]
+  /** 觀察型訊號的結構化資料，供 UI 染色等渲染。訊號 7 使用 latestYs。 */
+  observationData?: {
+    latestYs?: number[]
+  }
 }
 
 /**
@@ -59,6 +63,13 @@ export interface SignalFiringRecord {
    * 預測型訊號通常為空。
    */
   observationLabels?: string[]
+  /**
+   * 觀察型訊號的結構化資料（與 SignalEvaluation.observationData 對齊）。
+   * 訊號 7 用 latestYs 在歷次紀錄中保留每期 y 值列表，UI 可逐期染色重現。
+   */
+  observationData?: {
+    latestYs?: number[]
+  }
 }
 
 /**

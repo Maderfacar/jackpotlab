@@ -6,14 +6,15 @@
  *
  * 兩方向可並存；只推延續號（不是 N 期所有號 ±1）。
  *
- * 規格來源：memory project-brain-signals-batch-2（2026-06-10 對齊：3 期→2 期）
+ * 規格來源：docs/HINDSIGHT-SIGNALS-AUDIT.md（2026-06-11 拍板：移除賓果）
  */
 
 import { GAMES, type GameId } from '../../../shared/lotto/games'
 import type { BrainDraw, PickGroup, SignalDef, SignalEvalParams, SignalEvaluation } from '../types'
 
 const ID = 'consecutive_chain'
-const APPLIES_TO: readonly GameId[] = ['lotto539', 'lotto649', 'super_lotto638', 'bingo_bingo']
+// 2026-06-11 拍板：訊號 3 不適用賓果（賓果每期 20 顆，配對率太高、訊號失去鑑別力）
+const APPLIES_TO: readonly GameId[] = ['lotto539', 'lotto649', 'super_lotto638']
 
 interface ConsecPair {
   prev: number

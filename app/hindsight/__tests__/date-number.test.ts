@@ -1,3 +1,10 @@
+/**
+ * 訊號 2：日期號（三桶獨立子判定）測試
+ *
+ * 2026-06-11 拍板：訊號 2 改成三桶獨立子判定。測試涵蓋每個子判定的獨立亮/不亮場景。
+ * 規格依據：docs/HINDSIGHT-SIGNALS-AUDIT.md「拍板紀錄 — 訊號 2」段落。
+ */
+
 import { strict as assert } from 'node:assert'
 import { describe, it } from 'node:test'
 
@@ -19,54 +26,140 @@ function mkParams(
   }
 }
 
-describe('signal: date_number', () => {
-  it('條件成立 → fires=true、picks 是候選號（升序）', () => {
-    // 539: 今天 2026-06-15 → todayD=15、候選=[14,15,16]
-    // 構造 history 使日期號出現很久沒中：
-    //   T1 (2026-01-01 d=1 候選 [1,2]) numbers=[1,5,10,20,30] → 命中（1 in [1,2]）
-    //   T2 (2026-01-02 d=2 候選 [1,2,3]) numbers=[2,7,11,22,33] → 命中
-    //   T3..T20 一連串都沒中日期號
+/** 構造 N 期不會命中任何桶的填充期。日期月份固定為 02，filler numbers 用 [25,27,28,29,30] 與所有 d±1 ∈ [01..20] 範圍互不重疊。 */
+function pushFiller(history: BrainDraw[], fromTerm: number, toTerm: number) {
+  for (let i = fromTerm; i <= toTerm; i++) {
+    const dd = String(((i - 1) % 20) + 1).padStart(2, '0')
+    history.push({
+      drawTerm: i,
+      drawDate: `2026-02-${dd}`,
+      numbers: [25, 27, 28, 29, 30]
+    })
+  }
+}
+
+describe('signal: date_number（2026-06-11 三桶獨立子判定）', () => {
+  it('三桶都有 hits 且 gap ≥ mean → 三子判定全亮、picks = 三候選聯集', () => {
+    // 539: todayD=15 → 候選 c₋₁=14、c₀=15、c₊₁=16
     const history: BrainDraw[] = []
-    history.push({ drawTerm: 1, drawDate: '2026-01-01', numbers: [1, 5, 10, 20, 30] })
-    history.push({ drawTerm: 2, drawDate: '2026-01-02', numbers: [2, 7, 11, 22, 33] })
-    // 中間 18 期都用「保證不會撞到該日 ±1」的號碼填充
-    for (let i = 3; i <= 20; i++) {
-      // dayOf 用 dateStr.slice(8,10)，所以 drawDate 月日格式正確
-      // 用一個與當天無關的固定 numbers，挑遠離日期的號
-      history.push({
-        drawTerm: i,
-        drawDate: `2026-02-${String(i).padStart(2, '0')}`,
-        numbers: [35, 36, 37, 38, 39]
-      })
-    }
-    // hitTerms = [1, 2]、intervals=[1]、meanInterval=1、lastTerm=2、currentTerm=20、gap=18 >= 1 → fires
+    // T1 d=10: numbers=[9,10,11,30,35] → 三桶各 +1（9=d-1、10=d、11=d+1）
+    history.push({ drawTerm: 1, drawDate: '2026-01-10', numbers: [9, 10, 11, 30, 35] })
+    // T2 d=20: numbers=[19,20,21,30,35] → 三桶各 +1
+    history.push({ drawTerm: 2, drawDate: '2026-01-20', numbers: [19, 20, 21, 30, 35] })
+    pushFiller(history, 3, 30)
+    // 三桶 hits 都 = [1, 2]，mean = 1，lastHit = 2，currentTerm = 30，gap = 28 ≥ 1 → 三桶都亮
+
     const out = dateNumberSignal.evaluate(mkParams('lotto539', history, '2026-06-15'))
     assert.equal(out.fires, true)
     assert.deepEqual(out.picks, [14, 15, 16])
+    assert.equal(out.pickGroups?.length, 3)
+    assert.deepEqual(out.pickGroups?.[0], { label: '日期 −1：14', numbers: [14] })
+    assert.deepEqual(out.pickGroups?.[1], { label: '日期：15', numbers: [15] })
+    assert.deepEqual(out.pickGroups?.[2], { label: '日期 +1：16', numbers: [16] })
   })
 
-  it('條件不成立（gap < meanInterval） → fires=false', () => {
-    // history 中每期都中日期號 → meanInterval=1、gap=1 不滿足 1 < 1? 不對：gap >= meanInterval 才 fire
-    // 改造：構造 lastTerm = currentTerm → gap = 0 < meanInterval → false
+  it('只有桶 minus1 亮（其他桶 hit < 2）→ 只推 c₋₁', () => {
+    // 539: todayD=15 → 候選 [14, 15, 16]
     const history: BrainDraw[] = []
-    // hitTerms = [1, 10], intervals=[9], mean=9, lastTerm=10, currentTerm=12, gap=2 < 9 → false
-    history.push({ drawTerm: 1, drawDate: '2026-01-01', numbers: [1, 30, 31, 32, 33] }) // 命中 (1 in [1,2])
-    for (let i = 2; i <= 9; i++) {
-      history.push({
-        drawTerm: i,
-        drawDate: `2026-02-${String(i).padStart(2, '0')}`,
-        numbers: [35, 36, 37, 38, 39] // 不命中
-      })
-    }
-    history.push({ drawTerm: 10, drawDate: '2026-03-10', numbers: [10, 30, 31, 32, 33] }) // d=10 候選[9,10,11]、numbers 含 10 → 命中
-    history.push({ drawTerm: 11, drawDate: '2026-03-11', numbers: [35, 36, 37, 38, 39] }) // 不命中
-    history.push({ drawTerm: 12, drawDate: '2026-03-12', numbers: [35, 36, 37, 38, 39] }) // 不命中
+    // 只讓 minus1 桶累積 2 次 hit、其他桶完全不累
+    // T1 d=10: numbers=[9, 30, 35, 36, 37] → 只 minus1（9 = d-1）
+    history.push({ drawTerm: 1, drawDate: '2026-01-10', numbers: [9, 30, 35, 36, 37] })
+    // T2 d=20: numbers=[19, 30, 35, 36, 37] → 只 minus1
+    history.push({ drawTerm: 2, drawDate: '2026-01-20', numbers: [19, 30, 35, 36, 37] })
+    pushFiller(history, 3, 30)
+
+    const out = dateNumberSignal.evaluate(mkParams('lotto539', history, '2026-06-15'))
+    assert.equal(out.fires, true)
+    assert.deepEqual(out.picks, [14])
+    assert.equal(out.pickGroups?.length, 1)
+    assert.deepEqual(out.pickGroups?.[0], { label: '日期 −1：14', numbers: [14] })
+  })
+
+  it('某桶 gap < mean → 該位置不亮、其他桶亮可獨立成立', () => {
+    // 設計：minus1 桶 hits=[1, 50] → mean = 49，最新 currentTerm = 51，gap = 1 < 49 → minus1 不亮
+    //       zero 桶 hits=[1, 50] → 同上不亮
+    //       plus1 桶 hits=[1, 2] → mean = 1，gap = 51 − 2 = 49 ≥ 1 → 亮
+    const history: BrainDraw[] = []
+    history.push({ drawTerm: 1, drawDate: '2026-01-10', numbers: [9, 10, 11, 30, 35] }) // 三桶各 +1
+    history.push({ drawTerm: 2, drawDate: '2026-01-20', numbers: [21, 30, 35, 36, 37] }) // plus1 +1（21=d+1）
+    pushFiller(history, 3, 49)
+    history.push({ drawTerm: 50, drawDate: '2026-03-10', numbers: [9, 10, 30, 35, 36] }) // minus1+zero +1
+    pushFiller(history, 51, 51)
+    // 桶狀態：
+    //   minus1 = [1, 50] → mean = 49、lastHit = 50、gap = 51 − 50 = 1 < 49 → 不亮
+    //   zero   = [1, 50] → 同上不亮
+    //   plus1  = [1, 2]  → mean = 1、lastHit = 2、gap = 51 − 2 = 49 ≥ 1 → 亮
+
+    const out = dateNumberSignal.evaluate(mkParams('lotto539', history, '2026-06-15'))
+    assert.equal(out.fires, true)
+    assert.deepEqual(out.picks, [16])
+    assert.equal(out.pickGroups?.length, 1)
+    assert.deepEqual(out.pickGroups?.[0], { label: '日期 +1：16', numbers: [16] })
+  })
+
+  it('今日 todayD = 1：c₋₁ = 0 不在彩種範圍 → minus1 子判定跳過（不評估）', () => {
+    // 即使 minus1 桶歷史 hit ≥ 2 且 gap ≥ mean，候選 0 不在 1-39 → 跳過
+    const history: BrainDraw[] = []
+    history.push({ drawTerm: 1, drawDate: '2026-01-10', numbers: [9, 30, 35, 36, 37] })
+    history.push({ drawTerm: 2, drawDate: '2026-01-20', numbers: [19, 30, 35, 36, 37] })
+    pushFiller(history, 3, 30)
+
+    const out = dateNumberSignal.evaluate(mkParams('lotto539', history, '2026-06-01'))
+    // todayD = 1 → c₋₁ = 0（跳過）、c₀ = 1（zero 桶 hits = 0 → 不亮）、c₊₁ = 2（plus1 桶 hits = 0 → 不亮）
+    assert.equal(out.fires, false)
+    assert.deepEqual(out.picks, [])
+  })
+
+  it('今日 todayD = 39：c₊₁ = 40 不在彩種範圍 → plus1 子判定跳過；其他位置仍可獨立亮', () => {
+    // 構造：plus1 桶 hits 多但候選跳過；zero 桶照常評
+    const history: BrainDraw[] = []
+    // 每期 numbers 都含「該期 d」、確保 zero 桶 +1
+    history.push({ drawTerm: 1, drawDate: '2026-01-10', numbers: [10, 30, 35, 36, 37] }) // zero +1
+    history.push({ drawTerm: 2, drawDate: '2026-01-20', numbers: [20, 30, 35, 36, 37] }) // zero +1
+    pushFiller(history, 3, 30)
+    // todayD = 39 → c₋₁ = 38（minus1 桶 hits = 0 → 不亮）、c₀ = 39（zero 桶 hits = [1,2]、mean=1、gap=28 → 亮）、c₊₁ = 40（跳過）
+
+    const out = dateNumberSignal.evaluate(mkParams('lotto539', history, '2026-06-39'))
+    assert.equal(out.fires, true)
+    assert.deepEqual(out.picks, [39])
+    assert.equal(out.pickGroups?.length, 1)
+    assert.deepEqual(out.pickGroups?.[0], { label: '日期：39', numbers: [39] })
+  })
+
+  it('歷史掃描時，d ± 1 越界該期該桶不計（不會誤算）', () => {
+    // 539 範圍 1-39。T1 d=1 → minus1 target = 0 越界、不計入 minus1 桶
+    //                      zero target = 1 在範圍、numbers 含 1 → zero +1
+    //                      plus1 target = 2 在範圍、numbers 含 2 → plus1 +1
+    const history: BrainDraw[] = []
+    history.push({ drawTerm: 1, drawDate: '2026-01-01', numbers: [1, 2, 30, 35, 36] })
+    history.push({ drawTerm: 2, drawDate: '2026-01-02', numbers: [2, 3, 30, 35, 36] })
+    // T1: minus1 ✗（0 越界）、zero ✓（含 1）、plus1 ✓（含 2）
+    // T2: minus1 ✓（d-1=1、含 1）、zero ✓（含 2）、plus1 ✓（含 3）
+    pushFiller(history, 3, 30)
+    // minus1 hits=[2]、zero hits=[1,2]、plus1 hits=[1,2]
+    // todayD=15 → c=[14,15,16]
+    //   minus1 hits=1 < 2 → 不亮
+    //   zero hits=[1,2] mean=1 lastHit=2 currentTerm=30 gap=28 ≥ 1 → 亮（推 15）
+    //   plus1 hits=[1,2] mean=1 gap=28 ≥ 1 → 亮（推 16）
+
+    const out = dateNumberSignal.evaluate(mkParams('lotto539', history, '2026-06-15'))
+    assert.equal(out.fires, true)
+    assert.deepEqual(out.picks, [15, 16])
+    assert.equal(out.pickGroups?.length, 2)
+    assert.deepEqual(out.pickGroups?.[0], { label: '日期：15', numbers: [15] })
+    assert.deepEqual(out.pickGroups?.[1], { label: '日期 +1：16', numbers: [16] })
+  })
+
+  it('全部三桶都 hit < 2 → fires = false', () => {
+    const history: BrainDraw[] = []
+    pushFiller(history, 1, 20)
+
     const out = dateNumberSignal.evaluate(mkParams('lotto539', history, '2026-06-15'))
     assert.equal(out.fires, false)
     assert.deepEqual(out.picks, [])
   })
 
-  it('邊界：賓果直接 fires=false（不論 history）', () => {
+  it('賓果直接 fires = false（不論 history）', () => {
     const history: BrainDraw[] = [
       { drawTerm: 1, drawDate: '2026-06-09', numbers: Array.from({ length: 20 }, (_, i) => i + 1) }
     ]
@@ -75,72 +168,31 @@ describe('signal: date_number', () => {
     assert.deepEqual(out.picks, [])
   })
 
-  it('邊界：日=1 → d-1=0 過濾掉，候選 = [1, 2]', () => {
-    // 539 範圍 1-39，d=1 → 候選 [0,1,2] 過濾 → [1,2]
-    // 填充期都用 [35..39]：dayOf 從未涵蓋這段（最大候選 d=31 → [30,31,32]），
-    // 所以填充期保證 0 命中、不會污染 hitTerms。
-    const history: BrainDraw[] = []
-    history.push({ drawTerm: 1, drawDate: '2026-01-05', numbers: [5, 10, 20, 30, 33] }) // d=5 候選[4,5,6] 命中(5)
-    history.push({ drawTerm: 2, drawDate: '2026-01-06', numbers: [6, 11, 21, 31, 34] }) // d=6 候選[5,6,7] 命中(6)
-    for (let i = 3; i <= 30; i++) {
-      history.push({
-        drawTerm: i,
-        drawDate: `2026-02-${String(i).padStart(2, '0')}`,
-        numbers: [35, 36, 37, 38, 39]
-      })
-    }
-    // hitTerms=[1,2], mean=1, gap=30-2=28 >= 1 → fire
-    const out = dateNumberSignal.evaluate(mkParams('lotto539', history, '2026-07-01'))
-    assert.equal(out.fires, true)
-    assert.deepEqual(out.picks, [1, 2])
+  it('history 為空 → fires = false', () => {
+    const out = dateNumberSignal.evaluate(mkParams('lotto539', [], '2026-06-15'))
+    assert.equal(out.fires, false)
+    assert.deepEqual(out.picks, [])
   })
 
-  it('邊界：候選空 → fires=false', () => {
-    // 威力彩第二區是另外的，主號範圍 1-38；今天 d=99 不可能，但用越界日期測試
-    // 用日期 d=40，超出 539 1-39 範圍：候選 [39,40,41] 過濾後只剩 [39]
-    // 改成測「候選整段空」更乾淨：用一個 D 大於 numberMax+1 的情況
-    // 539 範圍 1-39，d=99 → 99-1=98、99、100 全 > 39 → 候選空
-    // 但 dayOf 只取 slice(8,10) 兩位數，所以最大就是 99（合法日期不可能但函式接受）
+  it('todayD 三候選全越界（539 用 99）→ 三子判定全跳過、fires = false', () => {
     const history: BrainDraw[] = [
       { drawTerm: 1, drawDate: '2026-06-05', numbers: [5, 10, 20, 30, 35] }
     ]
-    // 使用 dateStr 第 9-10 位是 '99' → todayD = 99 → 候選 [98,99,100] 全超出 1-39 → 空
     const out = dateNumberSignal.evaluate(mkParams('lotto539', history, '2026-06-99'))
     assert.equal(out.fires, false)
     assert.deepEqual(out.picks, [])
   })
 
-  it('邊界：hitTerms.length < 2（樣本不足）→ fires=false', () => {
-    // 全 history 都沒中日期號
+  it('大樂透 649 範圍 1-49、三桶各自獨立判定（與 539 行為一致）', () => {
+    // 649: todayD=30 → 候選 [29, 30, 31]
     const history: BrainDraw[] = []
-    for (let i = 1; i <= 10; i++) {
-      history.push({
-        drawTerm: i,
-        drawDate: `2026-02-${String(i).padStart(2, '0')}`,
-        numbers: [35, 36, 37, 38, 39]
-      })
-    }
-    const out = dateNumberSignal.evaluate(mkParams('lotto539', history, '2026-06-20'))
-    assert.equal(out.fires, false)
-    assert.deepEqual(out.picks, [])
-  })
+    history.push({ drawTerm: 1, drawDate: '2026-01-10', numbers: [9, 10, 11, 30, 40, 45] }) // 三桶各 +1
+    history.push({ drawTerm: 2, drawDate: '2026-01-20', numbers: [19, 20, 21, 30, 40, 45] }) // 三桶各 +1
+    pushFiller(history, 3, 30)
 
-  it('只看主號碼（numbers），與規格一致', () => {
-    // numbers 直接就是主號（BrainDraw 介面定義），不分特別號
-    // 這個測試其實已被「條件成立」測試覆蓋；明確再標一筆
-    const history: BrainDraw[] = []
-    history.push({ drawTerm: 1, drawDate: '2026-01-10', numbers: [10, 20, 30, 40, 50] }) // d=10 候選[9,10,11] 命中
-    history.push({ drawTerm: 2, drawDate: '2026-01-11', numbers: [11, 21, 31, 41, 49] }) // d=11 候選[10,11,12] 命中
-    for (let i = 3; i <= 15; i++) {
-      history.push({
-        drawTerm: i,
-        drawDate: `2026-02-${String(i).padStart(2, '0')}`,
-        numbers: [3, 4, 5, 6, 7]
-      })
-    }
     const out = dateNumberSignal.evaluate(mkParams('lotto649', history, '2026-06-30'))
-    // 大樂透 6 顆主號，候選=[29,30,31]
     assert.equal(out.fires, true)
     assert.deepEqual(out.picks, [29, 30, 31])
+    assert.equal(out.pickGroups?.length, 3)
   })
 })

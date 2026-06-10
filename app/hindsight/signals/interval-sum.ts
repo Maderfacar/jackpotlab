@@ -2,13 +2,13 @@
  * 隔期總和（interval_sum）—— 觀察型訊號
  *
  * 觸發條件：analysisState.history 的 sum 序列從最新一期往回看，
- *   存在「至少 2 個連續同向 transition」（即至少 3 個值嚴格單調）。
+ *   存在「至少 3 個連續同向 transition」（即至少 4 個值嚴格單調）。
  * 推薦策略：無號可推（fires 永遠 false），亮燈時以 emptyGroupLabels
  *   呈現「已連續變大/變小 K 期，數值變化 v1→v2→...」。
  *
  * 適用彩種：lotto539 / lotto649 / super_lotto638（賓果不適用）
  *
- * 規格來源：memory project-brain-signals-batch-2
+ * 規格來源：docs/HINDSIGHT-SIGNALS-AUDIT.md（2026-06-11 拍板：≥ 2 改 ≥ 3）
  */
 
 import type { GameId } from '../../../shared/lotto/games'
@@ -48,7 +48,8 @@ function evaluate(params: SignalEvalParams): SignalEvaluation {
   }
 
   const transitions = chain.length - 1
-  if (transitions < 2) return { fires: false, picks: [] }
+  // 2026-06-11 拍板：門檻從 ≥ 2 改成 ≥ 3（連續 4 期以上嚴格單調）
+  if (transitions < 3) return { fires: false, picks: [] }
 
   const arrow = chain.join('→')
   const dirLabel = dir === 1 ? '變大' : '變小'
@@ -66,7 +67,7 @@ function evaluate(params: SignalEvalParams): SignalEvaluation {
 export const intervalSumSignal: SignalDef = {
   id: ID,
   nameZh: '隔期總和',
-  description: '最近 N 期隔期總和連續同向（≥ 2 個 transition）時亮燈，顯示數值變化；不推號',
+  description: '最近 N 期隔期總和連續同向（≥ 3 個 transition，即連 4 期以上嚴格單調）時亮燈，顯示數值變化；不推號',
   kind: 'observation',
   appliesTo: [...APPLIES_TO],
   evaluate

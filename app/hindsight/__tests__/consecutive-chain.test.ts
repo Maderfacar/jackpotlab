@@ -76,6 +76,14 @@ describe('signal: consecutive_chain', () => {
     assert.deepEqual(out.picks, [])
   })
 
+  it('appliesTo 不含 bingo_bingo（2026-06-11 拍板移除）', () => {
+    // 訊號 3 不適用賓果。bingo_bingo 不應在 appliesTo 內。
+    assert.equal(consecutiveChainSignal.appliesTo.includes('bingo_bingo'), false)
+    assert.equal(consecutiveChainSignal.appliesTo.includes('lotto539'), true)
+    assert.equal(consecutiveChainSignal.appliesTo.includes('lotto649'), true)
+    assert.equal(consecutiveChainSignal.appliesTo.includes('super_lotto638'), true)
+  })
+
   it('上升與下降可並存', () => {
     // +1: 6→7 推 8；-1: 29→28 推 27
     const history: BrainDraw[] = [

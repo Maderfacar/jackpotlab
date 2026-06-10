@@ -2,12 +2,15 @@
  * 絕地定位（position_distribution）—— 觀察型訊號
  *
  * 觸發條件：analysisState.history 至少 1 期且 positions 欄位非空。
- * 推薦策略：無號可推。亮燈時以 emptyGroupLabels 顯示最新一期 5 個 y 值的組成，
- *   以及最近 30 期累積 y 值分佈次數。
+ * 推薦策略：無號可推。亮燈時：
+ *   - emptyGroupLabels 顯示最新一期 y 值組成（字串）+ 最近 N 期累積分佈
+ *   - observationData.latestYs 提供結構化 y 值陣列，供 UI 染色 chip 渲染
+ *
+ * 觀察窗：使用 params.analysisState.n（隨使用者選的 N 變動）
  *
  * 適用彩種：lotto539 / lotto649 / super_lotto638（賓果不適用）
  *
- * 規格來源：memory project-brain-signals-batch-2
+ * 規格來源：docs/HINDSIGHT-SIGNALS-AUDIT.md（2026-06-11 拍板：固定 30 → N、加染色）
  */
 
 import type { GameId } from '../../../shared/lotto/games'
@@ -15,7 +18,6 @@ import type { SignalDef, SignalEvalParams, SignalEvaluation } from '../types'
 
 const ID = 'position_distribution'
 const APPLIES_TO: readonly GameId[] = ['lotto539', 'lotto649', 'super_lotto638']
-const RECENT_WINDOW = 30
 
 function parseYs(positions: string | undefined): number[] {
   if (!positions) return []
@@ -40,8 +42,10 @@ function evaluate(params: SignalEvalParams): SignalEvaluation {
   const latestYs = parseYs(latest.positions)
   if (latestYs.length === 0) return { fires: false, picks: [] }
 
+  // 2026-06-11 拍板：觀察窗從固定 30 改成 params.analysisState.n
+  const windowSize = params.analysisState.n
   const counts = new Map<number, number>()
-  const window = hist.slice(-RECENT_WINDOW)
+  const window = hist.slice(-windowSize)
   for (const h of window) {
     for (const y of parseYs(h.positions)) {
       counts.set(y, (counts.get(y) ?? 0) + 1)
@@ -59,7 +63,8 @@ function evaluate(params: SignalEvalParams): SignalEvaluation {
     fires: true,
     picks: [],
     conditionMetButEmpty: true,
-    emptyGroupLabels: labels
+    emptyGroupLabels: labels,
+    observationData: { latestYs }
   }
 }
 

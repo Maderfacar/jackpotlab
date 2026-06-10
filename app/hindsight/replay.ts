@@ -92,6 +92,13 @@ export function replayHistory(
         if (isObservation && evalResult.emptyGroupLabels && evalResult.emptyGroupLabels.length > 0) {
           firing.observationLabels = [...evalResult.emptyGroupLabels]
         }
+        // 觀察型結構化資料（訊號 7 latestYs 用於 UI 染色）
+        if (isObservation && evalResult.observationData) {
+          firing.observationData = { ...evalResult.observationData }
+          if (evalResult.observationData.latestYs) {
+            firing.observationData.latestYs = [...evalResult.observationData.latestYs]
+          }
+        }
         firings[sig.id] = firing
       }
     }

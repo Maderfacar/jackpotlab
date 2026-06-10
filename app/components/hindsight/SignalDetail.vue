@@ -58,6 +58,21 @@ interface EvidenceRow {
   hits: number
   hitNumbers: number[]
   observationLabels: string[]
+  /** 訊號 7 結構化 y 值，UI 用染色 chip 顯示。其他訊號為空。 */
+  latestYs: number[]
+}
+
+// 2026-06-11 拍板：訊號 7 y 值染色 mapping（紅橙綠藍紫粉，Nuxt UI 4 text-{color}-500）
+const Y_COLOR_CLASS: Record<number, string> = {
+  1: 'text-red-500',
+  2: 'text-orange-500',
+  3: 'text-emerald-500',
+  4: 'text-sky-500',
+  5: 'text-violet-500',
+  6: 'text-pink-500'
+}
+function yColorClass(y: number): string {
+  return Y_COLOR_CLASS[y] ?? 'text-muted'
 }
 
 const drawByTerm = computed<Map<number, BrainDraw>>(() => {
@@ -71,6 +86,13 @@ const evidence = computed<EvidenceRow[]>(() => {
   const out: EvidenceRow[] = []
   for (const f of [...scorecard.value.recentFirings].reverse()) {
     const actual = drawByTerm.value.get(f.drawTerm)?.numbers ?? []
+    const latestYs = f.observationData?.latestYs ?? []
+    // 訊號 7：有 latestYs 時，移除 observationLabels 中以「本期 y 組成」開頭那條
+    // （已被結構化資料取代），避免重複顯示。
+    const rawLabels = f.observationLabels ?? []
+    const filteredLabels = latestYs.length > 0
+      ? rawLabels.filter(l => !l.startsWith('本期 y 組成'))
+      : rawLabels
     out.push({
       drawTerm: f.drawTerm,
       drawDate: f.drawDate,
@@ -78,7 +100,8 @@ const evidence = computed<EvidenceRow[]>(() => {
       actual,
       hits: f.hits ?? 0,
       hitNumbers: f.hitNumbers ?? [],
-      observationLabels: f.observationLabels ?? []
+      observationLabels: filteredLabels,
+      latestYs
     })
   }
   return out
@@ -320,6 +343,20 @@ function isHit(num: number, hits: number[]): boolean {
                     <span class="text-[10px] text-muted">{{ row.drawDate }}</span>
                   </td>
                   <td class="px-3 py-2">
+                    <!-- 訊號 7：本期 y 組成染色 chip -->
+                    <div
+                      v-if="row.latestYs.length > 0"
+                      class="mb-1 flex flex-wrap items-center gap-1"
+                    >
+                      <span class="text-muted leading-snug">本期 y 組成：</span>
+                      <span
+                        v-for="(y, i) in row.latestYs"
+                        :key="`y-${row.drawTerm}-${i}`"
+                        :class="['inline-flex min-w-5 justify-center rounded border border-default px-1.5 py-0.5 text-xs font-mono font-semibold', yColorClass(y)]"
+                      >
+                        {{ y }}
+                      </span>
+                    </div>
                     <div
                       v-if="row.observationLabels.length > 0"
                       class="flex flex-col gap-1"
@@ -333,7 +370,7 @@ function isHit(num: number, hits: number[]): boolean {
                       </span>
                     </div>
                     <span
-                      v-else
+                      v-else-if="row.latestYs.length === 0"
                       class="text-muted"
                     >—（早期紀錄，請待下次 replay 補齊）</span>
                   </td>

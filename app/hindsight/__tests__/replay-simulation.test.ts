@@ -118,7 +118,7 @@ describe('replay simulation: W2 三訊號 scorecard 報告', () => {
     }
   })
 
-  it('賓果 模擬：date_number 對賓果不註冊 scorecard（appliesTo 不含 bingo）；其他訊號可正常 fire', (t) => {
+  it('賓果 模擬：date_number / consecutive_chain 對賓果不註冊 scorecard（appliesTo 不含 bingo）；interval_mean 仍可正常 fire', (t) => {
     const draws = genBingoDraws(2000, 1337)
     const state = replayHistory('bingo_bingo', draws, signals)
     const baseline = baselineHitRate('bingo_bingo')
@@ -143,6 +143,8 @@ describe('replay simulation: W2 三訊號 scorecard 報告', () => {
     // 第一道防線：appliesTo 不含 bingo → replay 連 scorecard 都不會建
     assert.equal(state.scorecards.date_number, undefined,
       'date_number 因 appliesTo 不含 bingo_bingo，replay 應該完全跳過')
+    assert.equal(state.scorecards.consecutive_chain, undefined,
+      'consecutive_chain 因 appliesTo 不含 bingo_bingo（2026-06-11 拍板移除），replay 應該完全跳過')
     // 第二道防線（runtime short-circuit）：直接呼叫 evaluate 也回 fires=false
     const directOut = dateNumberSignal.evaluate({
       gameId: 'bingo_bingo',
@@ -153,8 +155,7 @@ describe('replay simulation: W2 三訊號 scorecard 報告', () => {
     assert.equal(directOut.fires, false, 'date_number runtime gate 對 bingo 應回 false')
     assert.deepEqual(directOut.picks, [])
 
-    // 其他兩個訊號對 bingo 仍然會 fire（賓果適用）
+    // 賓果仍適用的訊號
     assert.ok(state.scorecards.interval_mean, 'interval_mean 應該對 bingo 註冊 scorecard')
-    assert.ok(state.scorecards.consecutive_chain, 'consecutive_chain 應該對 bingo 註冊 scorecard')
   })
 })

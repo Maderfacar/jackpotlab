@@ -46,7 +46,8 @@ export function updateScorecard(
     pickGroups: firing.pickGroups,
     hits,
     hitNumbers,
-    observationLabels: firing.observationLabels
+    observationLabels: firing.observationLabels,
+    observationData: firing.observationData
   }
   const recent = [...scorecard.recentFirings, scoredFiring].slice(-RECENT_FIRING_KEEP)
   return {
