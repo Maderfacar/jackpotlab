@@ -13,10 +13,9 @@ import type { GameId } from '../../shared/lotto/games'
 import type { BrainState } from './types'
 
 const STORAGE_PREFIX = 'jackpotlab-hindsight'
-// v3: observation 訊號改 fires=true 累積 totalFires；舊 v2 的觀察型 scorecard
-// 都是 0，必須整顆重跑才能在歷史回放中累積出觀察次數。
-// 同時：cold_number 觸發語意從「位置鎖定」改「任一位置」，重新打分結果不同。
-const STORAGE_VERSION = 3
+// v4: SignalFiringRecord 加 observationLabels（觀察型每期實際觀察文字）。
+// 舊 v3 cache 內的觀察型 firing 沒有這欄，UI 印出來是空，必須重 replay 補上。
+const STORAGE_VERSION = 4
 
 export function brainStateKey(gameId: GameId): string {
   return `${STORAGE_PREFIX}-${gameId}-v${STORAGE_VERSION}`

@@ -137,14 +137,18 @@ function evaluateCurrent(
     const nextTerm = (history[history.length - 1]!.drawTerm) + 1
     // observation 型允許 fires=true picks=[]，仍登錄 firing；predict picks=[] 不登錄
     const isObservation = sig.kind === 'observation'
-    const firing: SignalFiringRecord | null = evaluation.fires && (isObservation || evaluation.picks.length > 0)
-      ? {
-          drawTerm: nextTerm,
-          drawDate: '',
-          picks: [...evaluation.picks],
-          pickGroups: evaluation.pickGroups
-        }
-      : null
+    let firing: SignalFiringRecord | null = null
+    if (evaluation.fires && (isObservation || evaluation.picks.length > 0)) {
+      firing = {
+        drawTerm: nextTerm,
+        drawDate: '',
+        picks: [...evaluation.picks],
+        pickGroups: evaluation.pickGroups
+      }
+      if (isObservation && evaluation.emptyGroupLabels && evaluation.emptyGroupLabels.length > 0) {
+        firing.observationLabels = [...evaluation.emptyGroupLabels]
+      }
+    }
     out.push({ signal: sig, evaluation, firing })
   }
   return out

@@ -82,12 +82,17 @@ export function replayHistory(
       // predict 型如果 picks=[] 視為「條件成立但無號可推」，舊規維持「不亮燈」。
       const isObservation = sig.kind === 'observation'
       if (evalResult.fires && (isObservation || evalResult.picks.length > 0)) {
-        firings[sig.id] = {
+        const firing: SignalFiringRecord = {
           drawTerm: draw.drawTerm,
           drawDate: draw.drawDate,
           picks: [...evalResult.picks],
           pickGroups: evalResult.pickGroups
         }
+        // 觀察型保留當期的觀察文字，讓 SignalDetail 歷史表能秀出真實內容
+        if (isObservation && evalResult.emptyGroupLabels && evalResult.emptyGroupLabels.length > 0) {
+          firing.observationLabels = [...evalResult.emptyGroupLabels]
+        }
+        firings[sig.id] = firing
       }
     }
 
@@ -110,7 +115,7 @@ export function replayHistory(
   }
 
   return {
-    v: 3,
+    v: 4,
     gameId,
     lastProcessedTerm,
     scorecards,

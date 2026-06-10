@@ -52,6 +52,13 @@ export interface SignalFiringRecord {
   pickGroups?: PickGroup[]
   hits?: number
   hitNumbers?: number[]
+  /**
+   * 觀察文字（即 evaluate() 回傳的 emptyGroupLabels）。
+   * 觀察型訊號用這個保留「第 X 期當下實際觀察了什麼」，讓 SignalDetail 的
+   * 「觀察紀錄」表格可以印出每期真實內容（鏈、同尾號清單、y 分佈 …）。
+   * 預測型訊號通常為空。
+   */
+  observationLabels?: string[]
 }
 
 /**
@@ -115,7 +122,7 @@ export interface BrainAlert {
  * lastProcessedTerm 表示這顆腦最近一次「打分完成」的期數。
  */
 export interface BrainState {
-  v: 3
+  v: 4
   gameId: GameId
   lastProcessedTerm: number | null
   scorecards: Record<string, SignalScorecard>

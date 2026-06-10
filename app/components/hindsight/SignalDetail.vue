@@ -57,6 +57,7 @@ interface EvidenceRow {
   actual: number[]
   hits: number
   hitNumbers: number[]
+  observationLabels: string[]
 }
 
 const drawByTerm = computed<Map<number, BrainDraw>>(() => {
@@ -76,7 +77,8 @@ const evidence = computed<EvidenceRow[]>(() => {
       picks: f.picks,
       actual,
       hits: f.hits ?? 0,
-      hitNumbers: f.hitNumbers ?? []
+      hitNumbers: f.hitNumbers ?? [],
+      observationLabels: f.observationLabels ?? []
     })
   }
   return out
@@ -291,18 +293,18 @@ function isHit(num: number, hits: number[]): boolean {
                 </tr>
               </tbody>
             </table>
-            <!-- 觀察型：精簡列表（期數 + 已觀察） -->
+            <!-- 觀察型：印出每期當時的觀察文字 -->
             <table
               v-else
               class="w-full text-xs"
             >
               <thead class="bg-elevated text-xs uppercase tracking-wider text-muted">
                 <tr>
-                  <th class="px-3 py-2 text-left">
+                  <th class="px-3 py-2 text-left whitespace-nowrap">
                     期數
                   </th>
                   <th class="px-3 py-2 text-left">
-                    觀察
+                    當期觀察
                   </th>
                 </tr>
               </thead>
@@ -310,14 +312,30 @@ function isHit(num: number, hits: number[]): boolean {
                 <tr
                   v-for="row in evidence"
                   :key="`ob-${row.drawTerm}`"
-                  class="border-t border-default"
+                  class="border-t border-default align-top"
                 >
-                  <td class="px-3 py-2 font-mono">
+                  <td class="px-3 py-2 font-mono whitespace-nowrap">
                     {{ row.drawTerm }}
-                    <span class="text-[10px] text-muted ml-1">{{ row.drawDate }}</span>
+                    <br>
+                    <span class="text-[10px] text-muted">{{ row.drawDate }}</span>
                   </td>
-                  <td class="px-3 py-2 text-muted">
-                    ✓ 已觀察（即時觀察文字請見當下頁）
+                  <td class="px-3 py-2">
+                    <div
+                      v-if="row.observationLabels.length > 0"
+                      class="flex flex-col gap-1"
+                    >
+                      <span
+                        v-for="(lbl, i) in row.observationLabels"
+                        :key="`${row.drawTerm}-${i}`"
+                        class="text-muted leading-snug"
+                      >
+                        {{ lbl }}
+                      </span>
+                    </div>
+                    <span
+                      v-else
+                      class="text-muted"
+                    >—（早期紀錄，請待下次 replay 補齊）</span>
                   </td>
                 </tr>
               </tbody>
