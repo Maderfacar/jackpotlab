@@ -234,14 +234,52 @@ export function useHindsight(gameId: Ref<GameId> | ComputedRef<GameId>): UseHind
     }
   }
 
+  // 賓果即時：每 30 秒打 /api/draws/{gameId}/latest 比對最新一期，
+  // 若 server 端 drawTerm 已超過本地 → 整個 load() 一次。
+  // 慢彩種（539 / 大樂透 / 威力彩）一天最多一次，不需輪詢。
+  const BINGO_POLL_MS = 30_000
+  let pollTimer: ReturnType<typeof setInterval> | null = null
+
+  function stopPolling() {
+    if (pollTimer) {
+      clearInterval(pollTimer)
+      pollTimer = null
+    }
+  }
+
+  function setupPolling(g: GameId) {
+    stopPolling()
+    if (g !== 'bingo_bingo' || typeof window === 'undefined') return
+    pollTimer = setInterval(async () => {
+      if (loading.value) return
+      try {
+        const res = await $fetch<DrawQueryResponse>(`/api/draws/${g}/latest`)
+        const latestServer = res.results[0]?.drawTerm
+        if (latestServer == null) return
+        const localArr = drawsRef.value
+        const localLatest = localArr.length > 0 ? localArr[localArr.length - 1]!.drawTerm : null
+        if (localLatest == null || latestServer > localLatest) {
+          await load(g)
+        }
+      } catch {
+        // 忽略單次 poll 失敗；下個 tick 再試
+      }
+    }, BINGO_POLL_MS)
+  }
+
   onMounted(() => {
     sweepStaleHindsightStorage()
-    load(toValue(gameId))
+    const g = toValue(gameId)
+    load(g)
+    setupPolling(g)
   })
 
   watch(() => toValue(gameId), (g) => {
     load(g)
+    setupPolling(g)
   })
+
+  onBeforeUnmount(stopPolling)
 
   async function refresh() {
     await load(toValue(gameId))

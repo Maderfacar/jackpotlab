@@ -164,3 +164,10 @@ function closeSignal() {
     </UCard>
   </UContainer>
 </template>
+
+<style scoped>
+/* tab 上滑鼠移過去顯示連結指標（彩種切換 + 次分頁切換都套用） */
+:deep([role="tab"]) {
+  cursor: pointer;
+}
+</style>

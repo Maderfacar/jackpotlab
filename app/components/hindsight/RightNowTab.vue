@@ -81,6 +81,34 @@ function parseUTC(dateStr: string): Date | null {
   return new Date(Date.UTC(y, m - 1, d))
 }
 
+// 賓果：每天 07:05 起每 5 分鐘 1 期，term 跨日遞增。
+// 同日內最小 drawTerm = 該日 07:05 那期，其他用偏移量推算時分。
+const BINGO_START_MIN = 7 * 60 + 5
+const BINGO_INTERVAL_MIN = 5
+
+const bingoMinTermByDate = computed<Map<string, number>>(() => {
+  const m = new Map<string, number>()
+  if (props.gameId !== 'bingo_bingo') return m
+  for (const d of props.drawsAsc) {
+    const cur = m.get(d.drawDate)
+    if (cur === undefined || d.drawTerm < cur) m.set(d.drawDate, d.drawTerm)
+  }
+  return m
+})
+
+function bingoTime(drawDate: string, drawTerm: number): string {
+  const base = bingoMinTermByDate.value.get(drawDate)
+  if (base === undefined) return ''
+  const offset = drawTerm - base
+  if (offset < 0 || offset > 230) return ''
+  const totalMin = BINGO_START_MIN + offset * BINGO_INTERVAL_MIN
+  const h = Math.floor(totalMin / 60) % 24
+  const mm = totalMin % 60
+  return `${pad2(h)}:${pad2(mm)}`
+}
+
+const isBingo = computed(() => props.gameId === 'bingo_bingo')
+
 const lastDraw = computed<BrainDraw | null>(() => {
   if (props.drawsAsc.length === 0) return null
   return props.drawsAsc[props.drawsAsc.length - 1] ?? null
@@ -89,12 +117,17 @@ const lastDraw = computed<BrainDraw | null>(() => {
 const nextDrawLabel = computed<string>(() => {
   const last = lastDraw.value
   if (!last) return ''
+  // 賓果：下一場 = 同日 + 5 分鐘（跨日交給輪詢處理顯示）
+  if (props.gameId === 'bingo_bingo') {
+    const t = bingoTime(last.drawDate, last.drawTerm + 1)
+    if (t) return `${last.drawDate.slice(5).replace('-', '/')} ${t}（推算）`
+    return ''
+  }
   const baseDate = parseUTC(last.drawDate)
   if (!baseDate) return ''
   let next: Date
   switch (props.gameId) {
-    case 'lotto539':
-    case 'bingo_bingo': {
+    case 'lotto539': {
       next = new Date(baseDate.getTime())
       next.setUTCDate(baseDate.getUTCDate() + 1)
       break
@@ -273,7 +306,9 @@ const SHORT_NAME_MAP: Record<string, string> = {
   interval_sum: '和',
   tail_pair: '尾',
   cold_number: '冷',
-  position_distribution: '位'
+  position_distribution: '位',
+  streak_alert: '連',
+  first_position: '位1'
 }
 
 function supportingShortChips(num: number): Array<{ id: string, short: string, full: string }> {
@@ -513,7 +548,10 @@ const gameName = computed(() => GAMES[props.gameId].name)
         <div class="space-y-3">
           <div class="flex flex-wrap items-baseline justify-between gap-2">
             <div class="text-xs text-muted">
-              第 <span class="font-mono">{{ lastDraw.drawTerm }}</span> 期 · {{ lastDraw.drawDate }}
+              第 <span class="font-mono">{{ lastDraw.drawTerm }}</span> 期 · {{ lastDraw.drawDate }}<span
+                v-if="isBingo && bingoTime(lastDraw.drawDate, lastDraw.drawTerm)"
+                class="font-mono"
+              > {{ bingoTime(lastDraw.drawDate, lastDraw.drawTerm) }}</span>
             </div>
           </div>
           <div>
