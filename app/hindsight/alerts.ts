@@ -16,6 +16,7 @@ import type {
   BrainAlert,
   BrainDraw,
   BrainState,
+  SignalDef,
   SignalFiringRecord,
   SignalScorecard
 } from './types'
@@ -24,9 +25,29 @@ const MULTI_SIGNAL_MIN = 5
 const SIGNAL_DRIFT_WINDOW = 10
 const OVERALL_DRIFT_RECENT_TERMS = 5
 const MIN_SAMPLES_FOR_DRIFT = 10
+/**
+ * rare_combination 冷卻期：歷史組合表累積 < 此期數時不發此類警示。
+ * 原因：新訊號上線後，任何「含新訊號」的組合在歷史都是第一次出現，
+ * 樣本未厚實前所有組合都被誤判為罕見；累積夠厚才有資格判罕見。
+ */
+const RARE_COMBO_MIN_HISTORY = 60
 
 function comboKey(signalIds: readonly string[]): string {
   return [...signalIds].sort().join('+')
+}
+
+function buildNameMap(signals: readonly SignalDef[]): Map<string, string> {
+  const out = new Map<string, string>()
+  for (const s of signals) out.set(s.id, s.nameZh)
+  return out
+}
+
+function nameOf(map: Map<string, string>, id: string): string {
+  return map.get(id) ?? id
+}
+
+function comboLabel(map: Map<string, string>, signalIds: readonly string[]): string {
+  return [...signalIds].sort().map(id => nameOf(map, id)).join(' + ')
 }
 
 /**
@@ -94,11 +115,13 @@ function makeId(prefix: string, term: number): string {
 export function detectAlerts(
   brainState: BrainState,
   currentFirings: Record<string, SignalFiringRecord>,
-  history: BrainDraw[]
+  history: BrainDraw[],
+  signals: readonly SignalDef[] = []
 ): BrainAlert[] {
   const alerts: BrainAlert[] = []
   const firedIds = Object.keys(currentFirings)
   if (firedIds.length === 0) return alerts
+  const nameMap = buildNameMap(signals)
 
   // 「當期」對應的 draw（尚未發生 → 取 history 最末 +1 概念上但實際上 currentFirings 任一筆都有 drawTerm/drawDate）
   const sample = currentFirings[firedIds[0]!]!
@@ -113,32 +136,34 @@ export function detectAlerts(
       type: 'multi_signal',
       drawTerm,
       drawDate,
-      detail: `${firedIds.length} 支訊號同時亮燈`,
+      detail: `${firedIds.length} 支訊號同時亮燈：${comboLabel(nameMap, firedIds)}`,
       signals: [...firedIds].sort(),
       createdAt
     })
   }
 
-  // 2. rare_combination
+  // 2. rare_combination（歷史組合表 < RARE_COMBO_MIN_HISTORY 期不發，避免新訊號上線誤判）
   const currentKey = comboKey(firedIds)
   const historicalCombos = buildHistoricalCombos(brainState.scorecards)
-  let seenBefore = false
-  for (const set of historicalCombos.values()) {
-    if (comboKey([...set]) === currentKey) {
-      seenBefore = true
-      break
+  if (historicalCombos.size >= RARE_COMBO_MIN_HISTORY) {
+    let seenBefore = false
+    for (const set of historicalCombos.values()) {
+      if (comboKey([...set]) === currentKey) {
+        seenBefore = true
+        break
+      }
     }
-  }
-  if (!seenBefore && historicalCombos.size > 0) {
-    alerts.push({
-      id: makeId('rare_combination', drawTerm),
-      type: 'rare_combination',
-      drawTerm,
-      drawDate,
-      detail: `組合「${currentKey}」歷史第一次出現`,
-      signals: [...firedIds].sort(),
-      createdAt
-    })
+    if (!seenBefore) {
+      alerts.push({
+        id: makeId('rare_combination', drawTerm),
+        type: 'rare_combination',
+        drawTerm,
+        drawDate,
+        detail: `組合「${comboLabel(nameMap, firedIds)}」歷史第一次出現`,
+        signals: [...firedIds].sort(),
+        createdAt
+      })
+    }
   }
 
   // 3. signal_drift（逐支訊號）
@@ -153,7 +178,7 @@ export function detectAlerts(
         type: 'signal_drift',
         drawTerm,
         drawDate,
-        detail: `${sc.signalId} 最近 ${SIGNAL_DRIFT_WINDOW} 期 hit=${recent.toFixed(3)}、長期 hit=${longTerm.toFixed(3)}`,
+        detail: `${nameOf(nameMap, sc.signalId)} 最近 ${SIGNAL_DRIFT_WINDOW} 期命中 ${(recent * 100).toFixed(1)}%、長期 ${(longTerm * 100).toFixed(1)}%`,
         signals: [sc.signalId],
         createdAt
       })
@@ -180,7 +205,7 @@ export function detectAlerts(
           type: 'overall_drift',
           drawTerm,
           drawDate,
-          detail: `最近 ${OVERALL_DRIFT_RECENT_TERMS} 期整體 hit=${recentOverall.toFixed(3)}、長期 hit=${longTermOverall.toFixed(3)}`,
+          detail: `最近 ${OVERALL_DRIFT_RECENT_TERMS} 期整體命中 ${(recentOverall * 100).toFixed(1)}%、長期 ${(longTermOverall * 100).toFixed(1)}%`,
           signals: [...firedIds].sort(),
           createdAt
         })

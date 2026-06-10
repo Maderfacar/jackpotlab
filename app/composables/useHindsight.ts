@@ -213,7 +213,7 @@ export function useHindsight(gameId: Ref<GameId> | ComputedRef<GameId>): UseHind
       const ranking = rankNumbersForNextDraw(firingsMap, brain.scorecards, g)
 
       // 5. detect 當期警示，merge 進歷史
-      const fresh = detectAlerts(brain, firingsMap, drawsAsc)
+      const fresh = detectAlerts(brain, firingsMap, drawsAsc, signals)
       const merged: BrainState = {
         ...brain,
         alerts: mergeAlerts(brain.alerts, fresh),

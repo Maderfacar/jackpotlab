@@ -176,7 +176,7 @@ function runValidation(
     const last = sc.recentFirings[sc.recentFirings.length - 1]
     if (last) fictitiousFirings[id] = last
   }
-  const alerts = detectAlerts(state, fictitiousFirings, draws)
+  const alerts = detectAlerts(state, fictitiousFirings, draws, ALL_SIGNALS)
 
   t.diagnostic(`\n${'='.repeat(60)}`)
   t.diagnostic(`【${label}】gameId=${gameId}  periods=${draws.length}  baseline=${baseline.toFixed(4)}`)
