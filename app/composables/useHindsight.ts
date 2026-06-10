@@ -187,11 +187,18 @@ export function useHindsight(gameId: Ref<GameId> | ComputedRef<GameId>): UseHind
       const analysisInputs = drawsAsc.map(toAnalysisInput)
       const analysis = hydrateFromDraws(g, defaultN(), analysisInputs)
 
-      // 2. BrainState：cache 命中且 lastProcessedTerm 跟最新一致 → 用 cache，否則 replay
+      // 2. BrainState：cache 必須同時滿足
+      //    (a) lastProcessedTerm 跟最新一致
+      //    (b) scorecards 涵蓋當前所有訊號 id（避免新訊號上線時，舊 cache 直接命中
+      //        而新訊號永遠拿不到樣本）。
+      //    任一不符 → 重 replay 從頭跑完整 history。
       const signals = getSignalsForGame(g)
       const latestTerm = drawsAsc[drawsAsc.length - 1]!.drawTerm
       const cached = loadBrainState(g)
-      const brain = cached && cached.lastProcessedTerm === latestTerm
+      const cacheCoversAllSignals = cached
+        ? signals.every(s => cached.scorecards[s.id] !== undefined)
+        : false
+      const brain = cached && cached.lastProcessedTerm === latestTerm && cacheCoversAllSignals
         ? cached
         : replayHistory(g, drawsAsc, signals)
 

@@ -93,7 +93,7 @@ describe('replay.replayHistory', () => {
     const state = replayHistory('lotto539', [
       { drawTerm: 1, drawDate: '2026-06-01', numbers: [1, 2, 3, 4, 5] }
     ], [])
-    assert.equal(state.v, 1)
+    assert.equal(state.v, 2)
     assert.equal(state.gameId, 'lotto539')
     assert.equal(state.lastProcessedTerm, 1)
     assert.deepEqual(state.scorecards, {})

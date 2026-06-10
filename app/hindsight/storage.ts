@@ -13,7 +13,9 @@ import type { GameId } from '../../shared/lotto/games'
 import type { BrainState } from './types'
 
 const STORAGE_PREFIX = 'jackpotlab-hindsight'
-const STORAGE_VERSION = 1
+// v2: batch-2 訊號上線（隔期總和 / 尾號複數 / 要開冷門號啦 / 絕地定位）
+// + 既有訊號 consecutive_chain 從 3 期改 2 期。舊 v1 cache 不相容必須整顆重跑。
+const STORAGE_VERSION = 2
 
 export function brainStateKey(gameId: GameId): string {
   return `${STORAGE_PREFIX}-${gameId}-v${STORAGE_VERSION}`
