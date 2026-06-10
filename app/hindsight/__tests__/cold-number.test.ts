@@ -32,7 +32,7 @@ function mkParams(
     values: vs
   }))
   const analysisState: AnalysisState = {
-    v: 3,
+    v: 4,
     gameId,
     n: periods.length,
     lastProcessedTerm: null,

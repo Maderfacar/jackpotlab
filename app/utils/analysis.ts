@@ -40,7 +40,7 @@ export interface HistoryEntry {
 }
 
 export interface AnalysisState {
-  v: 3
+  v: 4
   gameId: string
   n: number
   lastProcessedTerm: number | null
@@ -55,7 +55,9 @@ export interface AnalysisDrawInput {
 }
 
 const STORAGE_PREFIX = 'jackpotlab-analysis'
-const STORAGE_VERSION = 3
+// v4: 修「位置」x-y 計算 bug（同期撈中多顆時 x 不能被本批扣減）。
+// 舊 v3 cache 內的 positions 字串值不可信，必須整顆重 hydrate。
+const STORAGE_VERSION = 4
 
 export function stateKey(gameId: string, n: number): string {
   return `${STORAGE_PREFIX}-${gameId}-v${STORAGE_VERSION}-n${n}`
@@ -98,7 +100,7 @@ export function createInitialState(gameId: string, n: number): AnalysisState {
     })
   }
   return {
-    v: 3,
+    v: 4,
     gameId,
     n,
     lastProcessedTerm: null,
@@ -208,8 +210,13 @@ export function processDraw(state: AnalysisState, draw: AnalysisDrawInput): Anal
     }
     const row = state.periods[foundIdx]!
     const leftVal = parseLeftValue(row.record)
-    const remaining = tempPrizes[foundIdx]!.length
-    const sortedSnapshot = [...tempPrizes[foundIdx]!].sort((a, b) => a - b)
+    // 「位置」x-y：x = 該隔期**原始**剩餘獎號數量、y = 此號在原始 sorted 序列的位置。
+    // 不可以用 tempPrizes（本批已扣除前面已撈中的號）—— 否則同期撈中兩號時，
+    // 第二號的 x 跟 y 都會偏掉一格。例：原 [01,02,03,04,05] 撈中 04、05 →
+    // 04 取 5-4，05 必須取 5-5；若用 tempPrizes 算第二顆會錯成 4-4。
+    const initialPrizes = row.prizes
+    const remaining = initialPrizes.length
+    const sortedSnapshot = [...initialPrizes].sort((a, b) => a - b)
     const origPos = sortedSnapshot.indexOf(p) + 1
 
     periodsCsv.push(String(foundIdx))

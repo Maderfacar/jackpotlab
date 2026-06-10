@@ -15,7 +15,7 @@ function mkParams(gameId: GameId, positionsRows: string[]): SignalEvalParams {
     positions: p
   }))
   const analysisState: AnalysisState = {
-    v: 3,
+    v: 4,
     gameId,
     n: 1,
     lastProcessedTerm: null,

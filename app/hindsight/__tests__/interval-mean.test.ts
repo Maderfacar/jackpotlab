@@ -19,7 +19,7 @@ function emptySlot(period: number): AnalysisPeriod {
 
 function state(periods: AnalysisPeriod[]): AnalysisState {
   return {
-    v: 3,
+    v: 4,
     gameId: 'lotto539',
     n: periods.length,
     lastProcessedTerm: null,
