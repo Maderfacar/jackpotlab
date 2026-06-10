@@ -78,8 +78,14 @@ export interface UseHindsightState {
   refresh: () => Promise<void>
 }
 
-function drawResultToBrainDraw(r: DrawResult): BrainDraw {
-  const merged = r.special != null ? [...r.numbers, r.special] : r.numbers
+function drawResultToBrainDraw(r: DrawResult, gameId: GameId): BrainDraw {
+  // 威力彩第二區 (1-8) 與主號完全獨立計分，不該混進 BrainDraw.numbers，
+  // 否則所有訊號（interval_mean / consecutive_chain / cold_number…）會把第二區
+  // 當主號評估，導致命中率被低值號（1-8）汙染。
+  // 其他彩種沿用既有合併規則：bingo 中央彩球本就在 20 顆內、lotto649 特別號維持。
+  const merged = r.special != null && gameId !== 'super_lotto638'
+    ? [...r.numbers, r.special]
+    : r.numbers
   return {
     drawTerm: r.drawTerm,
     drawDate: r.drawDate,
@@ -165,7 +171,7 @@ export function useHindsight(gameId: Ref<GameId> | ComputedRef<GameId>): UseHind
       })
       const drawsAsc = [...res.results]
         .sort((a, b) => a.drawTerm - b.drawTerm)
-        .map(drawResultToBrainDraw)
+        .map(r => drawResultToBrainDraw(r, g))
 
       if (drawsAsc.length === 0) {
         drawsRef.value = []
