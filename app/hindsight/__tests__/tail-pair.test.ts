@@ -23,7 +23,8 @@ describe('signal: tail_pair', () => {
       { drawTerm: 3, drawDate: '2026-06-03', numbers: [13, 23, 7, 28, 38] } // 13,23 同尾 3 — 最新
     ]
     const out = tailPairSignal.evaluate(mkParams('lotto539', history))
-    assert.equal(out.fires, false)
+    assert.equal(out.fires, true) // 觀察型亮燈
+    assert.deepEqual(out.picks, [])
     assert.equal(out.conditionMetButEmpty, true)
     const txt = (out.emptyGroupLabels ?? []).join(' | ')
     assert.match(txt, /本期同尾號：13, 23/)
@@ -48,6 +49,7 @@ describe('signal: tail_pair', () => {
       { drawTerm: 3, drawDate: '2026-06-03', numbers: [14, 24, 5, 9, 37] } // 最新有同尾，觸發亮燈
     ]
     const out = tailPairSignal.evaluate(mkParams('lotto539', history))
+    assert.equal(out.fires, true)
     assert.equal(out.conditionMetButEmpty, true)
     const txt = (out.emptyGroupLabels ?? []).join(' | ')
     // history[0]→[1] 不連莊；history[1]→[2] 也不連莊（{13,23} vs {14,24}）→ 共 2 次

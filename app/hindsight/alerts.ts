@@ -55,10 +55,12 @@ function comboLabel(map: Map<string, string>, signalIds: readonly string[]): str
  * 來源：每張 scorecard 都記了自己 firingTerms。倒推到 term → signal set。
  */
 function buildHistoricalCombos(
-  scorecards: Record<string, SignalScorecard>
+  scorecards: Record<string, SignalScorecard>,
+  filterIds?: ReadonlySet<string>
 ): Map<number, Set<string>> {
   const out: Map<number, Set<string>> = new Map()
   for (const [signalId, sc] of Object.entries(scorecards)) {
+    if (filterIds && !filterIds.has(signalId)) continue
     for (const term of sc.firingTerms) {
       const set = out.get(term) ?? new Set<string>()
       set.add(signalId)
@@ -122,6 +124,10 @@ export function detectAlerts(
   const firedIds = Object.keys(currentFirings)
   if (firedIds.length === 0) return alerts
   const nameMap = buildNameMap(signals)
+  // multi_signal / rare_combination 只看 predict 型訊號——observation 訊號的
+  // fires=true 是為了累積「已觀察次數」，不該被當作「亮燈集中」或「罕見組合」訊號。
+  const predictIds = new Set(signals.filter(s => s.kind !== 'observation').map(s => s.id))
+  const predictFiredIds = firedIds.filter(id => predictIds.has(id))
 
   // 「當期」對應的 draw（尚未發生 → 取 history 最末 +1 概念上但實際上 currentFirings 任一筆都有 drawTerm/drawDate）
   const sample = currentFirings[firedIds[0]!]!
@@ -129,23 +135,24 @@ export function detectAlerts(
   const drawDate = sample.drawDate
   const createdAt = new Date().toISOString()
 
-  // 1. multi_signal
-  if (firedIds.length >= MULTI_SIGNAL_MIN) {
+  // 1. multi_signal（只算 predict）
+  if (predictFiredIds.length >= MULTI_SIGNAL_MIN) {
     alerts.push({
       id: makeId('multi_signal', drawTerm),
       type: 'multi_signal',
       drawTerm,
       drawDate,
-      detail: `${firedIds.length} 支訊號同時亮燈：${comboLabel(nameMap, firedIds)}`,
-      signals: [...firedIds].sort(),
+      detail: `${predictFiredIds.length} 支訊號同時亮燈：${comboLabel(nameMap, predictFiredIds)}`,
+      signals: [...predictFiredIds].sort(),
       createdAt
     })
   }
 
   // 2. rare_combination（歷史組合表 < RARE_COMBO_MIN_HISTORY 期不發，避免新訊號上線誤判）
-  const currentKey = comboKey(firedIds)
-  const historicalCombos = buildHistoricalCombos(brainState.scorecards)
-  if (historicalCombos.size >= RARE_COMBO_MIN_HISTORY) {
+  // 同樣只看 predict 子集——observation 是「永遠都會出現」的觀察，不會構成「罕見」
+  const currentKey = comboKey(predictFiredIds)
+  const historicalCombos = buildHistoricalCombos(brainState.scorecards, predictIds)
+  if (predictFiredIds.length > 0 && historicalCombos.size >= RARE_COMBO_MIN_HISTORY) {
     let seenBefore = false
     for (const set of historicalCombos.values()) {
       if (comboKey([...set]) === currentKey) {
@@ -159,8 +166,8 @@ export function detectAlerts(
         type: 'rare_combination',
         drawTerm,
         drawDate,
-        detail: `組合「${comboLabel(nameMap, firedIds)}」歷史第一次出現`,
-        signals: [...firedIds].sort(),
+        detail: `組合「${comboLabel(nameMap, predictFiredIds)}」歷史第一次出現`,
+        signals: [...predictFiredIds].sort(),
         createdAt
       })
     }

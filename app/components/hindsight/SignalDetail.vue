@@ -47,7 +47,8 @@ const recentRate = computed<number | null>(() => {
   return recentHitRate(scorecard.value, 20)
 })
 
-const sampleLow = computed<boolean>(() => (scorecard.value?.totalPicks ?? 0) < SAMPLE_FLOOR)
+const isObservation = computed<boolean>(() => signal.value?.kind === 'observation')
+const sampleLow = computed<boolean>(() => !isObservation.value && (scorecard.value?.totalPicks ?? 0) < SAMPLE_FLOOR)
 
 interface EvidenceRow {
   drawTerm: number
@@ -145,7 +146,15 @@ function isHit(num: number, hits: number[]): boolean {
                 {{ signal.nameZh }}
               </h3>
               <UBadge
-                v-if="sampleLow"
+                v-if="isObservation"
+                color="neutral"
+                variant="subtle"
+                size="sm"
+              >
+                觀察型
+              </UBadge>
+              <UBadge
+                v-else-if="sampleLow"
                 color="warning"
                 variant="subtle"
                 size="sm"
@@ -156,7 +165,10 @@ function isHit(num: number, hits: number[]): boolean {
             <p class="text-xs text-muted">
               {{ signal.description }}
             </p>
-            <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs tabular-nums">
+            <div
+              v-if="!isObservation"
+              class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs tabular-nums"
+            >
               <span>
                 <span class="text-muted">累積命中率</span>
                 <span class="ml-1 font-mono">{{ rateText(cumulativeRate) }}</span>
@@ -174,6 +186,14 @@ function isHit(num: number, hits: number[]): boolean {
                 <span class="ml-1 font-mono">{{ scorecard?.totalHits ?? 0 }}/{{ scorecard?.totalPicks ?? 0 }}</span>
               </span>
             </div>
+            <div
+              v-else
+              class="text-xs tabular-nums"
+            >
+              <span class="text-muted">已觀察</span>
+              <span class="ml-1 font-mono">{{ scorecard?.totalFires ?? 0 }}</span>
+              <span class="text-muted"> 次</span>
+            </div>
           </div>
         </UCard>
       </div>
@@ -181,7 +201,7 @@ function isHit(num: number, hits: number[]): boolean {
       <!-- 歷史證據鏈 -->
       <section class="space-y-2">
         <h4 class="text-sm font-semibold">
-          歷史證據鏈
+          {{ isObservation ? '觀察紀錄' : '歷史證據鏈' }}
         </h4>
         <div
           v-if="evidence.length === 0"
@@ -194,7 +214,11 @@ function isHit(num: number, hits: number[]): boolean {
           :ui="{ body: 'p-0 sm:p-0' }"
         >
           <div class="overflow-x-auto">
-            <table class="w-full text-xs">
+            <!-- 預測型：完整證據鏈 -->
+            <table
+              v-if="!isObservation"
+              class="w-full text-xs"
+            >
               <thead class="bg-elevated text-xs uppercase tracking-wider text-muted">
                 <tr>
                   <th class="px-3 py-2 text-left">
@@ -263,6 +287,37 @@ function isHit(num: number, hits: number[]): boolean {
                     :class="row.hits > 0 ? 'text-emerald-500' : 'text-muted'"
                   >
                     {{ row.hits }}/{{ row.picks.length }}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <!-- 觀察型：精簡列表（期數 + 已觀察） -->
+            <table
+              v-else
+              class="w-full text-xs"
+            >
+              <thead class="bg-elevated text-xs uppercase tracking-wider text-muted">
+                <tr>
+                  <th class="px-3 py-2 text-left">
+                    期數
+                  </th>
+                  <th class="px-3 py-2 text-left">
+                    觀察
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="row in evidence"
+                  :key="`ob-${row.drawTerm}`"
+                  class="border-t border-default"
+                >
+                  <td class="px-3 py-2 font-mono">
+                    {{ row.drawTerm }}
+                    <span class="text-[10px] text-muted ml-1">{{ row.drawDate }}</span>
+                  </td>
+                  <td class="px-3 py-2 text-muted">
+                    ✓ 已觀察（即時觀察文字請見當下頁）
                   </td>
                 </tr>
               </tbody>

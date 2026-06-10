@@ -54,8 +54,9 @@ function evaluate(params: SignalEvalParams): SignalEvaluation {
   const dirLabel = dir === 1 ? '變大' : '變小'
   const label = `已連續${dirLabel} ${transitions} 期：${arrow}`
 
+  // 觀察型：fires=true 讓 scorecard 累積「已觀察次數」，picks=[] 不進排名
   return {
-    fires: false,
+    fires: true,
     picks: [],
     conditionMetButEmpty: true,
     emptyGroupLabels: [label]
@@ -66,6 +67,7 @@ export const intervalSumSignal: SignalDef = {
   id: ID,
   nameZh: '隔期總和',
   description: '最近 N 期隔期總和連續同向（≥ 2 個 transition）時亮燈，顯示數值變化；不推號',
+  kind: 'observation',
   appliesTo: [...APPLIES_TO],
   evaluate
 }

@@ -31,7 +31,8 @@ describe('signal: position_distribution', () => {
       '5-1,4-3,3-2,2-1,1-1',
       '5-2,4-1,3-3,2-2,1-1'
     ]))
-    assert.equal(out.fires, false)
+    assert.equal(out.fires, true) // 觀察型亮燈
+    assert.deepEqual(out.picks, [])
     assert.equal(out.conditionMetButEmpty, true)
     const txt = (out.emptyGroupLabels ?? []).join(' | ')
     assert.match(txt, /本期 y 組成：\[2, 1, 3, 2, 1\]/)

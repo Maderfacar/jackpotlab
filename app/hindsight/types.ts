@@ -81,10 +81,19 @@ export interface SignalEvalParams {
   todayDate: string
 }
 
+/**
+ * 訊號類型：
+ *   - 'predict'：會推號、算命中率、進排名加權。預設值。
+ *   - 'observation'：只記錄「條件成立」的次數與當下觀察文字，不推號、不算命中率、不進排名。
+ *     UI 用 totalFires 顯示「已觀察 N 次」、用 recentFirings 顯示近期觀察記錄。
+ */
+export type SignalKind = 'predict' | 'observation'
+
 export interface SignalDef {
   id: string
   nameZh: string
   description: string
+  kind?: SignalKind
   appliesTo: AppliesTo[]
   evaluate: (params: SignalEvalParams) => SignalEvaluation
 }
@@ -106,7 +115,7 @@ export interface BrainAlert {
  * lastProcessedTerm 表示這顆腦最近一次「打分完成」的期數。
  */
 export interface BrainState {
-  v: 2
+  v: 3
   gameId: GameId
   lastProcessedTerm: number | null
   scorecards: Record<string, SignalScorecard>

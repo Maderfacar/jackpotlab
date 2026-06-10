@@ -157,10 +157,12 @@ const nextDrawTerm = computed<number | null>(() => {
 interface CardData {
   signalId: string
   nameZh: string
+  kind: 'predict' | 'observation'
   pickGroups: PickGroup[] | null
   picks: number[]
   conditionMetButEmpty: boolean
   emptyGroupLabels: string[]
+  totalFires: number
   totalPicks: number
   recentRate: number | null
   cumulativeRate: number
@@ -236,10 +238,12 @@ const litCards = computed<CardData[]>(() => {
     out.push({
       signalId: cf.signal.id,
       nameZh: cf.signal.nameZh,
+      kind: cf.signal.kind === 'observation' ? 'observation' : 'predict',
       pickGroups: decoratedGroups,
       picks: cf.evaluation.picks,
       conditionMetButEmpty: !!cf.evaluation.conditionMetButEmpty,
       emptyGroupLabels: cf.evaluation.emptyGroupLabels ?? [],
+      totalFires: sc?.totalFires ?? 0,
       totalPicks,
       recentRate: recent,
       cumulativeRate: cumulative,
@@ -442,7 +446,7 @@ const gameName = computed(() => GAMES[props.gameId].name)
         v-for="card in litCards"
         :key="card.signalId"
         :ui="{ body: 'p-4' }"
-        :class="card.conditionMetButEmpty && card.picks.length === 0 ? 'opacity-50' : (card.sampleLow ? 'opacity-70' : '')"
+        :class="card.kind === 'observation' ? '' : (card.conditionMetButEmpty && card.picks.length === 0 ? 'opacity-50' : (card.sampleLow ? 'opacity-70' : ''))"
       >
         <div class="space-y-3">
           <div class="flex flex-wrap items-baseline justify-between gap-2">
@@ -451,7 +455,15 @@ const gameName = computed(() => GAMES[props.gameId].name)
                 {{ card.nameZh }}
               </span>
               <UBadge
-                v-if="card.conditionMetButEmpty && card.picks.length === 0"
+                v-if="card.kind === 'observation'"
+                color="neutral"
+                variant="subtle"
+                size="sm"
+              >
+                觀察型
+              </UBadge>
+              <UBadge
+                v-else-if="card.conditionMetButEmpty && card.picks.length === 0"
                 color="neutral"
                 variant="subtle"
                 size="sm"
@@ -459,7 +471,7 @@ const gameName = computed(() => GAMES[props.gameId].name)
                 條件成立、無號可推
               </UBadge>
               <UBadge
-                v-if="card.sampleLow"
+                v-if="card.kind === 'predict' && card.sampleLow"
                 color="warning"
                 variant="subtle"
                 size="sm"
@@ -468,7 +480,10 @@ const gameName = computed(() => GAMES[props.gameId].name)
                 ⚠ 樣本不足 {{ card.totalPicks }}/{{ SAMPLE_FLOOR }}
               </UBadge>
             </div>
-            <div class="flex items-center gap-3 text-xs text-muted tabular-nums">
+            <div
+              v-if="card.kind === 'predict'"
+              class="flex items-center gap-3 text-xs text-muted tabular-nums"
+            >
               <span>近期 {{ rateText(card.recentRate) }}</span>
               <span>累積 {{ rateText(card.cumulativeRate) }}</span>
               <HindsightSparkLine
@@ -477,6 +492,12 @@ const gameName = computed(() => GAMES[props.gameId].name)
                 :height="18"
                 color="rgb(217 119 6)"
               />
+            </div>
+            <div
+              v-else
+              class="text-xs text-muted tabular-nums"
+            >
+              已觀察 {{ card.totalFires }} 次
             </div>
           </div>
 

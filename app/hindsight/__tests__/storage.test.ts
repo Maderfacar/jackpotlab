@@ -59,7 +59,7 @@ describe('storage', () => {
 
   it('round-trip：save 之後 load 拿回完整 BrainState', () => {
     const state: BrainState = {
-      v: 2,
+      v: 3,
       gameId: 'lotto539',
       lastProcessedTerm: 42,
       scorecards: {
@@ -96,7 +96,7 @@ describe('storage', () => {
 
   it('load 不同 gameId 回 null', () => {
     const state: BrainState = {
-      v: 2,
+      v: 3,
       gameId: 'lotto539',
       lastProcessedTerm: null,
       scorecards: {},
@@ -112,16 +112,16 @@ describe('storage', () => {
 
     // 灌 3 個 key：當前版本、舊版本、無關 key
     const currentKey = brainStateKey('lotto539')
-    ls.setItem(currentKey, JSON.stringify({ v: 2, gameId: 'lotto539', lastProcessedTerm: null, scorecards: {}, alerts: [], updatedAt: '' }))
-    ls.setItem('jackpotlab-hindsight-lotto539-v1', 'old')
-    ls.setItem('jackpotlab-hindsight-fake_game-v2', 'invalid')
+    ls.setItem(currentKey, JSON.stringify({ v: 3, gameId: 'lotto539', lastProcessedTerm: null, scorecards: {}, alerts: [], updatedAt: '' }))
+    ls.setItem('jackpotlab-hindsight-lotto539-v2', 'old')
+    ls.setItem('jackpotlab-hindsight-fake_game-v3', 'invalid')
     ls.setItem('jackpotlab-analysis-lotto539-v3-n60', 'unrelated')
 
     sweepStaleHindsightStorage()
 
     assert.notEqual(ls.getItem(currentKey), null, 'current version should survive')
-    assert.equal(ls.getItem('jackpotlab-hindsight-lotto539-v1'), null, 'old version should be swept')
-    assert.equal(ls.getItem('jackpotlab-hindsight-fake_game-v2'), null, 'invalid gameId should be swept')
+    assert.equal(ls.getItem('jackpotlab-hindsight-lotto539-v2'), null, 'old version should be swept')
+    assert.equal(ls.getItem('jackpotlab-hindsight-fake_game-v3'), null, 'invalid gameId should be swept')
     assert.notEqual(ls.getItem('jackpotlab-analysis-lotto539-v3-n60'), null, 'unrelated prefix untouched')
   })
 })

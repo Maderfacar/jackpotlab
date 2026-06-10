@@ -135,7 +135,9 @@ function evaluateCurrent(
     })
     // 「下一期」尚未開獎 → drawTerm 用最後一期 +1 作為佔位
     const nextTerm = (history[history.length - 1]!.drawTerm) + 1
-    const firing: SignalFiringRecord | null = evaluation.fires
+    // observation 型允許 fires=true picks=[]，仍登錄 firing；predict picks=[] 不登錄
+    const isObservation = sig.kind === 'observation'
+    const firing: SignalFiringRecord | null = evaluation.fires && (isObservation || evaluation.picks.length > 0)
       ? {
           drawTerm: nextTerm,
           drawDate: '',

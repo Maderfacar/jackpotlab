@@ -28,7 +28,8 @@ function mkParams(gameId: GameId, sums: Array<number | ''>): SignalEvalParams {
 describe('signal: interval_sum', () => {
   it('連續變大 ≥ 2 transitions → 亮燈、emptyGroupLabels 顯示鏈', () => {
     const out = intervalSumSignal.evaluate(mkParams('lotto539', [100, 110, 120, 130]))
-    assert.equal(out.fires, false)
+    assert.equal(out.fires, true) // 觀察型亮燈 → fires=true 累積 totalFires
+    assert.deepEqual(out.picks, [])
     assert.equal(out.conditionMetButEmpty, true)
     const label = out.emptyGroupLabels?.[0] ?? ''
     assert.match(label, /已連續變大 3 期/)
@@ -37,6 +38,7 @@ describe('signal: interval_sum', () => {
 
   it('連續變小 ≥ 2 transitions → 亮燈、變小', () => {
     const out = intervalSumSignal.evaluate(mkParams('lotto539', [200, 190, 180]))
+    assert.equal(out.fires, true)
     assert.equal(out.conditionMetButEmpty, true)
     const label = out.emptyGroupLabels?.[0] ?? ''
     assert.match(label, /已連續變小 2 期/)
@@ -64,6 +66,7 @@ describe('signal: interval_sum', () => {
 
   it('包含 sum=空字串 → 忽略空值繼續抓有效 sum', () => {
     const out = intervalSumSignal.evaluate(mkParams('lotto539', ['', 100, 110, 120]))
+    assert.equal(out.fires, true)
     assert.equal(out.conditionMetButEmpty, true)
     const label = out.emptyGroupLabels?.[0] ?? ''
     assert.match(label, /已連續變大 2 期/)

@@ -94,7 +94,7 @@ function evaluate(params: SignalEvalParams): SignalEvaluation {
   }
 
   return {
-    fires: false,
+    fires: true,
     picks: [],
     conditionMetButEmpty: true,
     emptyGroupLabels: labels
@@ -105,6 +105,7 @@ export const tailPairSignal: SignalDef = {
   id: ID,
   nameZh: '尾號複數',
   description: '當期出現尾號複數事件時亮燈，回顧連莊/不連莊/無同尾的歷史規律；不推號',
+  kind: 'observation',
   appliesTo: [...APPLIES_TO],
   evaluate
 }

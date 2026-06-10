@@ -78,7 +78,10 @@ export function replayHistory(
         analysisState,
         todayDate: draw.drawDate
       })
-      if (evalResult.fires && evalResult.picks.length > 0) {
+      // observation 型訊號可以 fires=true 但 picks=[]；仍須記入 scorecard 累積 totalFires。
+      // predict 型如果 picks=[] 視為「條件成立但無號可推」，舊規維持「不亮燈」。
+      const isObservation = sig.kind === 'observation'
+      if (evalResult.fires && (isObservation || evalResult.picks.length > 0)) {
         firings[sig.id] = {
           drawTerm: draw.drawTerm,
           drawDate: draw.drawDate,
@@ -107,7 +110,7 @@ export function replayHistory(
   }
 
   return {
-    v: 2,
+    v: 3,
     gameId,
     lastProcessedTerm,
     scorecards,

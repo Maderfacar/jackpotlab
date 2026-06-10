@@ -1,14 +1,15 @@
 /**
  * 要開冷門號啦（cold_number）—— 預測型訊號
  *
- * 觸發條件（位置鎖定）：analysisState.history 的 values 欄位（CSV，每期 K 個整數），
- *   從最新一期往回掃，存在「某一相同位置」連續 ≥ 2 期皆 < 10。
+ * 觸發條件（位置不鎖定）：analysisState.history 的 values 欄位（CSV，每期 K 個整數），
+ *   從最新一期往回掃，連續 ≥ 2 期「每期都有至少一個位置的值 < 10」。
+ *   位置可不同——只要某期有任一位置 < 10 就算該期合格。
  * 推薦策略：掃 analysisState.periods 所有 slot，若 record 最左值（即最新隔期值）
  *   嚴格 > 10，則該 slot.prizes 加入 picks，按隔期分組。
  *
  * 適用彩種：lotto539 / lotto649 / super_lotto638（賓果不適用）
  *
- * 規格來源：memory project-brain-signals-batch-2
+ * 規格來源：memory project-brain-signals-batch-2（2026-06-10 修正：位置鎖定→任一位置）
  */
 
 import type { GameId } from '../../../shared/lotto/games'
@@ -49,17 +50,18 @@ function evaluate(params: SignalEvalParams): SignalEvaluation {
   }
   if (rows.length < 2) return { fires: false, picks: [] }
 
-  const positions = rows[0]!.length
-  // 找位置鎖定的最大連續期數 K：某 p ∈ [0, positions) 使 rows[0..K) 在 p 位置皆 < 10
-  let bestK = 0
-  for (let p = 0; p < positions; p++) {
-    let k = 0
-    for (const r of rows) {
-      const v = r[p]
-      if (v !== undefined && Number.isFinite(v) && v < 10) k++
-      else break
+  // 任一位置：每期只要存在「至少一個位置 < 10」就算該期合格。
+  // 從最新一期往回掃，找連續合格的最大期數 K。
+  function rowQualifies(row: number[]): boolean {
+    for (const v of row) {
+      if (v !== undefined && Number.isFinite(v) && v < 10) return true
     }
-    if (k > bestK) bestK = k
+    return false
+  }
+  let bestK = 0
+  for (const r of rows) {
+    if (rowQualifies(r)) bestK++
+    else break
   }
   if (bestK < 2) return { fires: false, picks: [] }
 

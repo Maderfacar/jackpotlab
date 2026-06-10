@@ -56,7 +56,7 @@ function evaluate(params: SignalEvalParams): SignalEvaluation {
   ]
 
   return {
-    fires: false,
+    fires: true,
     picks: [],
     conditionMetButEmpty: true,
     emptyGroupLabels: labels
@@ -67,6 +67,7 @@ export const positionDistributionSignal: SignalDef = {
   id: ID,
   nameZh: '絕地定位',
   description: '回顧獎號在所屬隔期內的位置 y 值組成；不推號',
+  kind: 'observation',
   appliesTo: [...APPLIES_TO],
   evaluate
 }

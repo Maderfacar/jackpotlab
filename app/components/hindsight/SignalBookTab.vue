@@ -37,6 +37,7 @@ const signals = computed<SignalDef[]>(() => getSignalsForGame(props.gameId))
 
 interface SignalRow {
   signal: SignalDef
+  isObservation: boolean
   scorecard: SignalScorecard | null
   totalFires: number
   totalPicks: number
@@ -53,14 +54,17 @@ const rows = computed<SignalRow[]>(() => {
     const totalFires = sc?.totalFires ?? 0
     const cumulative = sc ? smoothedHitRate(sc, baseline.value, N0) : baseline.value
     const recent = sc ? recentHitRate(sc, 20) : null
+    const isObservation = sig.kind === 'observation'
     out.push({
       signal: sig,
+      isObservation,
       scorecard: sc,
       totalFires,
       totalPicks,
       recentRate: recent,
       cumulativeRate: cumulative,
-      sampleLow: totalPicks < SAMPLE_FLOOR
+      // 觀察型不適用「樣本不足」概念——它沒有命中率，只算「已觀察 N 次」
+      sampleLow: !isObservation && totalPicks < SAMPLE_FLOOR
     })
   }
   return out
@@ -68,15 +72,21 @@ const rows = computed<SignalRow[]>(() => {
 
 const sortedRows = computed<SignalRow[]>(() => {
   const arr = [...rows.value]
+  // 觀察型不算命中率，按 hit-rate 排序時固定排到尾端、組內按 totalFires
   if (sortKey.value === 'recent') {
-    // recentRate null 排最後
     arr.sort((a, b) => {
+      if (a.isObservation !== b.isObservation) return a.isObservation ? 1 : -1
+      if (a.isObservation) return b.totalFires - a.totalFires
       const av = a.recentRate ?? -1
       const bv = b.recentRate ?? -1
       return bv - av
     })
   } else if (sortKey.value === 'cumulative') {
-    arr.sort((a, b) => b.cumulativeRate - a.cumulativeRate)
+    arr.sort((a, b) => {
+      if (a.isObservation !== b.isObservation) return a.isObservation ? 1 : -1
+      if (a.isObservation) return b.totalFires - a.totalFires
+      return b.cumulativeRate - a.cumulativeRate
+    })
   } else {
     arr.sort((a, b) => b.totalFires - a.totalFires)
   }
@@ -131,7 +141,15 @@ function avgHits(sc: SignalScorecard | null): string {
               {{ row.signal.nameZh }}
             </span>
             <UBadge
-              v-if="row.sampleLow"
+              v-if="row.isObservation"
+              color="neutral"
+              variant="subtle"
+              size="sm"
+            >
+              觀察型
+            </UBadge>
+            <UBadge
+              v-else-if="row.sampleLow"
               color="warning"
               variant="subtle"
               size="sm"
@@ -147,7 +165,11 @@ function avgHits(sc: SignalScorecard | null): string {
         <p class="text-xs text-muted">
           {{ row.signal.description }}
         </p>
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs tabular-nums">
+        <!-- 預測型：4 欄命中率指標 -->
+        <div
+          v-if="!row.isObservation"
+          class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs tabular-nums"
+        >
           <div>
             <div class="text-muted">
               累積命中率
@@ -180,6 +202,15 @@ function avgHits(sc: SignalScorecard | null): string {
               {{ avgHits(row.scorecard) }}
             </div>
           </div>
+        </div>
+        <!-- 觀察型：只顯示「已觀察次數」 -->
+        <div
+          v-else
+          class="text-xs tabular-nums"
+        >
+          <span class="text-muted">已觀察</span>
+          <span class="ml-1 font-mono">{{ row.totalFires }}</span>
+          <span class="text-muted"> 次</span>
         </div>
       </div>
     </UCard>
