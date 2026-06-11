@@ -12,6 +12,7 @@ import { bingoTimeFromMap, buildBingoMinTermByDate } from '~/utils/bingo-time'
 import { N0, baselineHitRate } from '~/hindsight/config'
 import { recentHitRate, smoothedHitRate } from '~/hindsight/scorecard'
 import { getSignalsForGame } from '~/hindsight/registry'
+import { slotCountForOriginDistribution } from '~/hindsight/signals/bingo-origin-distribution'
 import type { AnalysisState } from '~/utils/analysis'
 import type {
   BrainDraw,
@@ -33,9 +34,15 @@ interface Props {
    * 才能完全對齊 draws 頁「原始分析 → 隔期狀態」看到的數字。
    */
   analysisState: AnalysisState | null
+  /**
+   * 隱藏「回訊號牆」按鈕。賓果海尼根頁設 true（本頁無上層列表可回）。
+   */
+  hideBackButton?: boolean
 }
 
-const props = defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), {
+  hideBackButton: false
+})
 const emit = defineEmits<{
   close: []
 }>()
@@ -110,18 +117,18 @@ function bingoTime(drawDate: string, drawTerm: number): string {
 
 // 訊號 10：用即時 analysisState 算「隔期剩餘號碼」一卡，post-T 視角。
 //
-// 上方卡顯示 post-T periods[0..3]：
-//   隔期 0 = periods[0] = T 本期（20 顆，沒擷取過）
-//   隔期 1 = periods[1] = T-1 期格（被 T 擷取後的剩餘）
-//   隔期 2 = periods[2] = T-2 期格
-//   隔期 3 = periods[3] = T-3 期格
+// 上方卡顯示 post-T periods[0..(slotCount-1)]：
+//   隔期 0 = periods[0] = T 本期主號（沒擷取過）
+//   隔期 1..(slotCount-1) = periods[1..(slotCount-1)] = T-1 / T-2 / ... 期格被擷取後的剩餘
+//
+// SLOT_COUNT 依彩種：賓果 4 格、其他彩種 6 格（slotCountForOriginDistribution）
 //
 // 連莊（隔期 0 紅框）= T 期 csv 值 = 0 對應的 sorted-unique T 主號 = T ∩ T-1
-//   （T 從 T-1 期格擷取的；顯示在 T 本期 20 顆裡跟 T-1 重疊的那幾顆）
+//   （T 從 T-1 期格擷取的；顯示在 T 本期主號裡跟 T-1 重疊的那幾顆）
 //
 // hits/remaining 在這張卡上不顯示（卡只顯示 remainingNumbers）；
 // 下方觀察紀錄表用的 hits/remaining 在訊號 evaluate 裡算、走 firing.observationLabels 路徑。
-const SIGNAL_10_SLOT_COUNT = 4
+const signal10SlotCount = computed<number>(() => slotCountForOriginDistribution(props.gameId))
 interface OriginLatestData {
   drawTerm: number
   drawDate: string
@@ -147,11 +154,11 @@ function parsePrizesCsvLocal(csv: string | undefined): number[] {
 }
 const originLatest = computed<OriginLatestData | null>(() => {
   if (props.signalId !== 'bingo_origin_distribution') return null
-  if (props.gameId !== 'bingo_bingo') return null
   const as = props.analysisState
   if (!as) return null
   if (as.history.length === 0) return null
-  if (as.periods.length < SIGNAL_10_SLOT_COUNT) return null
+  const slotCount = signal10SlotCount.value
+  if (as.periods.length < slotCount) return null
 
   const tEntry = as.history[as.history.length - 1]!
   const drawTerm = Number.parseInt(tEntry.issue, 10)
@@ -161,7 +168,7 @@ const originLatest = computed<OriginLatestData | null>(() => {
   const tNumsSorted = parsePrizesCsvLocal(tEntry.prizes)
 
   const perInterval: OriginIntervalEntry[] = []
-  for (let j = 0; j < SIGNAL_10_SLOT_COUNT; j++) {
+  for (let j = 0; j < slotCount; j++) {
     const slot = as.periods[j]!
     const remainingNumbers = [...slot.prizes].sort((a, b) => a - b)
     perInterval.push({
@@ -260,7 +267,10 @@ function isHit(num: number, hits: number[]): boolean {
 
 <template>
   <div class="space-y-4">
-    <div class="flex items-center gap-2">
+    <div
+      v-if="!props.hideBackButton"
+      class="flex items-center gap-2"
+    >
       <UButton
         color="neutral"
         variant="ghost"
@@ -340,6 +350,13 @@ function isHit(num: number, hits: number[]): boolean {
           </div>
         </UCard>
       </div>
+
+      <!-- 賓果海尼根頁專用：在「隔期剩餘號碼」之上插入「全壘打」 section -->
+      <slot
+        v-if="originLatest"
+        name="before-origin"
+        :origin-latest="originLatest"
+      />
 
       <!-- 訊號 10 專屬：最新一期當下的隔期 0-3 剩餘號碼一覽（連莊號紅框） -->
       <section

@@ -60,6 +60,15 @@ useSeoMeta({
           鑑古
         </UButton>
         <UButton
+          to="/bingo-heineken"
+          color="neutral"
+          variant="ghost"
+          icon="i-lucide-beer"
+          size="sm"
+        >
+          賓果海尼根
+        </UButton>
+        <UButton
           to="/admin/health"
           color="neutral"
           variant="ghost"

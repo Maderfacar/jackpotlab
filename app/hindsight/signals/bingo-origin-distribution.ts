@@ -3,8 +3,12 @@
  *
  * **規格（commit 鏈 d0ed921 → 本次拍板對齊）：**
  *
- * 觀察紀錄表每期顯示 T 期 20 顆從「該期當下（pre-T、T-1 處理完之後）」隔期 0/1/2/3 各擷取多少。
+ * 觀察紀錄表每期顯示 T 期主號從「該期當下（pre-T、T-1 處理完之後）」每隔期擷取多少。
  * 完全對齊 draws 的「隔期狀態」+「獎號關聯」兩個 tab。
+ *
+ * **隔期格數（SLOT_COUNT）依彩種**：
+ *   - 賓果（bingo_bingo）：隔期 0-3，共 4 格
+ *   - 其他彩種（lotto539 / lotto649 / super_lotto638）：隔期 0-5，共 6 格
  *
  * **分子分母（對齊「隔期狀態」）：**
  *
@@ -36,10 +40,10 @@
  *
  * **上方卡（SignalDetail 元件自己 live 算、不讀此 firing data）：**
  *
- *   - 隔期 0..3 ⇄ post-T periods[0..3]
+ *   - 隔期 0..(slotCount-1) ⇄ post-T periods[0..(slotCount-1)]
  *   - 隔期 0 紅框（連莊）= T csv 值 = 0 對應 sorted-unique T 號 = T ∩ T-1
  *
- * 適用彩種：bingo_bingo only
+ * 適用彩種：all（賓果 4 格、其他彩種 6 格；邏輯完全一致）
  */
 
 import type { GameId } from '../../../shared/lotto/games'
@@ -54,8 +58,14 @@ import type {
 } from '../types'
 
 const ID = 'bingo_origin_distribution'
-const APPLIES_TO: readonly GameId[] = ['bingo_bingo']
-const SLOT_COUNT = 4 // 隔期 0..3
+
+/**
+ * 隔期格數依彩種：賓果 4 格（隔期 0-3）、其他彩種 6 格（隔期 0-5）。
+ * 對應 draws「隔期狀態」頁顯示的隔期 row 數。
+ */
+export function slotCountForOriginDistribution(gameId: GameId): number {
+  return gameId === 'bingo_bingo' ? 4 : 6
+}
 
 function parsePeriodsCsv(periods: string | undefined): Array<number | null> {
   if (!periods) return []
@@ -94,7 +104,7 @@ function parsePositionsCsv(positions: string | undefined): Array<{ x: number, y:
 }
 
 function evaluate(params: SignalEvalParams): SignalEvaluation {
-  if (params.gameId !== 'bingo_bingo') return { fires: false, picks: [] }
+  const slotCount = slotCountForOriginDistribution(params.gameId)
 
   // 取得 post-T 視角的 analysisState
   let stateAfterT: AnalysisState
@@ -111,8 +121,8 @@ function evaluate(params: SignalEvalParams): SignalEvaluation {
   }
 
   if (stateAfterT.history.length === 0) return { fires: false, picks: [] }
-  // 需 periods[0..4] 共 5 格（pre-T 隔期 3 的原始顆數要用 post-T periods[4]）
-  if (stateAfterT.periods.length < SLOT_COUNT + 1) return { fires: false, picks: [] }
+  // 需 periods[0..slotCount] 共 slotCount+1 格（pre-T 最後一格的原始顆數要用 post-T periods[slotCount]）
+  if (stateAfterT.periods.length < slotCount + 1) return { fires: false, picks: [] }
 
   const tEntry = stateAfterT.history[stateAfterT.history.length - 1]!
   const tCsvIdxs = parsePeriodsCsv(tEntry.periods)
@@ -121,7 +131,7 @@ function evaluate(params: SignalEvalParams): SignalEvaluation {
   const tPositions = parsePositionsCsv(tEntry.positions)
 
   const perInterval: OriginIntervalEntry[] = []
-  for (let j = 0; j < SLOT_COUNT; j++) {
+  for (let j = 0; j < slotCount; j++) {
     let hits = 0
     const positionYs: number[] = []
     for (let i = 0; i < tCsvIdxs.length; i++) {
@@ -175,7 +185,8 @@ function evaluate(params: SignalEvalParams): SignalEvaluation {
   for (const p of perInterval) {
     labels.push(`隔期 ${p.interval}：${p.hits}/${p.remaining}`)
   }
-  labels.push(`0-3 隔期共 ${totalHits}/${totalRemaining}（${percent.toFixed(1)}%）`)
+  const maxInterval = slotCount - 1
+  labels.push(`0-${maxInterval} 隔期共 ${totalHits}/${totalRemaining}（${percent.toFixed(1)}%）`)
 
   return {
     fires: true,
@@ -189,8 +200,8 @@ function evaluate(params: SignalEvalParams): SignalEvaluation {
 export const bingoOriginDistributionSignal: SignalDef = {
   id: ID,
   nameZh: '獎號隔期來源',
-  description: 'T 期 20 顆從該期當下隔期 0-3 各擷取多少（對齊 draws 隔期狀態 + 獎號關聯）。觀察 hits/分母 = T 從此隔期擷取數 / pre-T 此隔期原始顆數；位置 y = 該擷取號在 sorted pre-T 隔期內的 1-indexed 位置；上方卡 隔期 0 連莊（T∩T-1）紅框。觀察型、不推號',
+  description: 'T 期主號從該期當下各隔期擷取多少（賓果隔期 0-3、其他彩種隔期 0-5；對齊 draws 隔期狀態 + 獎號關聯）。觀察 hits/分母 = T 從此隔期擷取數 / pre-T 此隔期原始顆數；位置 y = 該擷取號在 sorted pre-T 隔期內的 1-indexed 位置；上方卡 隔期 0 連莊（T∩T-1）紅框。觀察型、不推號',
   kind: 'observation',
-  appliesTo: [...APPLIES_TO],
+  appliesTo: ['all'],
   evaluate
 }
