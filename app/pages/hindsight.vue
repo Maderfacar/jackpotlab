@@ -157,7 +157,11 @@ function closeSignal() {
 
           <!-- 大局 -->
           <template v-else>
-            <HindsightBigPictureTab :brain-state="brainState" />
+            <HindsightBigPictureTab
+              :game-id="gameId"
+              :draws-asc="drawsAsc"
+              :brain-state="brainState"
+            />
           </template>
         </template>
       </div>

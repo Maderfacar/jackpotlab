@@ -8,6 +8,7 @@
  */
 
 import type { GameId } from '~~/shared/lotto/games'
+import { bingoTimeFromMap, buildBingoMinTermByDate } from '~/utils/bingo-time'
 import { N0, baselineHitRate } from '~/hindsight/config'
 import { recentHitRate, smoothedHitRate } from '~/hindsight/scorecard'
 import { getSignalsForGame } from '~/hindsight/registry'
@@ -80,6 +81,16 @@ const drawByTerm = computed<Map<number, BrainDraw>>(() => {
   for (const d of props.drawsAsc) m.set(d.drawTerm, d)
   return m
 })
+
+// 賓果：歷史每期都要顯示時間（[[reference-hindsight-must-read]] 之外的賓果顯示需求）
+const isBingo = computed(() => props.gameId === 'bingo_bingo')
+const bingoMinTermByDate = computed<Map<string, number>>(() => {
+  if (!isBingo.value) return new Map()
+  return buildBingoMinTermByDate(props.drawsAsc)
+})
+function bingoTime(drawDate: string, drawTerm: number): string {
+  return bingoTimeFromMap(bingoMinTermByDate.value, drawDate, drawTerm)
+}
 
 const evidence = computed<EvidenceRow[]>(() => {
   if (!scorecard.value) return []
@@ -266,9 +277,12 @@ function isHit(num: number, hits: number[]): boolean {
                   :key="`ev-${row.drawTerm}`"
                   class="border-t border-default align-top"
                 >
-                  <td class="px-3 py-2 font-mono">
+                  <td class="px-3 py-2 font-mono whitespace-nowrap">
                     {{ row.drawTerm }}<br>
-                    <span class="text-[10px] text-muted">{{ row.drawDate }}</span>
+                    <span class="text-[10px] text-muted">{{ row.drawDate }}<span
+                      v-if="isBingo && bingoTime(row.drawDate, row.drawTerm)"
+                      class="ml-1"
+                    >{{ bingoTime(row.drawDate, row.drawTerm) }}</span></span>
                   </td>
                   <td class="px-3 py-2">
                     <div class="flex flex-wrap items-center gap-1">
@@ -340,7 +354,10 @@ function isHit(num: number, hits: number[]): boolean {
                   <td class="px-3 py-2 font-mono whitespace-nowrap">
                     {{ row.drawTerm }}
                     <br>
-                    <span class="text-[10px] text-muted">{{ row.drawDate }}</span>
+                    <span class="text-[10px] text-muted">{{ row.drawDate }}<span
+                      v-if="isBingo && bingoTime(row.drawDate, row.drawTerm)"
+                      class="ml-1"
+                    >{{ bingoTime(row.drawDate, row.drawTerm) }}</span></span>
                   </td>
                   <td class="px-3 py-2">
                     <!-- 訊號 7：本期 y 組成染色 chip -->

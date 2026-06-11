@@ -16,6 +16,7 @@
 
 import { GAMES, type GameId } from '~~/shared/lotto/games'
 import type { AnalysisPeriod, AnalysisState } from '~/utils/analysis'
+import { bingoTimeFromMap, buildBingoMinTermByDate } from '~/utils/bingo-time'
 import type { NumberRanking } from '~/hindsight/ensemble'
 import { N0, baselineHitRate } from '~/hindsight/config'
 import { recentHitRate, smoothedHitRate } from '~/hindsight/scorecard'
@@ -81,30 +82,14 @@ function parseUTC(dateStr: string): Date | null {
   return new Date(Date.UTC(y, m - 1, d))
 }
 
-// 賓果：每天 07:05 起每 5 分鐘 1 期，term 跨日遞增。
-// 同日內最小 drawTerm = 該日 07:05 那期，其他用偏移量推算時分。
-const BINGO_START_MIN = 7 * 60 + 5
-const BINGO_INTERVAL_MIN = 5
-
+// 賓果時段推算 → 共用 util（~/utils/bingo-time）
 const bingoMinTermByDate = computed<Map<string, number>>(() => {
-  const m = new Map<string, number>()
-  if (props.gameId !== 'bingo_bingo') return m
-  for (const d of props.drawsAsc) {
-    const cur = m.get(d.drawDate)
-    if (cur === undefined || d.drawTerm < cur) m.set(d.drawDate, d.drawTerm)
-  }
-  return m
+  if (props.gameId !== 'bingo_bingo') return new Map()
+  return buildBingoMinTermByDate(props.drawsAsc)
 })
 
 function bingoTime(drawDate: string, drawTerm: number): string {
-  const base = bingoMinTermByDate.value.get(drawDate)
-  if (base === undefined) return ''
-  const offset = drawTerm - base
-  if (offset < 0 || offset > 230) return ''
-  const totalMin = BINGO_START_MIN + offset * BINGO_INTERVAL_MIN
-  const h = Math.floor(totalMin / 60) % 24
-  const mm = totalMin % 60
-  return `${pad2(h)}:${pad2(mm)}`
+  return bingoTimeFromMap(bingoMinTermByDate.value, drawDate, drawTerm)
 }
 
 const isBingo = computed(() => props.gameId === 'bingo_bingo')
@@ -336,7 +321,8 @@ const SHORT_NAME_MAP: Record<string, string> = {
   cold_number: '冷',
   position_distribution: '位',
   streak_alert: '連',
-  first_position: '位1'
+  first_position: '位1',
+  bingo_origin_distribution: '源'
 }
 
 function supportingShortChips(num: number): Array<{ id: string, short: string, full: string }> {

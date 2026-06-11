@@ -5,6 +5,7 @@
  */
 
 import { registerSignal } from '../registry'
+import { bingoOriginDistributionSignal } from './bingo-origin-distribution'
 import { coldNumberSignal } from './cold-number'
 import { consecutiveChainSignal } from './consecutive-chain'
 import { dateNumberSignal } from './date-number'
@@ -25,9 +26,11 @@ export function registerAllSignals(): void {
   registerSignal(positionDistributionSignal)
   registerSignal(streakAlertSignal)
   registerSignal(firstPositionSignal)
+  registerSignal(bingoOriginDistributionSignal)
 }
 
 export {
+  bingoOriginDistributionSignal,
   coldNumberSignal,
   consecutiveChainSignal,
   dateNumberSignal,

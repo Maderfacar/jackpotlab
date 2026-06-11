@@ -6,9 +6,13 @@
  * 期間切換 30/90/365 期；不足期數時顯示「樣本不足」。
  */
 
-import type { BrainAlert, BrainState, SignalScorecard } from '~/hindsight/types'
+import type { GameId } from '~~/shared/lotto/games'
+import { bingoTimeFromMap, buildBingoMinTermByDate } from '~/utils/bingo-time'
+import type { BrainAlert, BrainDraw, BrainState, SignalScorecard } from '~/hindsight/types'
 
 interface Props {
+  gameId: GameId
+  drawsAsc: BrainDraw[]
   brainState: BrainState | null
 }
 
@@ -73,6 +77,16 @@ const alerts = computed<BrainAlert[]>(() => {
   if (!props.brainState) return []
   return [...props.brainState.alerts].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
 })
+
+// 賓果：警示列表每筆顯示開獎時分
+const isBingo = computed(() => props.gameId === 'bingo_bingo')
+const bingoMinTermByDate = computed<Map<string, number>>(() => {
+  if (!isBingo.value) return new Map()
+  return buildBingoMinTermByDate(props.drawsAsc)
+})
+function bingoTime(drawDate: string, drawTerm: number): string {
+  return bingoTimeFromMap(bingoMinTermByDate.value, drawDate, drawTerm)
+}
 
 const lastProcessedTerm = computed<number | null>(() => props.brainState?.lastProcessedTerm ?? null)
 const updatedAt = computed<string | null>(() => props.brainState?.updatedAt ?? null)
@@ -185,7 +199,10 @@ function formatTime(iso: string | null): string {
               {{ typeLabel(a.type) }}
             </UBadge>
             <span class="font-mono">第 {{ a.drawTerm }} 期</span>
-            <span class="text-muted">{{ a.drawDate }}</span>
+            <span class="text-muted">{{ a.drawDate }}<span
+              v-if="isBingo && bingoTime(a.drawDate, a.drawTerm)"
+              class="ml-1 font-mono"
+            >{{ bingoTime(a.drawDate, a.drawTerm) }}</span></span>
           </div>
           <span class="text-muted text-[10px]">{{ formatTime(a.createdAt) }}</span>
         </div>
