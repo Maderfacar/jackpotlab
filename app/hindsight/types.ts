@@ -39,6 +39,11 @@ export interface OriginIntervalEntry {
   hits: number
   remaining: number
   remainingNumbers: number[]
+  /**
+   * T 期從此 pre-T 隔期擷取的號碼，在 sorted pre-T periods[interval] 中的位置 y 值
+   * （1-indexed、升序）。對應 draws「獎號關聯」位置 x-y 的 y。
+   */
+  positionYs: number[]
 }
 
 export interface OriginDistributionData {
@@ -161,7 +166,7 @@ export interface BrainAlert {
  * lastProcessedTerm 表示這顆腦最近一次「打分完成」的期數。
  */
 export interface BrainState {
-  v: 6
+  v: 7
   gameId: GameId
   lastProcessedTerm: number | null
   scorecards: Record<string, SignalScorecard>

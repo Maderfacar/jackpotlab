@@ -59,7 +59,7 @@ describe('storage', () => {
 
   it('round-trip：save 之後 load 拿回完整 BrainState', () => {
     const state: BrainState = {
-      v: 6,
+      v: 7,
       gameId: 'lotto539',
       lastProcessedTerm: 42,
       scorecards: {
@@ -96,7 +96,7 @@ describe('storage', () => {
 
   it('load 不同 gameId 回 null', () => {
     const state: BrainState = {
-      v: 6,
+      v: 7,
       gameId: 'lotto539',
       lastProcessedTerm: null,
       scorecards: {},
@@ -112,11 +112,12 @@ describe('storage', () => {
 
     // 灌 3 個 key：當前版本、舊版本、無關 key
     const currentKey = brainStateKey('lotto539')
-    ls.setItem(currentKey, JSON.stringify({ v: 6, gameId: 'lotto539', lastProcessedTerm: null, scorecards: {}, alerts: [], updatedAt: '' }))
+    ls.setItem(currentKey, JSON.stringify({ v: 7, gameId: 'lotto539', lastProcessedTerm: null, scorecards: {}, alerts: [], updatedAt: '' }))
     ls.setItem('jackpotlab-hindsight-lotto539-v3', 'old')
     ls.setItem('jackpotlab-hindsight-lotto539-v4', 'oldv4')
     ls.setItem('jackpotlab-hindsight-lotto539-v5', 'oldv5')
-    ls.setItem('jackpotlab-hindsight-fake_game-v6', 'invalid')
+    ls.setItem('jackpotlab-hindsight-lotto539-v6', 'oldv6')
+    ls.setItem('jackpotlab-hindsight-fake_game-v7', 'invalid')
     ls.setItem('jackpotlab-analysis-lotto539-v3-n60', 'unrelated')
 
     sweepStaleHindsightStorage()
@@ -125,7 +126,8 @@ describe('storage', () => {
     assert.equal(ls.getItem('jackpotlab-hindsight-lotto539-v3'), null, 'old version should be swept')
     assert.equal(ls.getItem('jackpotlab-hindsight-lotto539-v4'), null, 'old version should be swept')
     assert.equal(ls.getItem('jackpotlab-hindsight-lotto539-v5'), null, 'old version should be swept')
-    assert.equal(ls.getItem('jackpotlab-hindsight-fake_game-v6'), null, 'invalid gameId should be swept')
+    assert.equal(ls.getItem('jackpotlab-hindsight-lotto539-v6'), null, 'old version should be swept')
+    assert.equal(ls.getItem('jackpotlab-hindsight-fake_game-v7'), null, 'invalid gameId should be swept')
     assert.notEqual(ls.getItem('jackpotlab-analysis-lotto539-v3-n60'), null, 'unrelated prefix untouched')
   })
 })

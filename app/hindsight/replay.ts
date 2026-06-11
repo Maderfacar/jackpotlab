@@ -106,7 +106,8 @@ export function replayHistory(
                 interval: p.interval,
                 hits: p.hits,
                 remaining: p.remaining,
-                remainingNumbers: [...p.remainingNumbers]
+                remainingNumbers: [...p.remainingNumbers],
+                positionYs: [...p.positionYs]
               })),
               totalHits: od.totalHits,
               totalRemaining: od.totalRemaining,
@@ -137,7 +138,7 @@ export function replayHistory(
   }
 
   return {
-    v: 6,
+    v: 7,
     gameId,
     lastProcessedTerm,
     scorecards,

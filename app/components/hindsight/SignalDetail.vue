@@ -75,6 +75,8 @@ interface EvidenceRow {
   observationLabels: string[]
   /** 訊號 7 結構化 y 值，UI 用染色 chip 顯示。其他訊號為空。 */
   latestYs: number[]
+  /** 訊號 10 每隔期擷取資訊（hits/分母/位置 y）；用來渲染觀察表「位置」欄。其他訊號為 undefined。 */
+  originPerInterval?: OriginIntervalEntry[]
 }
 
 // 2026-06-11 拍板：訊號 7 y 值染色 mapping（紅橙綠藍紫粉，Nuxt UI 4 text-{color}-500）
@@ -163,11 +165,12 @@ const originLatest = computed<OriginLatestData | null>(() => {
     const slot = as.periods[j]!
     const remainingNumbers = [...slot.prizes].sort((a, b) => a - b)
     perInterval.push({
-      // hits / remaining 在卡上不顯示，這邊只是塞個值維持型別
+      // hits / remaining / positionYs 在卡上不顯示，這邊只是塞個值維持型別
       interval: j,
       hits: 0,
       remaining: remainingNumbers.length,
-      remainingNumbers
+      remainingNumbers,
+      positionYs: []
     })
   }
 
@@ -215,7 +218,8 @@ const evidence = computed<EvidenceRow[]>(() => {
       hits: f.hits ?? 0,
       hitNumbers: f.hitNumbers ?? [],
       observationLabels: filteredLabels,
-      latestYs
+      latestYs,
+      originPerInterval: f.observationData?.originDistribution?.perInterval
     })
   }
   return out
@@ -492,6 +496,12 @@ function isHit(num: number, hits: number[]): boolean {
                   <th class="px-3 py-2 text-left">
                     當期觀察
                   </th>
+                  <th
+                    v-if="signalId === 'bingo_origin_distribution'"
+                    class="px-3 py-2 text-left whitespace-nowrap"
+                  >
+                    位置
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -539,6 +549,28 @@ function isHit(num: number, hits: number[]): boolean {
                       v-else-if="row.latestYs.length === 0"
                       class="text-muted"
                     >—（早期紀錄，請待下次 replay 補齊）</span>
+                  </td>
+                  <!-- 訊號 10：位置 y 值欄（與「當期觀察」前 4 行隔期對齊） -->
+                  <td
+                    v-if="signalId === 'bingo_origin_distribution'"
+                    class="px-3 py-2 align-top"
+                  >
+                    <div
+                      v-if="row.originPerInterval && row.originPerInterval.length > 0"
+                      class="flex flex-col gap-1"
+                    >
+                      <span
+                        v-for="p in row.originPerInterval"
+                        :key="`pos-${row.drawTerm}-${p.interval}`"
+                        class="font-mono text-muted leading-snug"
+                      >
+                        {{ p.positionYs && p.positionYs.length > 0 ? p.positionYs.join(', ') : '—' }}
+                      </span>
+                    </div>
+                    <span
+                      v-else
+                      class="text-muted"
+                    >—</span>
                   </td>
                 </tr>
               </tbody>

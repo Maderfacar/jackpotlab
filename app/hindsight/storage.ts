@@ -13,10 +13,10 @@ import type { GameId } from '../../shared/lotto/games'
 import type { BrainState } from './types'
 
 const STORAGE_PREFIX = 'jackpotlab-hindsight'
-// v6: 訊號 10 觀察紀錄表的 hits/remaining 對齊「下方觀察先發生、上方卡是擷取後 shift 完
-//     的結果」這個時間軸：觀察 隔期 j 的 remaining = post-T periods[j+1].length（也就是
-//     上方卡 隔期 j+1 的顆數）。
-const STORAGE_VERSION = 6
+// v7: 訊號 10 觀察紀錄表分母改用 pre-T periods[j] 原始顆數（擷取前；對齊 draws 隔期狀態
+//     row.period=j 的當時剩餘）；OriginIntervalEntry 新增 positionYs（對齊 draws 獎號關聯
+//     位置 x-y 的 y）。舊 v6 firing 分母錯、無 positionYs，必須重 replay。
+const STORAGE_VERSION = 7
 
 export function brainStateKey(gameId: GameId): string {
   return `${STORAGE_PREFIX}-${gameId}-v${STORAGE_VERSION}`
