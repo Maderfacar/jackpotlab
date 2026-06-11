@@ -145,6 +145,7 @@ function closeSignal() {
               :signal-id="openedSignalId"
               :brain-state="brainState"
               :draws-asc="drawsAsc"
+              :analysis-state="analysisState"
               @close="closeSignal"
             />
             <HindsightSignalBookTab

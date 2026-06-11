@@ -12,10 +12,12 @@ import { bingoTimeFromMap, buildBingoMinTermByDate } from '~/utils/bingo-time'
 import { N0, baselineHitRate } from '~/hindsight/config'
 import { recentHitRate, smoothedHitRate } from '~/hindsight/scorecard'
 import { getSignalsForGame } from '~/hindsight/registry'
+import type { AnalysisState } from '~/utils/analysis'
 import type {
   BrainDraw,
   BrainState,
   OriginDistributionData,
+  OriginIntervalEntry,
   SignalDef,
   SignalScorecard
 } from '~/hindsight/types'
@@ -25,6 +27,12 @@ interface Props {
   signalId: string
   brainState: BrainState | null
   drawsAsc: BrainDraw[]
+  /**
+   * 即時分析狀態（已含最新一期 T 的處理結果）。
+   * 訊號 10 的「隔期剩餘號碼」一卡需要用這份即時狀態，
+   * 才能完全對齊 draws 頁「原始分析 → 隔期狀態」看到的數字。
+   */
+  analysisState: AnalysisState | null
 }
 
 const props = defineProps<Props>()
@@ -98,25 +106,97 @@ function bingoTime(drawDate: string, drawTerm: number): string {
   return bingoTimeFromMap(bingoMinTermByDate.value, drawDate, drawTerm)
 }
 
-// 訊號 10：取最新一筆 firing 的 originDistribution，給觀察紀錄上方一卡渲染
+// 訊號 10：用即時 analysisState 算「隔期剩餘號碼」一卡，完全對齊 draws 隔期狀態。
+//
+// 重點對應（T = 最新一期，已 applyNewDraws 進入 analysisState）：
+//   訊號 10 隔期 0..3  ⇄  draws 隔期狀態 row.period 1..4
+//   = analysisState.periods[1..4].prizes（皆為 T 處理後的剩餘）
+//
+// 連莊（隔期 0 紅框）：
+//   = T-1 期 csv 值 = 1 對應的號（即 T-1 ∩ T-2、從 T-2 連到 T-1 的）
+//   ∩ analysisState.periods[1].prizes（沒被 T 又擷取掉的）
+const SIGNAL_10_SLOT_COUNT = 4
 interface OriginLatestData {
   drawTerm: number
   drawDate: string
   data: OriginDistributionData
   carryoverSet: Set<number>
 }
+function parsePeriodsCsvLocal(csv: string | undefined): Array<number | null> {
+  if (!csv) return []
+  return csv.split(',').map((s) => {
+    if (s === '') return null
+    const v = Number.parseInt(s, 10)
+    return Number.isFinite(v) ? v : null
+  })
+}
+function parsePrizesCsvLocal(csv: string | undefined): number[] {
+  if (!csv) return []
+  const out: number[] = []
+  for (const s of csv.split(',')) {
+    const v = Number.parseInt(s, 10)
+    if (Number.isFinite(v)) out.push(v)
+  }
+  return out
+}
 const originLatest = computed<OriginLatestData | null>(() => {
   if (props.signalId !== 'bingo_origin_distribution') return null
-  const sc = scorecard.value
-  if (!sc) return null
-  const latest = sc.recentFirings[sc.recentFirings.length - 1]
-  const od = latest?.observationData?.originDistribution
-  if (!latest || !od) return null
+  if (props.gameId !== 'bingo_bingo') return null
+  const as = props.analysisState
+  if (!as) return null
+  if (as.history.length === 0) return null
+  if (as.periods.length < SIGNAL_10_SLOT_COUNT + 1) return null
+
+  const tEntry = as.history[as.history.length - 1]!
+  const drawTerm = Number.parseInt(tEntry.issue, 10)
+  if (!Number.isFinite(drawTerm)) return null
+
+  const tCsvIdxs = parsePeriodsCsvLocal(tEntry.periods)
+
+  const perInterval: OriginIntervalEntry[] = []
+  let totalHits = 0
+  let totalRemaining = 0
+  for (let j = 0; j < SIGNAL_10_SLOT_COUNT; j++) {
+    let hits = 0
+    for (const idx of tCsvIdxs) if (idx === j) hits++
+    const slot = as.periods[j + 1]!
+    const remainingNumbers = [...slot.prizes].sort((a, b) => a - b)
+    perInterval.push({
+      interval: j,
+      hits,
+      remaining: remainingNumbers.length,
+      remainingNumbers
+    })
+    totalHits += hits
+    totalRemaining += remainingNumbers.length
+  }
+
+  // 連莊 = T-1 期 csv 值 = 1 對應的號 ∩ 現在 periods[1] 還在的
+  const carryover: number[] = []
+  if (as.history.length >= 2) {
+    const tMinus1Entry = as.history[as.history.length - 2]!
+    const tMinus1CsvIdxs = parsePeriodsCsvLocal(tMinus1Entry.periods)
+    const tMinus1NumsSorted = [...new Set(parsePrizesCsvLocal(tMinus1Entry.prizes))].sort((a, b) => a - b)
+    const period1Set = new Set(as.periods[1]!.prizes)
+    for (let i = 0; i < tMinus1CsvIdxs.length; i++) {
+      if (tMinus1CsvIdxs[i] === 1) {
+        const n = tMinus1NumsSorted[i]
+        if (typeof n === 'number' && period1Set.has(n)) carryover.push(n)
+      }
+    }
+    carryover.sort((a, b) => a - b)
+  }
+
   return {
-    drawTerm: latest.drawTerm,
-    drawDate: latest.drawDate,
-    data: od,
-    carryoverSet: new Set(od.carryoverInPeriod0)
+    drawTerm,
+    drawDate: tEntry.date,
+    data: {
+      perInterval,
+      totalHits,
+      totalRemaining,
+      carryoverInPeriod0: carryover
+    },
+    carryoverSet: new Set(carryover)
   }
 })
 
