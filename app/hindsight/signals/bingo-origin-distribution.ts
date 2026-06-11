@@ -1,38 +1,38 @@
 /**
  * 獎號隔期來源（bingo_origin_distribution）—— 觀察型訊號
  *
- * 視角：**post-T 視角**（T = 當期新進來的最新一期）。
- * 完全對齊 draws 頁「原始分析 → 隔期狀態」row.period 0..3。
+ * **時間軸概念（使用者拍板）：**
  *
- * **隔期對應（commit 79a60cf 之後拍板）：**
+ *   1. 下方「觀察紀錄」先發生：T 期被開出時，T 的 20 顆從「**前一次**隔期 0/1/2/3」
+ *      （= pre-T periods[0..3] = T-1 當下的隔期）各擷取了多少
+ *   2. 擷取後，每個 pre-T 隔期剩下若干顆
+ *   3. shift right → pre-T periods[0..3] 變成 post-T periods[1..4]
+ *      上方卡的隔期 0 = T 本期新進來的 20 顆
  *
- *   - 隔期 0 = stateAfterT.periods[0] = T 本期格、20 顆（沒被擷取過）
- *   - 隔期 1 = stateAfterT.periods[1] = T-1 期格（被 T 擷取後剩餘）
- *   - 隔期 2 = stateAfterT.periods[2] = T-2 期格
- *   - 隔期 3 = stateAfterT.periods[3] = T-3 期格
+ * **連動關係（核心）：**
+ *
+ *   - 觀察 隔期 j 的剩餘 = pre-T periods[j] 擷取後剩餘 = post-T periods[j+1].length
+ *     = 上方卡 隔期 j+1 的顆數
+ *   - 觀察 隔期 0 ⇄ 上方卡 隔期 1
+ *   - 觀察 隔期 1 ⇄ 上方卡 隔期 2
+ *   - 觀察 隔期 2 ⇄ 上方卡 隔期 3
+ *   - 觀察 隔期 3 → 上方卡 隔期 4（卡只到 3，所以看不到）
+ *   - 上方卡 隔期 0 = T 本期 20 顆，與觀察無對應
  *
  * **取得 post-T 狀態的兩條路徑：**
  *
  *   - **replay 路徑**：params.currentDraw 為 T，本地 applyNewDraws 模擬，拿 post-T
- *     （replay 自己會在外層 evaluate 之後 applyNewDraws，所以本地模擬不會影響全域）
- *   - **evaluateCurrent 路徑**：params.analysisState 本來就已含全部期（最後一筆就是 T），
- *     沒有 currentDraw，直接用
- *
- * **每隔期 hits 語意（新對齊）：**
- *
- *   - 隔期 0：T 本期自己的 20 顆 → hits = 20（remaining/remaining）
- *   - 隔期 j (j≥1)：T 期擷取自 T-j 期格的數量 = T 期 csv 值 = j-1 的數量
- *     （T 期 csv 是 pre-T frame 的 index，pre-T periods[k] 在 post-T 變 periods[k+1]）
+ *   - **evaluateCurrent 路徑**：params.analysisState 本來就已含全部期，直接用
  *
  * **觀察文字（emptyGroupLabels）每期 5 行**：
  *
- *   - 4 行「隔期 j：{hits}/{remaining}」（j = 0..3）
+ *   - 4 行「隔期 j：{T csv 值=j 的數量}/{post-T periods[j+1].length}」（j = 0..3）
  *   - 1 行「0-3 隔期共 {totalHits}/{totalRemaining}（{percent}%）」
  *
- * **連莊紅框（隔期 0 上，給 SignalDetail 卡用）：**
+ * **連莊紅框（上方卡 隔期 0 上）：**
  *
  *   - = T 期 csv 值 = 0 對應的 sorted-unique T 主號 = T ∩ T-1
- *   - 顯示在隔期 0（T 本期 20 顆）裡跟 T-1 重疊的那幾顆
+ *   - 顯示在 T 本期 20 顆裡跟 T-1 重疊的那幾顆
  *
  * 適用彩種：bingo_bingo only
  */
@@ -89,7 +89,8 @@ function evaluate(params: SignalEvalParams): SignalEvaluation {
   }
 
   if (stateAfterT.history.length === 0) return { fires: false, picks: [] }
-  if (stateAfterT.periods.length < SLOT_COUNT) return { fires: false, picks: [] }
+  // 觀察 隔期 j (j=0..3) 的 remaining 需 post-T periods[j+1]，故需 periods[0..4] 共 5 格
+  if (stateAfterT.periods.length < SLOT_COUNT + 1) return { fires: false, picks: [] }
 
   const tEntry = stateAfterT.history[stateAfterT.history.length - 1]!
   const tCsvIdxs = parsePeriodsCsv(tEntry.periods)
@@ -98,20 +99,21 @@ function evaluate(params: SignalEvalParams): SignalEvaluation {
 
   const perInterval: OriginIntervalEntry[] = []
   for (let j = 0; j < SLOT_COUNT; j++) {
-    const slot = stateAfterT.periods[j]!
-    const remainingNumbers = [...slot.prizes].sort((a, b) => a - b)
-    let hits: number
-    if (j === 0) {
-      // 隔期 0 = T 本期自己，20 顆都在
-      hits = remainingNumbers.length
-    } else {
-      hits = 0
-      for (const idx of tCsvIdxs) if (idx === j - 1) hits++
-    }
+    let hits = 0
+    for (const idx of tCsvIdxs) if (idx === j) hits++
+
+    // 觀察記錄用：pre-T periods[j] 在 T 擷取後剩餘 = post-T periods[j+1].length
+    const observedRemaining = stateAfterT.periods[j + 1]!.prizes.length
+
+    // 上方卡用：post-T periods[j].prizes（升序）
+    //   注意 interval=0 是 T 本期 20 顆，所以 remainingNumbers.length ≠ observedRemaining
+    const upperCardSlot = stateAfterT.periods[j]!
+    const remainingNumbers = [...upperCardSlot.prizes].sort((a, b) => a - b)
+
     perInterval.push({
       interval: j,
       hits,
-      remaining: remainingNumbers.length,
+      remaining: observedRemaining,
       remainingNumbers
     })
   }
@@ -120,8 +122,8 @@ function evaluate(params: SignalEvalParams): SignalEvaluation {
   const totalRemaining = perInterval.reduce((s, p) => s + p.remaining, 0)
   const percent = totalRemaining > 0 ? (totalHits / totalRemaining) * 100 : 0
 
-  // 連莊紅框（隔期 0 上）= T 期 csv 值 = 0 對應的 sorted-unique T 號 = T ∩ T-1
-  const period0Set = new Set(perInterval[0]?.remainingNumbers ?? [])
+  // 連莊紅框（上方卡 隔期 0 上）= T 期 csv 值 = 0 對應的 sorted-unique T 號 = T ∩ T-1
+  const period0Set = new Set(stateAfterT.periods[0]!.prizes)
   const carryoverInPeriod0: number[] = []
   for (let i = 0; i < tCsvIdxs.length; i++) {
     if (tCsvIdxs[i] === 0) {
@@ -156,7 +158,7 @@ function evaluate(params: SignalEvalParams): SignalEvaluation {
 export const bingoOriginDistributionSignal: SignalDef = {
   id: ID,
   nameZh: '獎號隔期來源',
-  description: '統計最新期 T 的 20 顆主號擷取自隔期 0-3 哪一格（隔期 0=T 本期、隔期 1..3=T-1..T-3 期格 post-T 剩餘）、隔期 0 連莊號（T∩T-1）紅框；觀察型、不推號',
+  description: '統計最新期 T 的 20 顆主號擷取自前一次隔期 0-3 的數量。觀察 隔期 j 剩餘 = 上方卡 隔期 j+1 顆數；上方卡 隔期 0 = T 本期 20 顆、隔期 0 連莊號（T∩T-1）紅框。觀察型、不推號',
   kind: 'observation',
   appliesTo: [...APPLIES_TO],
   evaluate

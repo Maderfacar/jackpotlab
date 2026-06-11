@@ -161,7 +161,7 @@ export interface BrainAlert {
  * lastProcessedTerm 表示這顆腦最近一次「打分完成」的期數。
  */
 export interface BrainState {
-  v: 5
+  v: 6
   gameId: GameId
   lastProcessedTerm: number | null
   scorecards: Record<string, SignalScorecard>

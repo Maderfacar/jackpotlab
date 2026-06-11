@@ -106,19 +106,19 @@ function bingoTime(drawDate: string, drawTerm: number): string {
   return bingoTimeFromMap(bingoMinTermByDate.value, drawDate, drawTerm)
 }
 
-// 訊號 10：用即時 analysisState 算「隔期剩餘號碼」一卡，完全對齊 draws 隔期狀態。
+// 訊號 10：用即時 analysisState 算「隔期剩餘號碼」一卡，post-T 視角。
 //
-// 重點對應（T = 最新一期，已 applyNewDraws 進入 analysisState）：
-//   訊號 10 隔期 0..3  ⇄  draws 隔期狀態 row.period 0..3
-//   = analysisState.periods[0..3].prizes
-//     隔期 0 = periods[0] = T 本期（20 顆，沒擷取過）
-//     隔期 1 = periods[1] = T-1 期格（被 T 擷取後的剩餘）
-//     隔期 2 = periods[2] = T-2 期格
-//     隔期 3 = periods[3] = T-3 期格
+// 上方卡顯示 post-T periods[0..3]：
+//   隔期 0 = periods[0] = T 本期（20 顆，沒擷取過）
+//   隔期 1 = periods[1] = T-1 期格（被 T 擷取後的剩餘）
+//   隔期 2 = periods[2] = T-2 期格
+//   隔期 3 = periods[3] = T-3 期格
 //
-// 連莊（隔期 0 紅框）：
-//   = T 期 csv 值 = 0 對應的 sorted-unique T 主號（= T ∩ T-1，T 從 T-1 期格擷取的）
-//   這些號是 T 的 20 顆裡跟 T-1 重疊的，顯示在 T 本期格（隔期 0）的 20 顆中
+// 連莊（隔期 0 紅框）= T 期 csv 值 = 0 對應的 sorted-unique T 主號 = T ∩ T-1
+//   （T 從 T-1 期格擷取的；顯示在 T 本期 20 顆裡跟 T-1 重疊的那幾顆）
+//
+// hits/remaining 在這張卡上不顯示（卡只顯示 remainingNumbers）；
+// 下方觀察紀錄表用的 hits/remaining 在訊號 evaluate 裡算、走 firing.observationLabels 路徑。
 const SIGNAL_10_SLOT_COUNT = 4
 interface OriginLatestData {
   drawTerm: number
@@ -156,33 +156,23 @@ const originLatest = computed<OriginLatestData | null>(() => {
   if (!Number.isFinite(drawTerm)) return null
 
   const tCsvIdxs = parsePeriodsCsvLocal(tEntry.periods)
-  const tNumsSorted = [...new Set(parsePrizesCsvLocal(tEntry.prizes))].sort((a, b) => a - b)
+  const tNumsSorted = parsePrizesCsvLocal(tEntry.prizes)
 
   const perInterval: OriginIntervalEntry[] = []
-  let totalHits = 0
-  let totalRemaining = 0
   for (let j = 0; j < SIGNAL_10_SLOT_COUNT; j++) {
-    // 「擷取自隔期 j」的概念在新對齊下：
-    //   隔期 0 = T 本期，T 不從自己擷取 → hits[0] = 0
-    //   隔期 j (j≥1) = T-j 期格（post-T 之後），T 期擷取自此格 = csv 值 = j-1 的數量
-    let hits = 0
-    if (j >= 1) {
-      for (const idx of tCsvIdxs) if (idx === j - 1) hits++
-    }
     const slot = as.periods[j]!
     const remainingNumbers = [...slot.prizes].sort((a, b) => a - b)
     perInterval.push({
+      // hits / remaining 在卡上不顯示，這邊只是塞個值維持型別
       interval: j,
-      hits,
+      hits: 0,
       remaining: remainingNumbers.length,
       remainingNumbers
     })
-    totalHits += hits
-    totalRemaining += remainingNumbers.length
   }
 
   // 連莊（隔期 0 紅框）= T 期 csv 值 = 0 對應的 sorted-unique T 號 = T ∩ T-1
-  const period0Set = new Set(perInterval[0]?.remainingNumbers ?? [])
+  const period0Set = new Set(as.periods[0]!.prizes)
   const carryover: number[] = []
   for (let i = 0; i < tCsvIdxs.length; i++) {
     if (tCsvIdxs[i] === 0) {
@@ -197,8 +187,8 @@ const originLatest = computed<OriginLatestData | null>(() => {
     drawDate: tEntry.date,
     data: {
       perInterval,
-      totalHits,
-      totalRemaining,
+      totalHits: 0,
+      totalRemaining: 0,
       carryoverInPeriod0: carryover
     },
     carryoverSet: new Set(carryover)

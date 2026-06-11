@@ -137,7 +137,7 @@ export function replayHistory(
   }
 
   return {
-    v: 5,
+    v: 6,
     gameId,
     lastProcessedTerm,
     scorecards,

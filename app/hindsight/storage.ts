@@ -13,10 +13,10 @@ import type { GameId } from '../../shared/lotto/games'
 import type { BrainState } from './types'
 
 const STORAGE_PREFIX = 'jackpotlab-hindsight'
-// v5: 訊號 10（bingo_origin_distribution）的 observationLabels 與 observationData 改用
-//     post-T 視角（隔期 0 = T 本期 20 顆）。舊 v4 cache 內的 firing 是 T-1 視角，
-//     格式相容但語意不同，必須重 replay。
-const STORAGE_VERSION = 5
+// v6: 訊號 10 觀察紀錄表的 hits/remaining 對齊「下方觀察先發生、上方卡是擷取後 shift 完
+//     的結果」這個時間軸：觀察 隔期 j 的 remaining = post-T periods[j+1].length（也就是
+//     上方卡 隔期 j+1 的顆數）。
+const STORAGE_VERSION = 6
 
 export function brainStateKey(gameId: GameId): string {
   return `${STORAGE_PREFIX}-${gameId}-v${STORAGE_VERSION}`
