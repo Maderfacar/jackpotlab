@@ -76,7 +76,8 @@ export function replayHistory(
         gameId,
         history: historyBefore,
         analysisState,
-        todayDate: draw.drawDate
+        todayDate: draw.drawDate,
+        currentDraw: draw
       })
       // observation 型訊號可以 fires=true 但 picks=[]；仍須記入 scorecard 累積 totalFires。
       // predict 型如果 picks=[] 視為「條件成立但無號可推」，舊規維持「不亮燈」。
@@ -136,7 +137,7 @@ export function replayHistory(
   }
 
   return {
-    v: 4,
+    v: 5,
     gameId,
     lastProcessedTerm,
     scorecards,

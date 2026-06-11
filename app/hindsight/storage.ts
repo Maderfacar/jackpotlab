@@ -13,9 +13,10 @@ import type { GameId } from '../../shared/lotto/games'
 import type { BrainState } from './types'
 
 const STORAGE_PREFIX = 'jackpotlab-hindsight'
-// v4: SignalFiringRecord 加 observationLabels（觀察型每期實際觀察文字）。
-// 舊 v3 cache 內的觀察型 firing 沒有這欄，UI 印出來是空，必須重 replay 補上。
-const STORAGE_VERSION = 4
+// v5: 訊號 10（bingo_origin_distribution）的 observationLabels 與 observationData 改用
+//     post-T 視角（隔期 0 = T 本期 20 顆）。舊 v4 cache 內的 firing 是 T-1 視角，
+//     格式相容但語意不同，必須重 replay。
+const STORAGE_VERSION = 5
 
 export function brainStateKey(gameId: GameId): string {
   return `${STORAGE_PREFIX}-${gameId}-v${STORAGE_VERSION}`

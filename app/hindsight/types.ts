@@ -117,6 +117,14 @@ export interface SignalEvalParams {
   history: BrainDraw[]
   analysisState: AnalysisState
   todayDate: string
+  /**
+   * 當期 draw（在 replay 路徑會提供；evaluateCurrent 路徑為 undefined）。
+   *
+   * **預測型訊號禁止讀此欄**（會偷看未來、違反鑑古鐵律）。
+   * 只有觀察型訊號可以用此欄模擬 applyNewDraws(currentDraw)、把視角推到 post-T。
+   * 訊號 10（bingo_origin_distribution）就是這樣對齊 draws 隔期狀態 row 0..3 的。
+   */
+  currentDraw?: BrainDraw
 }
 
 /**
@@ -153,7 +161,7 @@ export interface BrainAlert {
  * lastProcessedTerm 表示這顆腦最近一次「打分完成」的期數。
  */
 export interface BrainState {
-  v: 4
+  v: 5
   gameId: GameId
   lastProcessedTerm: number | null
   scorecards: Record<string, SignalScorecard>
