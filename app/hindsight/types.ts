@@ -33,15 +33,33 @@ export interface PickGroup {
  * 條件成立但 picks 為空（無號可推）的狀況改用 `conditionMetButEmpty` + `emptyGroupLabels`
  * 給 UI 提示用，**不** 計入 scorecard。
  */
+/** 訊號 10 結構化資料：每隔期一筆「命中數 + 該期當時剩餘 + 剩餘號碼集合」+ 連莊紅框 */
+export interface OriginIntervalEntry {
+  interval: number
+  hits: number
+  remaining: number
+  remainingNumbers: number[]
+}
+
+export interface OriginDistributionData {
+  perInterval: OriginIntervalEntry[]
+  /** 0-3 隔期彙總 */
+  totalHits: number
+  totalRemaining: number
+  /** 隔期 0 上的連莊紅框號（= 該期當時隔期 0 ∩ 隔期 1 對應期 numbers） */
+  carryoverInPeriod0: number[]
+}
+
 export interface SignalEvaluation {
   fires: boolean
   picks: number[]
   pickGroups?: PickGroup[]
   conditionMetButEmpty?: boolean
   emptyGroupLabels?: string[]
-  /** 觀察型訊號的結構化資料，供 UI 染色等渲染。訊號 7 使用 latestYs。 */
+  /** 觀察型訊號的結構化資料，供 UI 染色等渲染。訊號 7 使用 latestYs；訊號 10 使用 originDistribution。 */
   observationData?: {
     latestYs?: number[]
+    originDistribution?: OriginDistributionData
   }
 }
 
@@ -66,9 +84,11 @@ export interface SignalFiringRecord {
   /**
    * 觀察型訊號的結構化資料（與 SignalEvaluation.observationData 對齊）。
    * 訊號 7 用 latestYs 在歷次紀錄中保留每期 y 值列表，UI 可逐期染色重現。
+   * 訊號 10 用 originDistribution 保留 4 個隔期的「命中/剩餘/剩餘號碼集合」+ 連莊紅框集合。
    */
   observationData?: {
     latestYs?: number[]
+    originDistribution?: OriginDistributionData
   }
 }
 

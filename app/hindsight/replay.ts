@@ -92,11 +92,25 @@ export function replayHistory(
         if (isObservation && evalResult.emptyGroupLabels && evalResult.emptyGroupLabels.length > 0) {
           firing.observationLabels = [...evalResult.emptyGroupLabels]
         }
-        // 觀察型結構化資料（訊號 7 latestYs 用於 UI 染色）
+        // 觀察型結構化資料（訊號 7 latestYs；訊號 10 originDistribution）
         if (isObservation && evalResult.observationData) {
           firing.observationData = { ...evalResult.observationData }
           if (evalResult.observationData.latestYs) {
             firing.observationData.latestYs = [...evalResult.observationData.latestYs]
+          }
+          if (evalResult.observationData.originDistribution) {
+            const od = evalResult.observationData.originDistribution
+            firing.observationData.originDistribution = {
+              perInterval: od.perInterval.map(p => ({
+                interval: p.interval,
+                hits: p.hits,
+                remaining: p.remaining,
+                remainingNumbers: [...p.remainingNumbers]
+              })),
+              totalHits: od.totalHits,
+              totalRemaining: od.totalRemaining,
+              carryoverInPeriod0: [...od.carryoverInPeriod0]
+            }
           }
         }
         firings[sig.id] = firing

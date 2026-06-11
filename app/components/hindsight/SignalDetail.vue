@@ -12,7 +12,13 @@ import { bingoTimeFromMap, buildBingoMinTermByDate } from '~/utils/bingo-time'
 import { N0, baselineHitRate } from '~/hindsight/config'
 import { recentHitRate, smoothedHitRate } from '~/hindsight/scorecard'
 import { getSignalsForGame } from '~/hindsight/registry'
-import type { BrainDraw, BrainState, SignalDef, SignalScorecard } from '~/hindsight/types'
+import type {
+  BrainDraw,
+  BrainState,
+  OriginDistributionData,
+  SignalDef,
+  SignalScorecard
+} from '~/hindsight/types'
 
 interface Props {
   gameId: GameId
@@ -91,6 +97,28 @@ const bingoMinTermByDate = computed<Map<string, number>>(() => {
 function bingoTime(drawDate: string, drawTerm: number): string {
   return bingoTimeFromMap(bingoMinTermByDate.value, drawDate, drawTerm)
 }
+
+// 訊號 10：取最新一筆 firing 的 originDistribution，給觀察紀錄上方一卡渲染
+interface OriginLatestData {
+  drawTerm: number
+  drawDate: string
+  data: OriginDistributionData
+  carryoverSet: Set<number>
+}
+const originLatest = computed<OriginLatestData | null>(() => {
+  if (props.signalId !== 'bingo_origin_distribution') return null
+  const sc = scorecard.value
+  if (!sc) return null
+  const latest = sc.recentFirings[sc.recentFirings.length - 1]
+  const od = latest?.observationData?.originDistribution
+  if (!latest || !od) return null
+  return {
+    drawTerm: latest.drawTerm,
+    drawDate: latest.drawDate,
+    data: od,
+    carryoverSet: new Set(od.carryoverInPeriod0)
+  }
+})
 
 const evidence = computed<EvidenceRow[]>(() => {
   if (!scorecard.value) return []
@@ -233,6 +261,52 @@ function isHit(num: number, hits: number[]): boolean {
           </div>
         </UCard>
       </div>
+
+      <!-- 訊號 10 專屬：最新一期當下的隔期 0-3 剩餘號碼一覽（連莊號紅框） -->
+      <section
+        v-if="originLatest"
+        class="space-y-2"
+      >
+        <h4 class="text-sm font-semibold">
+          隔期剩餘號碼
+        </h4>
+        <UCard :ui="{ body: 'p-4' }">
+          <div class="space-y-3">
+            <div class="text-xs text-muted">
+              第 <span class="font-mono">{{ originLatest.drawTerm }}</span> 期 · {{ originLatest.drawDate }}<span
+                v-if="isBingo && bingoTime(originLatest.drawDate, originLatest.drawTerm)"
+                class="ml-1 font-mono"
+              >{{ bingoTime(originLatest.drawDate, originLatest.drawTerm) }}</span>
+            </div>
+            <div
+              v-for="p in originLatest.data.perInterval"
+              :key="`origin-row-${p.interval}`"
+              class="space-y-1"
+            >
+              <div class="text-[11px] text-muted">
+                隔期 {{ p.interval }}（{{ p.remainingNumbers.length }} 顆）
+              </div>
+              <div class="flex flex-wrap items-center gap-1.5">
+                <UBadge
+                  v-for="n in p.remainingNumbers"
+                  :key="`origin-${p.interval}-${n}`"
+                  color="warning"
+                  variant="solid"
+                  size="md"
+                  class="min-w-8 justify-center font-mono"
+                  :class="p.interval === 0 && originLatest.carryoverSet.has(n) ? 'ring-2 ring-red-500' : ''"
+                >
+                  {{ n.toString().padStart(2, '0') }}
+                </UBadge>
+                <span
+                  v-if="p.remainingNumbers.length === 0"
+                  class="text-xs text-muted"
+                >—</span>
+              </div>
+            </div>
+          </div>
+        </UCard>
+      </section>
 
       <!-- 歷史證據鏈 -->
       <section class="space-y-2">
