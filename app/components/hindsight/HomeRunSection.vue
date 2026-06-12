@@ -103,6 +103,52 @@ function computeHomeRunByInterval(
   return out
 }
 
+/**
+ * 第三層過濾：「過去 10 期高頻位置」黑名單
+ *
+ * 規格（使用者拍板）：
+ *   - 看 scorecard.recentFirings 最近 10 期（不足就用實際數）
+ *   - 對每期 firing：把所有隔期 j 的 positionYs union 成一個 Set（同期重複算一次）
+ *   - 對每個位置 y、計算「過去 10 期內、有幾期 firing 出現過 y」
+ *   - y ≥ 5（POSITION_THRESHOLD）且 出現期數 ≥ 8（FREQUENCY_THRESHOLD）→ 加入黑名單
+ *   - 全壘打 隔期 0..(slotCount-1) 內、移除所有 originPos 在黑名單內的號碼
+ *
+ * 每期重新評估、不延續上期黑名單（每筆 firing 都會重算 recentFirings 視窗）。
+ */
+const RECENT_WINDOW_FOR_BLACKLIST = 10
+const POSITION_BLACKLIST_THRESHOLD_Y = 5 // 位置數字 y 需 >= 5 才會被考慮
+const POSITION_BLACKLIST_THRESHOLD_FREQ = 8 // 過去 10 期 >= 8 期出現
+
+const blacklistedPositions = computed<Set<number>>(() => {
+  const brain = props.brainState
+  if (!brain) return new Set()
+  const sc = brain.scorecards['bingo_origin_distribution']
+  if (!sc) return new Set()
+
+  const recent = sc.recentFirings.slice(-RECENT_WINDOW_FOR_BLACKLIST)
+  const countByPos = new Map<number, number>()
+  for (const firing of recent) {
+    const od = firing.observationData?.originDistribution
+    if (!od) continue
+    // 同期重複算一期 → 用 Set 去重
+    const positionsThisFiring = new Set<number>()
+    for (const p of od.perInterval) {
+      for (const y of p.positionYs ?? []) positionsThisFiring.add(y)
+    }
+    for (const y of positionsThisFiring) {
+      countByPos.set(y, (countByPos.get(y) ?? 0) + 1)
+    }
+  }
+
+  const blacklist = new Set<number>()
+  for (const [y, count] of countByPos) {
+    if (y >= POSITION_BLACKLIST_THRESHOLD_Y && count >= POSITION_BLACKLIST_THRESHOLD_FREQ) {
+      blacklist.add(y)
+    }
+  }
+  return blacklist
+})
+
 const homeRun = computed<HomeRunData | null>(() => {
   const as = props.analysisState
   const brain = props.brainState
@@ -131,15 +177,26 @@ const homeRun = computed<HomeRunData | null>(() => {
   }
 
   const filtered = computeHomeRunByInterval(rawByInterval, positionYsByInterval, carryoverSet, slotCount)
-  // 對每隔期：建 raw → 1-indexed 位置 map，把過濾後號碼配上 originPos
+  const blacklist = blacklistedPositions.value
+  // 對每隔期：建 raw → 1-indexed 位置 map，把過濾後號碼配上 originPos，
+  // 並過濾掉 originPos 在「過去 10 期高頻位置」黑名單內的號。
   const perInterval: HomeRunInterval[] = filtered.map((numbers, j) => {
     const raw = rawByInterval[j] ?? []
     const posMap = new Map<number, number>()
     raw.forEach((v, idx) => posMap.set(v, idx + 1))
-    const entries: HomeRunEntry[] = numbers.map(n => ({ n, originPos: posMap.get(n) ?? 0 }))
+    const entries: HomeRunEntry[] = []
+    for (const n of numbers) {
+      const originPos = posMap.get(n) ?? 0
+      if (originPos > 0 && blacklist.has(originPos)) continue
+      entries.push({ n, originPos })
+    }
     return { interval: j, entries }
   })
   return { perInterval }
+})
+
+const blacklistedPositionsSorted = computed<number[]>(() => {
+  return [...blacklistedPositions.value].sort((a, b) => a - b)
 })
 
 // 賓果開獎時間 util（同 SignalDetail 通則）
@@ -258,6 +315,17 @@ function toggleEvidence() {
     <h4 class="text-sm font-semibold">
       全壘打過濾後剩餘號碼
     </h4>
+    <div
+      v-if="blacklistedPositionsSorted.length > 0"
+      class="text-[11px] text-muted"
+    >
+      高頻位置已過濾（過去 10 期 ≥ 8 期、位置 ≥ 5）：
+      <span
+        v-for="y in blacklistedPositionsSorted"
+        :key="`blpos-${y}`"
+        class="ml-1 inline-flex min-w-5 justify-center rounded border border-default px-1 py-0.5 font-mono text-[10px] text-default"
+      >{{ y }}</span>
+    </div>
     <UCard :ui="{ body: 'p-4' }">
       <div class="space-y-3">
         <div
