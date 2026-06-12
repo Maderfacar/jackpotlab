@@ -219,6 +219,12 @@ function rateText(r: number | null): string {
   if (r == null) return '—'
   return `${(r * 100).toFixed(1)}%`
 }
+
+// 歷史證據鏈可收合（預設展開）
+const evidenceOpen = ref(true)
+function toggleEvidence() {
+  evidenceOpen.value = !evidenceOpen.value
+}
 </script>
 
 <template>
@@ -266,127 +272,142 @@ function rateText(r: number | null): string {
     </UCard>
   </section>
 
-  <!-- 歷史證據鏈：對每筆 firing 算當時的全壘打 picks、對比下一期 actual -->
+  <!--
+    歷史證據鏈：對每筆 firing 算當時的全壘打 picks、對比下一期 actual
+    手機版改用 stacked 卡片 layout（避免擠成一直行）：
+      期數 + 日期 + 時間
+      命中機率（放在期數正下方）
+      實際開出 一橫排
+      隔期 0 一橫排
+      隔期 1 一橫排
+      ... 依 slotCount 排
+    顏色不變：命中 emerald solid、未命中 neutral subtle、actual 黃色 warning solid。
+    標題右側可收合按鈕、收合時隱藏整個 evidence 列表。
+  -->
   <section
     v-if="homeRun"
     class="space-y-2"
   >
-    <h4 class="text-sm font-semibold">
-      歷史證據鏈
-    </h4>
-    <div
-      v-if="evidence.length === 0"
-      class="rounded-md border border-dashed border-default p-4 text-center text-xs text-muted"
-    >
-      尚無亮燈紀錄
+    <div class="flex items-center justify-between gap-2">
+      <h4 class="text-sm font-semibold">
+        歷史證據鏈
+      </h4>
+      <UButton
+        color="neutral"
+        variant="ghost"
+        size="xs"
+        :icon="evidenceOpen ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
+        :aria-expanded="evidenceOpen"
+        aria-controls="home-run-evidence-list"
+        @click="toggleEvidence"
+      >
+        {{ evidenceOpen ? '收合' : '展開' }}
+      </UButton>
     </div>
-    <UCard
-      v-else
-      :ui="{ body: 'p-0 sm:p-0' }"
+    <div
+      v-if="evidenceOpen"
+      id="home-run-evidence-list"
     >
-      <div class="overflow-x-auto">
-        <table class="w-full text-xs">
-          <thead class="bg-elevated text-xs uppercase tracking-wider text-muted">
-            <tr>
-              <th class="px-3 py-2 text-left">
-                期數
-              </th>
-              <th class="px-3 py-2 text-left">
-                推了哪幾個
-              </th>
-              <th class="px-3 py-2 text-left">
-                實際開出
-              </th>
-              <th class="px-3 py-2 text-right whitespace-nowrap">
-                命中機率
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr
-              v-for="row in evidence"
-              :key="`home-run-ev-${row.drawTerm}`"
-              class="border-t border-default align-top"
-            >
-              <td class="px-3 py-2 font-mono whitespace-nowrap">
-                {{ row.drawTerm }}<br>
-                <span class="text-[10px] text-muted">{{ row.drawDate || '—' }}<span
-                  v-if="isBingo && row.drawDate && bingoTime(row.drawDate, row.drawTerm)"
-                  class="ml-1"
-                >{{ bingoTime(row.drawDate, row.drawTerm) }}</span></span>
-              </td>
-              <td class="px-3 py-2">
-                <div
-                  v-if="row.picks.length === 0"
-                  class="text-muted"
-                >
-                  —
-                </div>
-                <div
-                  v-else
-                  class="space-y-2"
-                >
-                  <div
-                    v-for="(arr, j) in row.picksByInterval"
-                    :key="`hr-row-${row.drawTerm}-int-${j}`"
-                    class="space-y-1"
-                  >
-                    <div class="text-[10px] text-muted">
-                      隔期 {{ j }}（{{ arr.length }} 顆）
-                    </div>
-                    <div class="flex flex-wrap items-center gap-1">
-                      <UBadge
-                        v-for="n in arr"
-                        :key="`hr-p-${row.drawTerm}-${j}-${n}`"
-                        :color="isHit(n, row.hitNumbers) ? 'success' : 'neutral'"
-                        :variant="isHit(n, row.hitNumbers) ? 'solid' : 'subtle'"
-                        size="sm"
-                        class="min-w-7 justify-center font-mono"
-                      >
-                        {{ pad(n) }}
-                      </UBadge>
-                      <span
-                        v-if="arr.length === 0"
-                        class="text-[10px] text-muted"
-                      >—</span>
-                    </div>
-                  </div>
-                </div>
-              </td>
-              <td class="px-3 py-2">
-                <div
-                  v-if="row.actual.length === 0"
-                  class="text-muted"
-                >
-                  —
-                </div>
-                <div
-                  v-else
-                  class="flex flex-wrap items-center gap-1"
-                >
-                  <UBadge
-                    v-for="n in row.actual"
-                    :key="`hr-a-${row.drawTerm}-${n}`"
-                    color="warning"
-                    variant="solid"
-                    size="sm"
-                    class="min-w-7 justify-center font-mono"
-                  >
-                    {{ pad(n) }}
-                  </UBadge>
-                </div>
-              </td>
-              <td
-                class="px-3 py-2 text-right font-mono tabular-nums whitespace-nowrap"
+      <div
+        v-if="evidence.length === 0"
+        class="rounded-md border border-dashed border-default p-4 text-center text-xs text-muted"
+      >
+        尚無亮燈紀錄
+      </div>
+      <div
+        v-else
+        class="space-y-3"
+      >
+        <UCard
+          v-for="row in evidence"
+          :key="`home-run-ev-${row.drawTerm}`"
+          :ui="{ body: 'p-3 sm:p-4' }"
+        >
+          <div class="space-y-3 text-xs">
+            <!-- 期數 + 日期 + 時間、命中機率放在正下方 -->
+            <div class="space-y-1">
+              <div class="flex items-baseline gap-2 flex-wrap">
+                <span class="font-mono text-sm font-semibold">{{ row.drawTerm }}</span>
+                <span class="text-[10px] text-muted">
+                  {{ row.drawDate || '—' }}
+                  <span
+                    v-if="isBingo && row.drawDate && bingoTime(row.drawDate, row.drawTerm)"
+                    class="ml-1"
+                  >{{ bingoTime(row.drawDate, row.drawTerm) }}</span>
+                </span>
+              </div>
+              <div
+                class="font-mono tabular-nums text-[11px]"
                 :class="row.hits > 0 ? 'text-emerald-500' : 'text-muted'"
               >
-                {{ row.hits }}/{{ row.picks.length }}
-                <span class="ml-1 text-[10px]">{{ rateText(row.rate) }}</span>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+                命中機率 {{ row.hits }}/{{ row.picks.length }}
+                <span class="ml-1">{{ rateText(row.rate) }}</span>
+              </div>
+            </div>
+
+            <!-- 第一列：實際開出 -->
+            <div class="space-y-1">
+              <div class="text-[10px] text-muted">
+                實際開出（{{ row.actual.length }} 顆）
+              </div>
+              <div
+                v-if="row.actual.length === 0"
+                class="text-[10px] text-muted"
+              >
+                —
+              </div>
+              <div
+                v-else
+                class="flex flex-wrap items-center gap-1"
+              >
+                <UBadge
+                  v-for="n in row.actual"
+                  :key="`hr-a-${row.drawTerm}-${n}`"
+                  color="warning"
+                  variant="solid"
+                  size="sm"
+                  class="min-w-7 justify-center font-mono"
+                >
+                  {{ pad(n) }}
+                </UBadge>
+              </div>
+            </div>
+
+            <!-- 第二列起：隔期 0、1、2、3 依 slotCount 排 -->
+            <div
+              v-for="(arr, j) in row.picksByInterval"
+              :key="`hr-row-${row.drawTerm}-int-${j}`"
+              class="space-y-1"
+            >
+              <div class="text-[10px] text-muted">
+                隔期 {{ j }}（{{ arr.length }} 顆）
+              </div>
+              <div
+                v-if="arr.length === 0"
+                class="text-[10px] text-muted"
+              >
+                —
+              </div>
+              <div
+                v-else
+                class="flex flex-wrap items-center gap-1"
+              >
+                <UBadge
+                  v-for="n in arr"
+                  :key="`hr-p-${row.drawTerm}-${j}-${n}`"
+                  :color="isHit(n, row.hitNumbers) ? 'success' : 'neutral'"
+                  :variant="isHit(n, row.hitNumbers) ? 'solid' : 'subtle'"
+                  size="sm"
+                  class="min-w-7 justify-center font-mono"
+                >
+                  {{ pad(n) }}
+                </UBadge>
+              </div>
+            </div>
+          </div>
+        </UCard>
       </div>
-    </UCard>
+    </div>
   </section>
+
 </template>
