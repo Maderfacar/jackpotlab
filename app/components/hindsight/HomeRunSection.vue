@@ -1,23 +1,33 @@
 <script setup lang="ts">
 /**
- * 賓果海尼根「全壘打」 section
+ * 賓果海尼根「全壘打」 section + 歷史證據鏈
  *
- * 來源：訊號 10「隔期剩餘號碼」上方卡 post-T periods[0..(slotCount-1)] sorted ascending
+ * **全壘打過濾後剩餘號碼**：來源 = 訊號 10「隔期剩餘號碼」上方卡 post-T periods[0..(slotCount-1)] sorted ascending
  *
- * 套用兩層過濾後顯示剩餘號碼：
+ *   套用兩層過濾後顯示剩餘號碼：
  *   1. **位置把關**：把最新一期 firing perInterval[j].positionYs 視為「要排除的位置（1-indexed）」，
  *      直接套用到上方卡同 index 隔期、同 1-indexed 位置移除。
  *      若上方卡 rawSorted.length < y → 略過該位置（安靜跳過、不報錯）。
  *   2. **紅框移除**：上方卡 隔期 0 上紅框（連莊 = T csv=0 對應 sorted-unique T 號 = T ∩ T-1）
  *      從 隔期 0 過濾結果中再移除一遍，過濾後全壘打 隔期 0 不再有任何紅框。
  *
- * 不顯示紅框；4 排 badges 與「隔期剩餘號碼」風格一致。
+ *   不顯示紅框；4 排 badges 與「隔期剩餘號碼」風格一致。
+ *
+ * **歷史證據鏈**：對 scorecard.recentFirings 每筆 firing f：
+ *   - 用 firing 內保存的 perInterval[j].remainingNumbers / positionYs / carryoverInPeriod0 套相同兩層過濾
+ *   - 對 4 隔期 union 得 picks（升序、去重）
+ *   - 「目標期 targetTerm = f.drawTerm + 1」（在 f.drawTerm 期觀察後、預測下一期）
+ *   - actual = drawByTerm.get(targetTerm).numbers（未開出時為空）
+ *   - hits = picks ∩ actual、機率 = hits / picks.length
+ *   - 表格 UI 與訊號牆「歷史證據鏈」一致（命中號碼染綠 emerald、actual 用 warning solid）
  */
 
 import type { GameId } from '~~/shared/lotto/games'
 import type { AnalysisState } from '~/utils/analysis'
 import { slotCountForOriginDistribution } from '~/hindsight/signals/bingo-origin-distribution'
+import { bingoTimeFromMap, buildBingoMinTermByDate } from '~/utils/bingo-time'
 import type {
+  BrainDraw,
   BrainState,
   OriginDistributionData,
   OriginIntervalEntry,
@@ -28,6 +38,7 @@ interface Props {
   gameId: GameId
   analysisState: AnalysisState | null
   brainState: BrainState | null
+  drawsAsc: BrainDraw[]
 }
 
 const props = defineProps<Props>()
@@ -39,6 +50,34 @@ interface HomeRunInterval {
 
 interface HomeRunData {
   perInterval: HomeRunInterval[]
+}
+
+/**
+ * 共用 helper：對 4 隔期 raw（已 sorted ascending）套位置 + 紅框過濾。
+ * 全壘打 section 與歷史證據鏈都用這個算。
+ */
+function computeHomeRunByInterval(
+  rawByInterval: number[][],
+  positionYsByInterval: number[][],
+  carryoverSet: ReadonlySet<number>,
+  slotCount: number
+): number[][] {
+  const out: number[][] = []
+  for (let j = 0; j < slotCount; j++) {
+    const raw = rawByInterval[j] ?? []
+    const positionYs = positionYsByInterval[j] ?? []
+    const removePos = new Set<number>()
+    for (const y of positionYs) {
+      // 上方卡此隔期長度 < y → 該位置不存在，跳過
+      if (y >= 1 && y <= raw.length) removePos.add(y)
+    }
+    let after = raw.filter((_, idx) => !removePos.has(idx + 1))
+    if (j === 0 && carryoverSet.size > 0) {
+      after = after.filter(n => !carryoverSet.has(n))
+    }
+    out.push(after)
+  }
+  return out
 }
 
 const homeRun = computed<HomeRunData | null>(() => {
@@ -59,38 +98,107 @@ const homeRun = computed<HomeRunData | null>(() => {
   const firingPerInterval: OriginIntervalEntry[] = od?.perInterval ?? []
   const carryoverSet = new Set<number>(od?.carryoverInPeriod0 ?? [])
 
-  const perInterval: HomeRunInterval[] = []
+  const rawByInterval: number[][] = []
+  const positionYsByInterval: number[][] = []
   for (let j = 0; j < slotCount; j++) {
     const slot = as.periods[j]
-    if (!slot) {
-      perInterval.push({ interval: j, numbers: [] })
-      continue
-    }
-    const rawSorted = [...slot.prizes].sort((a, b) => a - b)
-
-    // 位置過濾：positionYs 是 1-indexed
-    const positionYs = firingPerInterval[j]?.positionYs ?? []
-    const removePos = new Set<number>()
-    for (const y of positionYs) {
-      // 上方卡此隔期長度 < y → 該位置不存在，跳過
-      if (y >= 1 && y <= rawSorted.length) removePos.add(y)
-    }
-
-    let afterPositionFilter: number[] = rawSorted.filter((_, idx) => !removePos.has(idx + 1))
-
-    // 隔期 0：再移除紅框（連莊）
-    if (j === 0 && carryoverSet.size > 0) {
-      afterPositionFilter = afterPositionFilter.filter(n => !carryoverSet.has(n))
-    }
-
-    perInterval.push({ interval: j, numbers: afterPositionFilter })
+    const rawSorted = slot ? [...slot.prizes].sort((a, b) => a - b) : []
+    rawByInterval.push(rawSorted)
+    positionYsByInterval.push(firingPerInterval[j]?.positionYs ?? [])
   }
 
+  const filtered = computeHomeRunByInterval(rawByInterval, positionYsByInterval, carryoverSet, slotCount)
+  const perInterval: HomeRunInterval[] = filtered.map((numbers, j) => ({ interval: j, numbers }))
   return { perInterval }
+})
+
+// 賓果開獎時間 util（同 SignalDetail 通則）
+const isBingo = computed(() => props.gameId === 'bingo_bingo')
+const bingoMinTermByDate = computed<Map<string, number>>(() => {
+  if (!isBingo.value) return new Map()
+  return buildBingoMinTermByDate(props.drawsAsc)
+})
+function bingoTime(drawDate: string, drawTerm: number): string {
+  return bingoTimeFromMap(bingoMinTermByDate.value, drawDate, drawTerm)
+}
+
+const drawByTerm = computed<Map<number, BrainDraw>>(() => {
+  const m = new Map<number, BrainDraw>()
+  for (const d of props.drawsAsc) m.set(d.drawTerm, d)
+  return m
+})
+
+interface HomeRunEvidenceRow {
+  /** 被預測的目標期（= f.drawTerm + 1） */
+  drawTerm: number
+  drawDate: string
+  picks: number[]
+  actual: number[]
+  hits: number
+  hitNumbers: number[]
+  /** 命中機率（hits / picks.length），picks 為空時為 null */
+  rate: number | null
+}
+
+const evidence = computed<HomeRunEvidenceRow[]>(() => {
+  const brain = props.brainState
+  if (!brain) return []
+  const sc = brain.scorecards['bingo_origin_distribution']
+  if (!sc) return []
+  const slotCount = slotCountForOriginDistribution(props.gameId)
+  const dbt = drawByTerm.value
+
+  const out: HomeRunEvidenceRow[] = []
+  // 新的在上面（與訊號牆 evidence 排序一致）
+  for (const f of [...sc.recentFirings].reverse()) {
+    const od = f.observationData?.originDistribution
+    if (!od) continue
+
+    const rawByInterval = od.perInterval.map(p => [...(p.remainingNumbers ?? [])].sort((a, b) => a - b))
+    const positionYsByInterval = od.perInterval.map(p => p.positionYs ?? [])
+    const carryoverSet = new Set<number>(od.carryoverInPeriod0 ?? [])
+    const filtered = computeHomeRunByInterval(rawByInterval, positionYsByInterval, carryoverSet, slotCount)
+
+    // 4 隔期 union、去重、升序
+    const picksSet = new Set<number>()
+    for (const arr of filtered) {
+      for (const n of arr) picksSet.add(n)
+    }
+    const picks = [...picksSet].sort((a, b) => a - b)
+
+    const targetTerm = f.drawTerm + 1
+    const targetDraw = dbt.get(targetTerm)
+    const actual = targetDraw?.numbers ?? []
+    const actualDate = targetDraw?.drawDate ?? ''
+    const actualSet = new Set(actual)
+    const hitNumbers = picks.filter(p => actualSet.has(p))
+    const hits = hitNumbers.length
+    const rate = picks.length > 0 && actual.length > 0 ? hits / picks.length : null
+
+    out.push({
+      drawTerm: targetTerm,
+      drawDate: actualDate,
+      picks,
+      actual,
+      hits,
+      hitNumbers,
+      rate
+    })
+  }
+  return out
 })
 
 function pad(n: number): string {
   return n.toString().padStart(2, '0')
+}
+
+function isHit(num: number, hits: number[]): boolean {
+  return hits.includes(num)
+}
+
+function rateText(r: number | null): string {
+  if (r == null) return '—'
+  return `${(r * 100).toFixed(1)}%`
 }
 </script>
 
@@ -100,7 +208,7 @@ function pad(n: number): string {
     class="space-y-2"
   >
     <h4 class="text-sm font-semibold">
-      全壘打
+      全壘打過濾後剩餘號碼
     </h4>
     <UCard :ui="{ body: 'p-4' }">
       <div class="space-y-3">
@@ -129,6 +237,115 @@ function pad(n: number): string {
             >—</span>
           </div>
         </div>
+      </div>
+    </UCard>
+  </section>
+
+  <!-- 歷史證據鏈：對每筆 firing 算當時的全壘打 picks、對比下一期 actual -->
+  <section
+    v-if="homeRun"
+    class="space-y-2"
+  >
+    <h4 class="text-sm font-semibold">
+      歷史證據鏈
+    </h4>
+    <div
+      v-if="evidence.length === 0"
+      class="rounded-md border border-dashed border-default p-4 text-center text-xs text-muted"
+    >
+      尚無亮燈紀錄
+    </div>
+    <UCard
+      v-else
+      :ui="{ body: 'p-0 sm:p-0' }"
+    >
+      <div class="overflow-x-auto">
+        <table class="w-full text-xs">
+          <thead class="bg-elevated text-xs uppercase tracking-wider text-muted">
+            <tr>
+              <th class="px-3 py-2 text-left">
+                期數
+              </th>
+              <th class="px-3 py-2 text-left">
+                推了哪幾個
+              </th>
+              <th class="px-3 py-2 text-left">
+                實際開出
+              </th>
+              <th class="px-3 py-2 text-right whitespace-nowrap">
+                命中機率
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="row in evidence"
+              :key="`home-run-ev-${row.drawTerm}`"
+              class="border-t border-default align-top"
+            >
+              <td class="px-3 py-2 font-mono whitespace-nowrap">
+                {{ row.drawTerm }}<br>
+                <span class="text-[10px] text-muted">{{ row.drawDate || '—' }}<span
+                  v-if="isBingo && row.drawDate && bingoTime(row.drawDate, row.drawTerm)"
+                  class="ml-1"
+                >{{ bingoTime(row.drawDate, row.drawTerm) }}</span></span>
+              </td>
+              <td class="px-3 py-2">
+                <div
+                  v-if="row.picks.length === 0"
+                  class="text-muted"
+                >
+                  —
+                </div>
+                <div
+                  v-else
+                  class="flex flex-wrap items-center gap-1"
+                >
+                  <UBadge
+                    v-for="n in row.picks"
+                    :key="`hr-p-${row.drawTerm}-${n}`"
+                    :color="isHit(n, row.hitNumbers) ? 'success' : 'neutral'"
+                    :variant="isHit(n, row.hitNumbers) ? 'solid' : 'subtle'"
+                    size="sm"
+                    class="min-w-7 justify-center font-mono"
+                  >
+                    {{ pad(n) }}
+                  </UBadge>
+                </div>
+              </td>
+              <td class="px-3 py-2">
+                <div
+                  v-if="row.actual.length === 0"
+                  class="text-muted"
+                >
+                  —
+                </div>
+                <div
+                  v-else
+                  class="flex flex-wrap items-center gap-1"
+                >
+                  <UBadge
+                    v-for="n in row.actual"
+                    :key="`hr-a-${row.drawTerm}-${n}`"
+                    color="warning"
+                    variant="solid"
+                    size="sm"
+                    class="min-w-7 justify-center font-mono"
+                  >
+                    {{ pad(n) }}
+                  </UBadge>
+                </div>
+              </td>
+              <td
+                class="px-3 py-2 text-right font-mono tabular-nums whitespace-nowrap"
+                :class="row.hits > 0 ? 'text-emerald-500' : 'text-muted'"
+              >
+                {{ row.hits }}/{{ row.picks.length }}
+                <span class="ml-1 text-[10px]">{{ rateText(row.rate) }}</span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </UCard>
   </section>

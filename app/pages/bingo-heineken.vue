@@ -91,6 +91,7 @@ function closeNoop() {
             :game-id="gameId"
             :analysis-state="analysisState"
             :brain-state="brainState"
+            :draws-asc="drawsAsc"
           />
         </template>
       </HindsightSignalDetail>
