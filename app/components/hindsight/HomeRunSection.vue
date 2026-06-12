@@ -261,11 +261,14 @@ const evidence = computed<HomeRunEvidenceRow[]>(() => {
     const targetTerm = f.drawTerm + 1
     const targetDraw = dbt.get(targetTerm)
     const actual = targetDraw?.numbers ?? []
+    // 跳過「下一期待開出」row（最新一期 firing 的 targetTerm = T+1 還沒開）
+    // 或 drawByTerm 缺資料的中間 row。歷史證據鏈只顯示已開出可驗證的紀錄。
+    if (actual.length === 0) continue
     const actualDate = targetDraw?.drawDate ?? ''
     const actualSet = new Set(actual)
     const hitNumbers = picks.filter(p => actualSet.has(p))
     const hits = hitNumbers.length
-    const rate = picks.length > 0 && actual.length > 0 ? hits / picks.length : null
+    const rate = picks.length > 0 ? hits / picks.length : null
 
     out.push({
       drawTerm: targetTerm,
