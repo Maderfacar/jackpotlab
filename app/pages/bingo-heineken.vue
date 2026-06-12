@@ -86,12 +86,13 @@ function closeNoop() {
         :hide-back-button="true"
         @close="closeNoop"
       >
-        <template #before-origin>
+        <template #before-origin="{ stickyTopOffset }">
           <HindsightHomeRunSection
             :game-id="gameId"
             :analysis-state="analysisState"
             :brain-state="brainState"
             :draws-asc="drawsAsc"
+            :sticky-top-offset="stickyTopOffset"
           />
         </template>
       </HindsightSignalDetail>

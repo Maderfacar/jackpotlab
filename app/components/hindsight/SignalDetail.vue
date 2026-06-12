@@ -43,6 +43,26 @@ interface Props {
 const props = withDefaults(defineProps<Props>(), {
   hideBackButton: false
 })
+
+// 條件區實際高度 — 用 ResizeObserver 動態量、暴露給 #before-origin slot
+// 讓賓果海尼根頁的全壘打 sticky 能精準堆疊在條件區下方。
+const condCard = useTemplateRef<HTMLElement>('condCard')
+const condCardHeight = ref(0)
+let condResizeObserver: ResizeObserver | null = null
+onMounted(() => {
+  if (typeof ResizeObserver === 'undefined') return
+  const el = condCard.value
+  if (!el) return
+  condCardHeight.value = el.offsetHeight
+  condResizeObserver = new ResizeObserver(() => {
+    if (condCard.value) condCardHeight.value = condCard.value.offsetHeight
+  })
+  condResizeObserver.observe(el)
+})
+onBeforeUnmount(() => {
+  condResizeObserver?.disconnect()
+  condResizeObserver = null
+})
 const emit = defineEmits<{
   close: []
 }>()
@@ -291,7 +311,10 @@ function isHit(num: number, hits: number[]): boolean {
 
     <template v-else>
       <!-- 釘頂條件區 -->
-      <div class="sticky top-0 z-10 -mx-2 sm:-mx-4 px-2 sm:px-4 pt-2 pb-3 bg-default/95 backdrop-blur supports-[backdrop-filter]:bg-default/70">
+      <div
+        ref="condCard"
+        class="sticky top-0 z-10 -mx-2 sm:-mx-4 px-2 sm:px-4 pt-2 pb-3 bg-default/95 backdrop-blur supports-[backdrop-filter]:bg-default/70"
+      >
         <UCard :ui="{ body: 'p-4' }">
           <div class="space-y-2">
             <div class="flex flex-wrap items-baseline justify-between gap-2">
@@ -351,11 +374,13 @@ function isHit(num: number, hits: number[]): boolean {
         </UCard>
       </div>
 
-      <!-- 賓果海尼根頁專用：在「隔期剩餘號碼」之上插入「全壘打」 section -->
+      <!-- 賓果海尼根頁專用：在「隔期剩餘號碼」之上插入「全壘打」 section
+           - slot prop `stickyTopOffset` 提供條件區實際高度，給 slot 內 sticky 元素堆疊用 -->
       <slot
         v-if="originLatest"
         name="before-origin"
         :origin-latest="originLatest"
+        :sticky-top-offset="condCardHeight"
       />
 
       <!-- 訊號 10 專屬：最新一期當下的隔期 0-3 剩餘號碼一覽（連莊號紅框） -->

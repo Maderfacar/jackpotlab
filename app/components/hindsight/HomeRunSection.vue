@@ -39,9 +39,22 @@ interface Props {
   analysisState: AnalysisState | null
   brainState: BrainState | null
   drawsAsc: BrainDraw[]
+  /**
+   * 全壘打 section sticky top 偏移（px）。由 SignalDetail 的 #before-origin slot
+   * 動態量條件區高度傳入；未提供時 fallback 到合理估值。
+   */
+  stickyTopOffset?: number
 }
 
-const props = defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), {
+  stickyTopOffset: 0
+})
+
+const stickyTopStyle = computed(() => {
+  // 0 → 用 fallback rem 值（CSS arbitrary）；> 0 → 用實際 px
+  if (props.stickyTopOffset > 0) return { top: `${props.stickyTopOffset}px` }
+  return { top: '8.5rem' }
+})
 
 interface HomeRunInterval {
   interval: number
@@ -132,6 +145,9 @@ interface HomeRunEvidenceRow {
   /** 被預測的目標期（= f.drawTerm + 1） */
   drawTerm: number
   drawDate: string
+  /** 4 (或 6) 排按隔期分排的 picks，依 slotCount 動態 */
+  picksByInterval: number[][]
+  /** picksByInterval union（去重升序），用來算命中 */
   picks: number[]
   actual: number[]
   hits: number
@@ -158,8 +174,10 @@ const evidence = computed<HomeRunEvidenceRow[]>(() => {
     const positionYsByInterval = od.perInterval.map(p => p.positionYs ?? [])
     const carryoverSet = new Set<number>(od.carryoverInPeriod0 ?? [])
     const filtered = computeHomeRunByInterval(rawByInterval, positionYsByInterval, carryoverSet, slotCount)
+    // 按隔期分排（升序、已由 helper 保證 raw 升序、filtered 仍保留升序）
+    const picksByInterval = filtered.map(arr => [...arr])
 
-    // 4 隔期 union、去重、升序
+    // 4 (或 6) 隔期 union、去重、升序 — 用來算命中
     const picksSet = new Set<number>()
     for (const arr of filtered) {
       for (const n of arr) picksSet.add(n)
@@ -178,6 +196,7 @@ const evidence = computed<HomeRunEvidenceRow[]>(() => {
     out.push({
       drawTerm: targetTerm,
       drawDate: actualDate,
+      picksByInterval,
       picks,
       actual,
       hits,
@@ -203,9 +222,15 @@ function rateText(r: number | null): string {
 </script>
 
 <template>
+  <!--
+    全壘打 section sticky 在「獎號隔期來源」條件區下方、與條件區堆疊不被滾走。
+    top 偏移用條件區高度估值（觀察型訊號條件區約 130-150px）。賓果一輪 5 分鐘、
+    使用者多會邊滾動歷史證據鏈邊看上方候選號、sticky 體驗較好。
+  -->
   <section
     v-if="homeRun"
-    class="space-y-2"
+    class="sticky z-10 -mx-2 sm:-mx-4 px-2 sm:px-4 pt-2 pb-3 space-y-2 bg-default/95 backdrop-blur supports-[backdrop-filter]:bg-default/70"
+    :style="stickyTopStyle"
   >
     <h4 class="text-sm font-semibold">
       全壘打過濾後剩餘號碼
@@ -299,18 +324,33 @@ function rateText(r: number | null): string {
                 </div>
                 <div
                   v-else
-                  class="flex flex-wrap items-center gap-1"
+                  class="space-y-2"
                 >
-                  <UBadge
-                    v-for="n in row.picks"
-                    :key="`hr-p-${row.drawTerm}-${n}`"
-                    :color="isHit(n, row.hitNumbers) ? 'success' : 'neutral'"
-                    :variant="isHit(n, row.hitNumbers) ? 'solid' : 'subtle'"
-                    size="sm"
-                    class="min-w-7 justify-center font-mono"
+                  <div
+                    v-for="(arr, j) in row.picksByInterval"
+                    :key="`hr-row-${row.drawTerm}-int-${j}`"
+                    class="space-y-1"
                   >
-                    {{ pad(n) }}
-                  </UBadge>
+                    <div class="text-[10px] text-muted">
+                      隔期 {{ j }}（{{ arr.length }} 顆）
+                    </div>
+                    <div class="flex flex-wrap items-center gap-1">
+                      <UBadge
+                        v-for="n in arr"
+                        :key="`hr-p-${row.drawTerm}-${j}-${n}`"
+                        :color="isHit(n, row.hitNumbers) ? 'success' : 'neutral'"
+                        :variant="isHit(n, row.hitNumbers) ? 'solid' : 'subtle'"
+                        size="sm"
+                        class="min-w-7 justify-center font-mono"
+                      >
+                        {{ pad(n) }}
+                      </UBadge>
+                      <span
+                        v-if="arr.length === 0"
+                        class="text-[10px] text-muted"
+                      >—</span>
+                    </div>
+                  </div>
                 </div>
               </td>
               <td class="px-3 py-2">
