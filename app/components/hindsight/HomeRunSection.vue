@@ -268,16 +268,17 @@ function toggleEvidence() {
           <div class="text-[11px] text-muted">
             隔期 {{ p.interval }}（{{ p.entries.length }} 顆）
           </div>
-          <!-- badge 尺寸 ~1.5 倍、間距縮小（gap-1.5 → gap-1）。
-               右下角 originPos = 該號在「隔期剩餘號碼」rawSorted 內 1-indexed 位置 -->
-          <div class="flex flex-wrap items-center gap-1">
+          <!-- badge 尺寸與「隔期剩餘號碼」一致（size="md" + min-w-8、gap-1.5），
+               保留 relative + 右下角 originPos 角標
+               = 該號在「隔期剩餘號碼」rawSorted 內 1-indexed 位置 -->
+          <div class="flex flex-wrap items-center gap-1.5">
             <UBadge
               v-for="e in p.entries"
               :key="`home-run-${p.interval}-${e.n}`"
               color="warning"
               variant="solid"
               size="md"
-              class="relative min-w-11 h-11 px-2.5 text-base justify-center font-mono"
+              class="relative min-w-8 justify-center font-mono"
             >
               {{ pad(e.n) }}
               <span
