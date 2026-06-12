@@ -84,6 +84,7 @@ function closeNoop() {
         :draws-asc="drawsAsc"
         :analysis-state="analysisState"
         :hide-back-button="true"
+        :sticky-condition-card="false"
         @close="closeNoop"
       >
         <template #before-origin="{ stickyTopOffset }">

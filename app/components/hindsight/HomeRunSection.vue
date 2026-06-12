@@ -51,14 +51,24 @@ const props = withDefaults(defineProps<Props>(), {
 })
 
 const stickyTopStyle = computed(() => {
-  // 0 → 用 fallback rem 值（CSS arbitrary）；> 0 → 用實際 px
-  if (props.stickyTopOffset > 0) return { top: `${props.stickyTopOffset}px` }
-  return { top: '8.5rem' }
+  // 直接用父層傳入的 px 值。條件區不 sticky 時父傳 0、全壘打就黏 top:0。
+  // hydrate 之前可能短暫為 0（SSR 階段 ResizeObserver 還沒跑），onMounted 後即時校正。
+  return { top: `${props.stickyTopOffset}px` }
 })
+
+/**
+ * 全壘打過濾後每顆號碼 + 它在「隔期剩餘號碼」（= post-T periods[j] sorted）內的
+ * 1-indexed 位置（originPos）。使用者拍板：badge 右下角小字標 originPos，幫忙對齊
+ * 上方訊號 10「隔期剩餘號碼」內的真實位置。
+ */
+interface HomeRunEntry {
+  n: number
+  originPos: number
+}
 
 interface HomeRunInterval {
   interval: number
-  numbers: number[]
+  entries: HomeRunEntry[]
 }
 
 interface HomeRunData {
@@ -121,7 +131,14 @@ const homeRun = computed<HomeRunData | null>(() => {
   }
 
   const filtered = computeHomeRunByInterval(rawByInterval, positionYsByInterval, carryoverSet, slotCount)
-  const perInterval: HomeRunInterval[] = filtered.map((numbers, j) => ({ interval: j, numbers }))
+  // 對每隔期：建 raw → 1-indexed 位置 map，把過濾後號碼配上 originPos
+  const perInterval: HomeRunInterval[] = filtered.map((numbers, j) => {
+    const raw = rawByInterval[j] ?? []
+    const posMap = new Map<number, number>()
+    raw.forEach((v, idx) => posMap.set(v, idx + 1))
+    const entries: HomeRunEntry[] = numbers.map(n => ({ n, originPos: posMap.get(n) ?? 0 }))
+    return { interval: j, entries }
+  })
   return { perInterval }
 })
 
@@ -249,21 +266,27 @@ function toggleEvidence() {
           class="space-y-1"
         >
           <div class="text-[11px] text-muted">
-            隔期 {{ p.interval }}（{{ p.numbers.length }} 顆）
+            隔期 {{ p.interval }}（{{ p.entries.length }} 顆）
           </div>
-          <div class="flex flex-wrap items-center gap-1.5">
+          <!-- badge 尺寸 ~1.5 倍、間距縮小（gap-1.5 → gap-1）。
+               右下角 originPos = 該號在「隔期剩餘號碼」rawSorted 內 1-indexed 位置 -->
+          <div class="flex flex-wrap items-center gap-1">
             <UBadge
-              v-for="n in p.numbers"
-              :key="`home-run-${p.interval}-${n}`"
+              v-for="e in p.entries"
+              :key="`home-run-${p.interval}-${e.n}`"
               color="warning"
               variant="solid"
               size="md"
-              class="min-w-8 justify-center font-mono"
+              class="relative min-w-11 h-11 px-2.5 text-base justify-center font-mono"
             >
-              {{ pad(n) }}
+              {{ pad(e.n) }}
+              <span
+                v-if="e.originPos > 0"
+                class="absolute bottom-0 right-0.5 text-[9px] leading-none font-normal text-black"
+              >{{ e.originPos }}</span>
             </UBadge>
             <span
-              v-if="p.numbers.length === 0"
+              v-if="p.entries.length === 0"
               class="text-xs text-muted"
             >—</span>
           </div>

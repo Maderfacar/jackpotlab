@@ -38,10 +38,16 @@ interface Props {
    * 隱藏「回訊號牆」按鈕。賓果海尼根頁設 true（本頁無上層列表可回）。
    */
   hideBackButton?: boolean
+  /**
+   * 是否讓條件區（獎號隔期來源標題卡）sticky 釘頂。
+   * /hindsight 訊號牆內預設 true、賓果海尼根頁傳 false（讓條件區跟著滾走、不擋住下方）。
+   */
+  stickyConditionCard?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  hideBackButton: false
+  hideBackButton: false,
+  stickyConditionCard: true
 })
 
 // 條件區實際高度 — 用 ResizeObserver 動態量、暴露給 #before-origin slot
@@ -63,6 +69,16 @@ onBeforeUnmount(() => {
   condResizeObserver?.disconnect()
   condResizeObserver = null
 })
+
+// slot 暴露的 sticky 偏移：條件區若不 sticky，全壘打就直接黏 top:0；
+// 條件區 sticky 時用條件區動態高度。
+const stickyTopOffsetForSlot = computed(() => {
+  return props.stickyConditionCard ? condCardHeight.value : 0
+})
+
+// 隔期剩餘號碼 / 觀察紀錄 兩 section 可收合（兩處共用）。
+const originLatestOpen = ref(true)
+const evidenceOpen = ref(true)
 const emit = defineEmits<{
   close: []
 }>()
@@ -310,10 +326,13 @@ function isHit(num: number, hits: number[]): boolean {
     </div>
 
     <template v-else>
-      <!-- 釘頂條件區 -->
+      <!-- 條件區（預設釘頂；賓果海尼根頁傳 stickyConditionCard=false 取消 sticky） -->
       <div
         ref="condCard"
-        class="sticky top-0 z-10 -mx-2 sm:-mx-4 px-2 sm:px-4 pt-2 pb-3 bg-default/95 backdrop-blur supports-[backdrop-filter]:bg-default/70"
+        :class="[
+          props.stickyConditionCard ? 'sticky top-0 z-10' : '',
+          '-mx-2 sm:-mx-4 px-2 sm:px-4 pt-2 pb-3 bg-default/95 backdrop-blur supports-[backdrop-filter]:bg-default/70'
+        ]"
       >
         <UCard :ui="{ body: 'p-4' }">
           <div class="space-y-2">
@@ -375,12 +394,13 @@ function isHit(num: number, hits: number[]): boolean {
       </div>
 
       <!-- 賓果海尼根頁專用：在「隔期剩餘號碼」之上插入「全壘打」 section
-           - slot prop `stickyTopOffset` 提供條件區實際高度，給 slot 內 sticky 元素堆疊用 -->
+           - slot prop `sticky-top-offset` 提供 sticky 偏移；條件區 sticky 時 = 條件區高度，
+             條件區不 sticky 時 = 0（slot 內 sticky 直接黏 top:0） -->
       <slot
         v-if="originLatest"
         name="before-origin"
         :origin-latest="originLatest"
-        :sticky-top-offset="condCardHeight"
+        :sticky-top-offset="stickyTopOffsetForSlot"
       />
 
       <!-- 訊號 10 專屬：最新一期當下的隔期 0-3 剩餘號碼一覽（連莊號紅框） -->
@@ -388,10 +408,27 @@ function isHit(num: number, hits: number[]): boolean {
         v-if="originLatest"
         class="space-y-2"
       >
-        <h4 class="text-sm font-semibold">
-          隔期剩餘號碼
-        </h4>
-        <UCard :ui="{ body: 'p-4' }">
+        <div class="flex items-center justify-between gap-2">
+          <h4 class="text-sm font-semibold">
+            隔期剩餘號碼
+          </h4>
+          <UButton
+            color="neutral"
+            variant="ghost"
+            size="xs"
+            :icon="originLatestOpen ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
+            :aria-expanded="originLatestOpen"
+            aria-controls="signal-detail-origin-latest"
+            @click="originLatestOpen = !originLatestOpen"
+          >
+            {{ originLatestOpen ? '收合' : '展開' }}
+          </UButton>
+        </div>
+        <UCard
+          v-if="originLatestOpen"
+          id="signal-detail-origin-latest"
+          :ui="{ body: 'p-4' }"
+        >
           <div class="space-y-3">
             <div class="text-xs text-muted">
               第 <span class="font-mono">{{ originLatest.drawTerm }}</span> 期 · {{ originLatest.drawDate }}<span
@@ -429,19 +466,34 @@ function isHit(num: number, hits: number[]): boolean {
         </UCard>
       </section>
 
-      <!-- 歷史證據鏈 -->
+      <!-- 歷史證據鏈 / 觀察紀錄（依 isObservation 切換標題） -->
       <section class="space-y-2">
-        <h4 class="text-sm font-semibold">
-          {{ isObservation ? '觀察紀錄' : '歷史證據鏈' }}
-        </h4>
+        <div class="flex items-center justify-between gap-2">
+          <h4 class="text-sm font-semibold">
+            {{ isObservation ? '觀察紀錄' : '歷史證據鏈' }}
+          </h4>
+          <UButton
+            color="neutral"
+            variant="ghost"
+            size="xs"
+            :icon="evidenceOpen ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
+            :aria-expanded="evidenceOpen"
+            aria-controls="signal-detail-evidence"
+            @click="evidenceOpen = !evidenceOpen"
+          >
+            {{ evidenceOpen ? '收合' : '展開' }}
+          </UButton>
+        </div>
         <div
-          v-if="evidence.length === 0"
+          v-if="evidenceOpen && evidence.length === 0"
+          id="signal-detail-evidence"
           class="rounded-md border border-dashed border-default p-4 text-center text-xs text-muted"
         >
           尚無亮燈紀錄
         </div>
         <UCard
-          v-else
+          v-else-if="evidenceOpen"
+          id="signal-detail-evidence"
           :ui="{ body: 'p-0 sm:p-0' }"
         >
           <div class="overflow-x-auto">
