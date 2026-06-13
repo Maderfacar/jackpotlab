@@ -27,49 +27,34 @@ export const scrapeBingoBingo = onSchedule({
 })
 
 /**
- * 今彩 539 — 每日 20:35 / 20:45 / 21:00 三次 retry。
- * 用三條 cron 排程 dispatch 同一支 function。
+ * 今彩 539 — 每日 20:30 開獎，20:00 - 23:55 每 5 分鐘 retry。
+ * scrapeAndStore 內含「LatestResult + byPeriod」雙路徑，已存最新一期就 upsert 不會出錯。
+ * 比原本「20:35 / 20:45 / 21:00 三次」靠譜：官方 API 慢一兩個小時還能自己補抓。
  */
 export const scrape539 = onSchedule({
-  schedule: '35,45 20 * * *',
+  schedule: '*/5 20-23 * * *',
   timeZone: 'Asia/Taipei'
 }, async () => {
   const outcome = await scrapeAndStore('lotto539')
   logger.info('scrape539 done', outcome)
 })
 
-export const scrape539Late = onSchedule({
-  schedule: '0 21 * * *',
-  timeZone: 'Asia/Taipei'
-}, async () => {
-  const outcome = await scrapeAndStore('lotto539')
-  logger.info('scrape539Late done', outcome)
-})
-
 /**
- * 大樂透 — 週二、五 21:35 / 21:45 / 22:00 三次。
+ * 大樂透 — 週二、五 21:30 開獎，週二、五 21:00 - 23:55 每 5 分鐘 retry。
  */
 export const scrapeLotto649 = onSchedule({
-  schedule: '35,45 21 * * 2,5',
+  schedule: '*/5 21-23 * * 2,5',
   timeZone: 'Asia/Taipei'
 }, async () => {
   const outcome = await scrapeAndStore('lotto649')
   logger.info('scrapeLotto649 done', outcome)
 })
 
-export const scrapeLotto649Late = onSchedule({
-  schedule: '0 22 * * 2,5',
-  timeZone: 'Asia/Taipei'
-}, async () => {
-  const outcome = await scrapeAndStore('lotto649')
-  logger.info('scrapeLotto649Late done', outcome)
-})
-
 /**
- * 威力彩 — 週一、四 22:05 / 22:15 / 22:30 三次。
+ * 威力彩 — 週一、四 22:00 開獎，週一、四 22:00 - 23:55 每 5 分鐘 retry。
  */
 export const scrapeSuperLotto = onSchedule({
-  schedule: '5,15,30 22 * * 1,4',
+  schedule: '*/5 22-23 * * 1,4',
   timeZone: 'Asia/Taipei'
 }, async () => {
   const outcome = await scrapeAndStore('super_lotto638')

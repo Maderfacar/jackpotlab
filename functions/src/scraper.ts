@@ -142,6 +142,90 @@ function normalizeBingo(raw: Record<string, unknown>, queryDate: string): DrawRe
   }
 }
 
+/**
+ * 慢彩種用「期號」直接查單筆 — byPeriod。
+ * 比 LatestResult 聚合表更新即時、是 LatestResult 失效時的主動 fallback。
+ */
+async function fetchSlowByPeriod(
+  gameId: Exclude<GameId, 'bingo_bingo'>,
+  period: number
+): Promise<Record<string, unknown> | null> {
+  const url = `${API_BASE}/${GAMES[gameId].endpoint}?period=${period}`
+  const json = await fetchJson(url)
+  const arr = extractArray(json, GAMES[gameId].resultField)
+  return arr[0] ?? null
+}
+
+/**
+ * 從 Firestore latest mirror 讀目前已存的最高一期 drawTerm。
+ * 用來算「下一期 = drawTerm + 1」當 byPeriod 查詢的 candidate。
+ */
+async function getCurrentLatestTerm(gameId: GameId): Promise<number | null> {
+  const snap = await getFirestore()
+    .collection('draws').doc(gameId)
+    .collection('latest').doc('current')
+    .get()
+  if (!snap.exists) return null
+  const data = snap.data()
+  return typeof data?.drawTerm === 'number' ? data.drawTerm : null
+}
+
+/**
+ * 慢彩種抓取主邏輯：
+ *   Path 1: LatestResult 聚合表
+ *   Path 2: 若 LatestResult 還沒 update，用 byPeriod 算下一期主動查
+ *
+ * 兩 path 都 try、取最高一期；都失敗回 []。
+ */
+async function fetchSlowGameLatestDraws(
+  slowGameId: Exclude<GameId, 'bingo_bingo'>
+): Promise<DrawResult[]> {
+  const candidates: DrawResult[] = []
+
+  // Path 1: LatestResult
+  try {
+    const json = await fetchJson(`${API_BASE}/LatestResult`)
+    const env = json as ApiEnvelope
+    if (env.rtCode === 0) {
+      const content = env.content as Record<string, unknown> | undefined
+      const fieldMap: Record<Exclude<GameId, 'bingo_bingo'>, string> = {
+        lotto539: 'daily539Result',
+        lotto649: 'lotto649Result',
+        super_lotto638: 'superLotto638Result'
+      }
+      const raw = content?.[fieldMap[slowGameId]]
+      if (raw && typeof raw === 'object') {
+        candidates.push(normalizeDaily(slowGameId, raw as Record<string, unknown>))
+      }
+    }
+  } catch {
+    // LatestResult 掛掉不阻止 byPeriod fallback
+  }
+
+  // Path 2: byPeriod 算下一期主動查（只在 LatestResult 沒給更新一期時）
+  const currentLatestTerm = await getCurrentLatestTerm(slowGameId)
+  const fromLatestResult = candidates[0]?.drawTerm ?? null
+  const needByPeriod = currentLatestTerm != null
+    && (fromLatestResult == null || fromLatestResult <= currentLatestTerm)
+  if (needByPeriod && currentLatestTerm != null) {
+    const candidateTerm = currentLatestTerm + 1
+    try {
+      const raw = await fetchSlowByPeriod(slowGameId, candidateTerm)
+      if (raw) {
+        const draw = normalizeDaily(slowGameId, raw)
+        if (fromLatestResult == null || draw.drawTerm > fromLatestResult) {
+          candidates.push(draw)
+        }
+      }
+    } catch {
+      // byPeriod 也失敗就放棄這輪、下次 cron 再試
+    }
+  }
+
+  if (candidates.length === 0) return []
+  return [candidates.reduce((a, b) => (b.drawTerm > a.drawTerm ? b : a))]
+}
+
 function todayInTaipei(): string {
   return new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Taipei',
@@ -204,19 +288,7 @@ export async function scrapeAndStore(gameId: GameId): Promise<ScrapeOutcome> {
       const arr = extractArray(records, GAMES.bingo_bingo.resultField)
       draws = arr.map(r => normalizeBingo(r, today))
     } else {
-      const json = await fetchJson(`${API_BASE}/LatestResult`)
-      const env = json as ApiEnvelope
-      if (env.rtCode !== 0) throw new Error(`LatestResult rtCode=${env.rtCode}`)
-      const content = env.content as Record<string, unknown> | undefined
-      const fieldMap: Record<Exclude<GameId, 'bingo_bingo'>, string> = {
-        lotto539: 'daily539Result',
-        lotto649: 'lotto649Result',
-        super_lotto638: 'superLotto638Result'
-      }
-      const raw = content?.[fieldMap[gameId]]
-      if (raw && typeof raw === 'object') {
-        draws = [normalizeDaily(gameId, raw as Record<string, unknown>)]
-      }
+      draws = await fetchSlowGameLatestDraws(gameId)
     }
 
     await writeDrawsBatch(draws)

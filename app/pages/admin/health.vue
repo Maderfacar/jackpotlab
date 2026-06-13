@@ -99,6 +99,46 @@ function fmtTime(iso: string | null | undefined): string {
     hour12: false
   }).format(new Date(iso))
 }
+
+// 手動觸發單彩種重抓 — 走 /api/admin/scrape/{gameId}
+const toast = useToast()
+const scrapingGameId = ref<string | null>(null)
+interface ScrapeTriggerResponse {
+  success: boolean
+  gameId: string
+  fromCache: boolean
+  triggeredAt: string
+  draw: { drawTerm: number, drawDate: string, fetchedAt: string } | null
+  message: string
+}
+async function triggerScrape(gameId: string): Promise<void> {
+  if (scrapingGameId.value) return
+  scrapingGameId.value = gameId
+  try {
+    const res = await $fetch<ScrapeTriggerResponse>(`/api/admin/scrape/${gameId}`, {
+      method: 'POST'
+    })
+    toast.add({
+      title: res.draw ? '重抓成功' : '已觸發',
+      description: res.message,
+      color: res.draw ? 'success' : 'warning',
+      icon: res.draw ? 'i-lucide-check-circle-2' : 'i-lucide-info'
+    })
+    await refresh()
+  } catch (error) {
+    const message = error instanceof Error
+      ? error.message
+      : (error as { statusMessage?: string }).statusMessage ?? '重抓失敗'
+    toast.add({
+      title: '重抓失敗',
+      description: message,
+      color: 'error',
+      icon: 'i-lucide-triangle-alert'
+    })
+  } finally {
+    scrapingGameId.value = null
+  }
+}
 </script>
 
 <template>
@@ -281,6 +321,19 @@ function fmtTime(iso: string | null | undefined): string {
             <p class="text-xs text-muted">
               排程：{{ g.drawSchedule }}
             </p>
+
+            <UButton
+              color="primary"
+              variant="soft"
+              size="sm"
+              icon="i-lucide-download"
+              block
+              :loading="scrapingGameId === g.id"
+              :disabled="scrapingGameId !== null && scrapingGameId !== g.id"
+              @click="triggerScrape(g.id)"
+            >
+              立即重抓
+            </UButton>
           </div>
         </UCard>
       </div>

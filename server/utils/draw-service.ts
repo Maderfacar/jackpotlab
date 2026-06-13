@@ -118,18 +118,46 @@ async function fetchLatestFromApi(gameId: GameId): Promise<DrawResult[]> {
     return records.map(r => normalizeOne('bingo_bingo', r as unknown as Record<string, unknown>, today))
   }
 
-  const snapshot = await taiwanLottery.fetchLatestSnapshot()
-  const out: DrawResult[] = []
-  if (gameId === 'lotto539' && snapshot.daily539) {
-    out.push(normalizeOne('lotto539', snapshot.daily539 as unknown as Record<string, unknown>))
+  // 慢彩種雙路徑：LatestResult（聚合表）+ byPeriod（主動算下期）
+  // LatestResult cache lag 時、byPeriod 通常能更早拿到新一期。
+  const slowGameId = gameId as Exclude<GameId, 'bingo_bingo'>
+  const candidates: DrawResult[] = []
+
+  try {
+    const snapshot = await taiwanLottery.fetchLatestSnapshot()
+    let raw: unknown = null
+    if (slowGameId === 'lotto539') raw = snapshot.daily539
+    if (slowGameId === 'lotto649') raw = snapshot.lotto649
+    if (slowGameId === 'super_lotto638') raw = snapshot.superLotto638
+    if (raw && typeof raw === 'object') {
+      candidates.push(normalizeOne(slowGameId, raw as Record<string, unknown>))
+    }
+  } catch {
+    // LatestResult 掛掉不阻止 byPeriod fallback
   }
-  if (gameId === 'lotto649' && snapshot.lotto649) {
-    out.push(normalizeOne('lotto649', snapshot.lotto649 as unknown as Record<string, unknown>))
+
+  // byPeriod 用 Firestore latest mirror 的 drawTerm + 1 主動查
+  const cachedLatest = await getLatest(slowGameId)
+  const fromLatestResult = candidates[0]?.drawTerm ?? null
+  const needByPeriod = cachedLatest != null
+    && (fromLatestResult == null || fromLatestResult <= cachedLatest.drawTerm)
+  if (needByPeriod && cachedLatest != null) {
+    const candidateTerm = cachedLatest.drawTerm + 1
+    try {
+      const raw = await fetchByPeriod(slowGameId, candidateTerm)
+      if (raw && typeof raw === 'object') {
+        const draw = normalizeOne(slowGameId, raw as Record<string, unknown>)
+        if (fromLatestResult == null || draw.drawTerm > fromLatestResult) {
+          candidates.push(draw)
+        }
+      }
+    } catch {
+      // byPeriod 也失敗、就放棄這輪
+    }
   }
-  if (gameId === 'super_lotto638' && snapshot.superLotto638) {
-    out.push(normalizeOne('super_lotto638', snapshot.superLotto638 as unknown as Record<string, unknown>))
-  }
-  return out
+
+  if (candidates.length === 0) return []
+  return [candidates.reduce((a, b) => (b.drawTerm > a.drawTerm ? b : a))]
 }
 
 async function fetchByDateFromApi(gameId: GameId, drawDate: string): Promise<DrawResult[]> {
