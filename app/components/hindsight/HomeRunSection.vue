@@ -221,12 +221,16 @@ interface HomeRunEvidenceRow {
   drawDate: string
   /** 4 (或 6) 排按隔期分排的 picks，依 slotCount 動態 */
   picksByInterval: number[][]
-  /** picksByInterval union（去重升序），用來算命中 */
+  /** 每隔期命中數（picksByInterval[j] ∩ actual.length） */
+  hitsByInterval: number[]
+  /** 每隔期命中機率（hits / picks.length；該排 picks 為空時 null） */
+  rateByInterval: Array<number | null>
+  /** picksByInterval union（去重升序），用來算總命中 */
   picks: number[]
   actual: number[]
   hits: number
   hitNumbers: number[]
-  /** 命中機率（hits / picks.length），picks 為空時為 null */
+  /** 0-3（或 0-5）總命中機率（hits / picks.length），picks 為空時為 null */
   rate: number | null
 }
 
@@ -270,10 +274,16 @@ const evidence = computed<HomeRunEvidenceRow[]>(() => {
     const hits = hitNumbers.length
     const rate = picks.length > 0 ? hits / picks.length : null
 
+    // 每隔期命中數與命中機率
+    const hitsByInterval = picksByInterval.map(arr => arr.filter(p => actualSet.has(p)).length)
+    const rateByInterval = picksByInterval.map((arr, j) => arr.length > 0 ? (hitsByInterval[j] ?? 0) / arr.length : null)
+
     out.push({
       drawTerm: targetTerm,
       drawDate: actualDate,
       picksByInterval,
+      hitsByInterval,
+      rateByInterval,
       picks,
       actual,
       hits,
@@ -468,14 +478,24 @@ function toggleEvidence() {
               </div>
             </div>
 
-            <!-- 第二列起：隔期 0、1、2、3 依 slotCount 排 -->
+            <!-- 第二列起：隔期 0、1、2、3 依 slotCount 排（每排顯示該排命中機率） -->
             <div
               v-for="(arr, j) in row.picksByInterval"
               :key="`hr-row-${row.drawTerm}-int-${j}`"
               class="space-y-1"
             >
-              <div class="text-[10px] text-muted">
-                隔期 {{ j }}（{{ arr.length }} 顆）
+              <div class="flex items-baseline gap-2 flex-wrap text-[10px]">
+                <span class="text-muted">
+                  隔期 {{ j }}（{{ arr.length }} 顆）
+                </span>
+                <span
+                  v-if="arr.length > 0"
+                  class="font-mono tabular-nums"
+                  :class="(row.hitsByInterval[j] ?? 0) > 0 ? 'text-emerald-500' : 'text-muted'"
+                >
+                  命中 {{ row.hitsByInterval[j] ?? 0 }}/{{ arr.length }}
+                  <span class="ml-0.5">{{ rateText(row.rateByInterval[j] ?? null) }}</span>
+                </span>
               </div>
               <div
                 v-if="arr.length === 0"
