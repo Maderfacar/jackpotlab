@@ -300,16 +300,17 @@ const evidence = computed<HomeRunEvidenceRow[]>(() => {
     })
   }
 
-  // 第二輪：對每筆 row 計算「過去 5 期該隔期的平均命中機率」
-  // out 順序：最新在前（reverse 過的）。對 row i、「過去 5 期」= 時間上更早的 5 筆 = out[i+1..i+5]。
+  // 第二輪：對每筆 row 計算「最近 5 期該隔期的平均命中機率」
+  // 拍板：當期為 5 期之中的最後一期（時間最晚的）= 當期 + 之前 4 期 = 5 期 total。
+  // out 順序：最新在前（reverse 過的）。對 row i、最近 5 期 = out[i..i+5]（含當期）。
   for (let i = 0; i < out.length; i++) {
-    const past = out.slice(i + 1, i + 1 + PAST_AVG_WINDOW)
+    const window = out.slice(i, i + PAST_AVG_WINDOW)
     const avgs: Array<number | null> = []
     const slotCount = out[i]!.picksByInterval.length
     for (let j = 0; j < slotCount; j++) {
       let sum = 0
       let n = 0
-      for (const p of past) {
+      for (const p of window) {
         const r = p.rateByInterval[j]
         if (r != null) {
           sum += r
