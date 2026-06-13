@@ -225,6 +225,11 @@ interface HomeRunEvidenceRow {
   hitsByInterval: number[]
   /** 每隔期命中機率（hits / picks.length；該排 picks 為空時 null） */
   rateByInterval: Array<number | null>
+  /**
+   * 該筆 row 的「之前最近 5 期」內、每隔期 mean(rate)（picks=0 的期不計）；
+   * 若 5 期內全部 null → null。
+   */
+  past5AvgRateByInterval: Array<number | null>
   /** picksByInterval union（去重升序），用來算總命中 */
   picks: number[]
   actual: number[]
@@ -233,6 +238,8 @@ interface HomeRunEvidenceRow {
   /** 0-3（或 0-5）總命中機率（hits / picks.length），picks 為空時為 null */
   rate: number | null
 }
+
+const PAST_AVG_WINDOW = 5
 
 const evidence = computed<HomeRunEvidenceRow[]>(() => {
   const brain = props.brainState
@@ -284,12 +291,34 @@ const evidence = computed<HomeRunEvidenceRow[]>(() => {
       picksByInterval,
       hitsByInterval,
       rateByInterval,
+      past5AvgRateByInterval: [], // 先佔位、第二輪填入
       picks,
       actual,
       hits,
       hitNumbers,
       rate
     })
+  }
+
+  // 第二輪：對每筆 row 計算「過去 5 期該隔期的平均命中機率」
+  // out 順序：最新在前（reverse 過的）。對 row i、「過去 5 期」= 時間上更早的 5 筆 = out[i+1..i+5]。
+  for (let i = 0; i < out.length; i++) {
+    const past = out.slice(i + 1, i + 1 + PAST_AVG_WINDOW)
+    const avgs: Array<number | null> = []
+    const slotCount = out[i]!.picksByInterval.length
+    for (let j = 0; j < slotCount; j++) {
+      let sum = 0
+      let n = 0
+      for (const p of past) {
+        const r = p.rateByInterval[j]
+        if (r != null) {
+          sum += r
+          n++
+        }
+      }
+      avgs.push(n > 0 ? sum / n : null)
+    }
+    out[i]!.past5AvgRateByInterval = avgs
   }
   return out
 })
@@ -305,6 +334,14 @@ function isHit(num: number, hits: number[]): boolean {
 function rateText(r: number | null): string {
   if (r == null) return '—'
   return `${(r * 100).toFixed(1)}%`
+}
+
+// 過去 5 期平均染色門檻（使用者拍板）：< 24% 綠、24%-26% 藍、> 26% 紅
+function avgRateColorClass(r: number | null): string {
+  if (r == null) return 'text-muted'
+  if (r < 0.24) return 'text-emerald-500'
+  if (r > 0.26) return 'text-red-500'
+  return 'text-blue-500'
 }
 
 // 歷史證據鏈可收合（預設展開）
@@ -495,6 +532,14 @@ function toggleEvidence() {
                 >
                   命中 {{ row.hitsByInterval[j] ?? 0 }}/{{ arr.length }}
                   <span class="ml-0.5">{{ rateText(row.rateByInterval[j] ?? null) }}</span>
+                </span>
+                <span
+                  v-if="row.past5AvgRateByInterval[j] != null"
+                  class="font-mono tabular-nums"
+                  :class="avgRateColorClass(row.past5AvgRateByInterval[j] ?? null)"
+                  :title="`過去 5 期該隔期命中機率平均（門檻：< 24% 綠、24%-26% 藍、> 26% 紅）`"
+                >
+                  · 過去 5 期平均 {{ rateText(row.past5AvgRateByInterval[j] ?? null) }}
                 </span>
               </div>
               <div
