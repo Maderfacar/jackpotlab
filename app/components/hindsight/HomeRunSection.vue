@@ -25,6 +25,8 @@
 import type { GameId } from '~~/shared/lotto/games'
 import type { AnalysisState } from '~/utils/analysis'
 import { slotCountForOriginDistribution } from '~/hindsight/signals/bingo-origin-distribution'
+import { computeHomeRunByInterval, computeHomeRunEvidence } from '~/hindsight/home-run-evidence'
+import type { HomeRunEvidenceRow } from '~/hindsight/home-run-evidence'
 import { bingoTimeFromMap, buildBingoMinTermByDate } from '~/utils/bingo-time'
 import type {
   BrainDraw,
@@ -75,33 +77,8 @@ interface HomeRunData {
   perInterval: HomeRunInterval[]
 }
 
-/**
- * 共用 helper：對 4 隔期 raw（已 sorted ascending）套位置 + 紅框過濾。
- * 全壘打 section 與歷史證據鏈都用這個算。
- */
-function computeHomeRunByInterval(
-  rawByInterval: number[][],
-  positionYsByInterval: number[][],
-  carryoverSet: ReadonlySet<number>,
-  slotCount: number
-): number[][] {
-  const out: number[][] = []
-  for (let j = 0; j < slotCount; j++) {
-    const raw = rawByInterval[j] ?? []
-    const positionYs = positionYsByInterval[j] ?? []
-    const removePos = new Set<number>()
-    for (const y of positionYs) {
-      // 上方卡此隔期長度 < y → 該位置不存在，跳過
-      if (y >= 1 && y <= raw.length) removePos.add(y)
-    }
-    let after = raw.filter((_, idx) => !removePos.has(idx + 1))
-    if (j === 0 && carryoverSet.size > 0) {
-      after = after.filter(n => !carryoverSet.has(n))
-    }
-    out.push(after)
-  }
-  return out
-}
+// computeHomeRunByInterval 已搬到 ~/hindsight/home-run-evidence.ts。
+// 全壘打 section、歷史證據鏈、歷史分析頁共用同一份。
 
 /**
  * 第三層過濾：「過去 10 期高頻位置」黑名單
@@ -215,113 +192,10 @@ const drawByTerm = computed<Map<number, BrainDraw>>(() => {
   return m
 })
 
-interface HomeRunEvidenceRow {
-  /** 被預測的目標期（= f.drawTerm + 1） */
-  drawTerm: number
-  drawDate: string
-  /** 4 (或 6) 排按隔期分排的 picks，依 slotCount 動態 */
-  picksByInterval: number[][]
-  /** 每隔期命中數（picksByInterval[j] ∩ actual.length） */
-  hitsByInterval: number[]
-  /** 每隔期命中機率（hits / picks.length；該排 picks 為空時 null） */
-  rateByInterval: Array<number | null>
-  /**
-   * 該筆 row 的「之前最近 5 期」內、每隔期 mean(rate)（picks=0 的期不計）；
-   * 若 5 期內全部 null → null。
-   */
-  past5AvgRateByInterval: Array<number | null>
-  /** picksByInterval union（去重升序），用來算總命中 */
-  picks: number[]
-  actual: number[]
-  hits: number
-  hitNumbers: number[]
-  /** 0-3（或 0-5）總命中機率（hits / picks.length），picks 為空時為 null */
-  rate: number | null
-}
-
-const PAST_AVG_WINDOW = 5
-
+// HomeRunEvidenceRow 型別、computeHomeRunEvidence 主邏輯
+// 已搬到 ~/hindsight/home-run-evidence.ts。歷史分析頁也用同一份。
 const evidence = computed<HomeRunEvidenceRow[]>(() => {
-  const brain = props.brainState
-  if (!brain) return []
-  const sc = brain.scorecards['bingo_origin_distribution']
-  if (!sc) return []
-  const slotCount = slotCountForOriginDistribution(props.gameId)
-  const dbt = drawByTerm.value
-
-  const out: HomeRunEvidenceRow[] = []
-  // 新的在上面（與訊號牆 evidence 排序一致）
-  for (const f of [...sc.recentFirings].reverse()) {
-    const od = f.observationData?.originDistribution
-    if (!od) continue
-
-    const rawByInterval = od.perInterval.map(p => [...(p.remainingNumbers ?? [])].sort((a, b) => a - b))
-    const positionYsByInterval = od.perInterval.map(p => p.positionYs ?? [])
-    const carryoverSet = new Set<number>(od.carryoverInPeriod0 ?? [])
-    const filtered = computeHomeRunByInterval(rawByInterval, positionYsByInterval, carryoverSet, slotCount)
-    // 按隔期分排（升序、已由 helper 保證 raw 升序、filtered 仍保留升序）
-    const picksByInterval = filtered.map(arr => [...arr])
-
-    // 4 (或 6) 隔期 union、去重、升序 — 用來算命中
-    const picksSet = new Set<number>()
-    for (const arr of filtered) {
-      for (const n of arr) picksSet.add(n)
-    }
-    const picks = [...picksSet].sort((a, b) => a - b)
-
-    const targetTerm = f.drawTerm + 1
-    const targetDraw = dbt.get(targetTerm)
-    const actual = targetDraw?.numbers ?? []
-    // 跳過「下一期待開出」row（最新一期 firing 的 targetTerm = T+1 還沒開）
-    // 或 drawByTerm 缺資料的中間 row。歷史證據鏈只顯示已開出可驗證的紀錄。
-    if (actual.length === 0) continue
-    const actualDate = targetDraw?.drawDate ?? ''
-    const actualSet = new Set(actual)
-    const hitNumbers = picks.filter(p => actualSet.has(p))
-    const hits = hitNumbers.length
-    const rate = picks.length > 0 ? hits / picks.length : null
-
-    // 每隔期命中數與命中機率
-    const hitsByInterval = picksByInterval.map(arr => arr.filter(p => actualSet.has(p)).length)
-    const rateByInterval = picksByInterval.map((arr, j) => arr.length > 0 ? (hitsByInterval[j] ?? 0) / arr.length : null)
-
-    out.push({
-      drawTerm: targetTerm,
-      drawDate: actualDate,
-      picksByInterval,
-      hitsByInterval,
-      rateByInterval,
-      past5AvgRateByInterval: [], // 先佔位、第二輪填入
-      picks,
-      actual,
-      hits,
-      hitNumbers,
-      rate
-    })
-  }
-
-  // 第二輪：對每筆 row 計算「最近 5 期該隔期的平均命中機率」
-  // 拍板：當期為 5 期之中的最後一期（時間最晚的）= 當期 + 之前 4 期 = 5 期 total。
-  // out 順序：最新在前（reverse 過的）。對 row i、最近 5 期 = out[i..i+5]（含當期）。
-  for (let i = 0; i < out.length; i++) {
-    const window = out.slice(i, i + PAST_AVG_WINDOW)
-    const avgs: Array<number | null> = []
-    const slotCount = out[i]!.picksByInterval.length
-    for (let j = 0; j < slotCount; j++) {
-      let sum = 0
-      let n = 0
-      for (const p of window) {
-        const r = p.rateByInterval[j]
-        if (r != null) {
-          sum += r
-          n++
-        }
-      }
-      avgs.push(n > 0 ? sum / n : null)
-    }
-    out[i]!.past5AvgRateByInterval = avgs
-  }
-  return out
+  return computeHomeRunEvidence(props.gameId, props.brainState, props.drawsAsc)
 })
 
 function pad(n: number): string {

@@ -46,15 +46,27 @@ function closeNoop() {
           以訊號 10「獎號隔期來源」為基礎，套用觀察最新一期位置過濾與連莊紅框移除，輸出「全壘打」候選號。
         </p>
       </div>
-      <UButton
-        color="neutral"
-        variant="outline"
-        icon="i-lucide-refresh-cw"
-        :loading="loading"
-        @click="refresh"
-      >
-        重新整理
-      </UButton>
+      <div class="flex flex-wrap items-center gap-2">
+        <UButton
+          to="/bingo-heineken-stats"
+          target="_blank"
+          rel="noopener"
+          color="neutral"
+          variant="outline"
+          icon="i-lucide-bar-chart-3"
+        >
+          歷史分析
+        </UButton>
+        <UButton
+          color="neutral"
+          variant="outline"
+          icon="i-lucide-refresh-cw"
+          :loading="loading"
+          @click="refresh"
+        >
+          重新整理
+        </UButton>
+      </div>
     </header>
 
     <UAlert
