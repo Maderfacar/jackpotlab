@@ -54,8 +54,12 @@ export interface HomeRunEvidenceRow {
   hitsByInterval: number[]
   /** 每隔期命中機率（hits / picks.length；該排 picks=0 時 null） */
   rateByInterval: Array<number | null>
-  /** 含當期在內的最近 N 期、每隔期 mean(rate)（picks=0 不計、全 null 時 null） */
-  past5AvgRateByInterval: Array<number | null>
+  /**
+   * 含當期在內的最近 RECENT_AVG_WINDOW 期、每隔期 mean(rate)
+   * （picks=0 不計、全 null 時 null）。
+   * 窗口大小集中在 RECENT_AVG_WINDOW 常數、日後調整改一處。
+   */
+  recentAvgRateByInterval: Array<number | null>
   /** picksByInterval union（去重升序），用來算總命中 */
   picks: number[]
   actual: number[]
@@ -65,7 +69,11 @@ export interface HomeRunEvidenceRow {
   rate: number | null
 }
 
-const PAST_AVG_WINDOW = 5
+/**
+ * 「最近 N 期」窗口大小。拍板 commit 210b734 stats 頁實測各隔期建議窗口 N=10
+ * 為主、隔期 1 N=5 但統一 N=10 也不會錯太多、選 10 作為統一值。
+ */
+export const RECENT_AVG_WINDOW = 10
 
 /**
  * 計算全壘打歷史證據鏈。
@@ -129,7 +137,7 @@ export function computeHomeRunEvidence(
       picksByInterval,
       hitsByInterval,
       rateByInterval,
-      past5AvgRateByInterval: [],
+      recentAvgRateByInterval: [],
       picks,
       actual,
       hits,
@@ -138,15 +146,16 @@ export function computeHomeRunEvidence(
     })
   }
 
-  // 第二輪：最近 5 期（含當期、當期是 5 期中時間最晚的）每隔期 mean
+  // 第二輪：含當期的最近 RECENT_AVG_WINDOW 期、每隔期 mean
+  // 拍板：當期為窗口中時間最晚的一期（i=0 在 out 內、out.slice(i, i+N) 含 i）
   for (let i = 0; i < out.length; i++) {
-    const window = out.slice(i, i + PAST_AVG_WINDOW)
+    const windowSlice = out.slice(i, i + RECENT_AVG_WINDOW)
     const avgs: Array<number | null> = []
     const slotCountForRow = out[i]!.picksByInterval.length
     for (let j = 0; j < slotCountForRow; j++) {
       let sum = 0
       let n = 0
-      for (const p of window) {
+      for (const p of windowSlice) {
         const r = p.rateByInterval[j]
         if (r != null) {
           sum += r
@@ -155,7 +164,7 @@ export function computeHomeRunEvidence(
       }
       avgs.push(n > 0 ? sum / n : null)
     }
-    out[i]!.past5AvgRateByInterval = avgs
+    out[i]!.recentAvgRateByInterval = avgs
   }
   return out
 }

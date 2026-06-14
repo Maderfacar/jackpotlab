@@ -25,8 +25,9 @@
 import type { GameId } from '~~/shared/lotto/games'
 import type { AnalysisState } from '~/utils/analysis'
 import { slotCountForOriginDistribution } from '~/hindsight/signals/bingo-origin-distribution'
-import { computeHomeRunByInterval, computeHomeRunEvidence } from '~/hindsight/home-run-evidence'
+import { RECENT_AVG_WINDOW, computeHomeRunByInterval, computeHomeRunEvidence } from '~/hindsight/home-run-evidence'
 import type { HomeRunEvidenceRow } from '~/hindsight/home-run-evidence'
+import { analyzeIntervalStats, type IntervalStats } from '~/hindsight/home-run-stats'
 import { bingoTimeFromMap, buildBingoMinTermByDate } from '~/utils/bingo-time'
 import type {
   BrainDraw,
@@ -198,6 +199,23 @@ const evidence = computed<HomeRunEvidenceRow[]>(() => {
   return computeHomeRunEvidence(props.gameId, props.brainState, props.drawsAsc)
 })
 
+/**
+ * 各隔期相對閾值：用該隔期長期 mean / std 算 mean ± 0.5σ 當染色邊界。
+ *
+ * 為什麼用「相對」而非全域 24/26 絕對閾值：
+ * stats 頁實測各隔期 mean 差到 5%（隔期 0=24%、隔期 2=29.6%），絕對閾值對
+ * 不同隔期會嚴重誤判（隔期 2 平均就 > 26%、整天閃紅）。各隔期自己跟自己比
+ * 才能 capture「相對於該隔期常態的冷/熱」。
+ *
+ * 0.5σ 帶寬：1σ 帶太寬（隔期 3 σ=21%、藍色帶 ±21% 永遠不會閃紅綠）；
+ * 0.5σ 對應「中度偏離常態」、保留紅綠的辨識度。
+ */
+const statsByInterval = computed<IntervalStats[]>(() => {
+  const slotCount = evidence.value[0]?.picksByInterval.length ?? 0
+  if (slotCount === 0) return []
+  return analyzeIntervalStats(evidence.value, slotCount)
+})
+
 function pad(n: number): string {
   return n.toString().padStart(2, '0')
 }
@@ -211,11 +229,22 @@ function rateText(r: number | null): string {
   return `${(r * 100).toFixed(1)}%`
 }
 
-// 過去 5 期平均染色門檻（使用者拍板）：< 24% 綠、24%-26% 藍、> 26% 紅
-function avgRateColorClass(r: number | null): string {
+/**
+ * 相對閾值染色：用該隔期自己的 mean ± 0.5σ 切。
+ *   - r < mean − 0.5σ → 綠（明顯冷於該隔期常態）
+ *   - mean − 0.5σ ≤ r ≤ mean + 0.5σ → 藍（在該隔期常態範圍內）
+ *   - r > mean + 0.5σ → 紅（明顯熱於該隔期常態）
+ *   - mean / std 為 null（樣本不足）→ muted
+ */
+const SIGMA_K = 0.5
+function avgRateColorClass(r: number | null, intervalIdx: number): string {
   if (r == null) return 'text-muted'
-  if (r < 0.24) return 'text-emerald-500'
-  if (r > 0.26) return 'text-red-500'
+  const s = statsByInterval.value[intervalIdx]
+  if (!s || s.mean == null || s.std == null) return 'text-muted'
+  const low = s.mean - SIGMA_K * s.std
+  const high = s.mean + SIGMA_K * s.std
+  if (r < low) return 'text-emerald-500'
+  if (r > high) return 'text-red-500'
   return 'text-blue-500'
 }
 
@@ -409,12 +438,12 @@ function toggleEvidence() {
                   <span class="ml-0.5">{{ rateText(row.rateByInterval[j] ?? null) }}</span>
                 </span>
                 <span
-                  v-if="row.past5AvgRateByInterval[j] != null"
+                  v-if="row.recentAvgRateByInterval[j] != null"
                   class="font-mono tabular-nums"
-                  :class="avgRateColorClass(row.past5AvgRateByInterval[j] ?? null)"
-                  :title="`過去 5 期該隔期命中機率平均（門檻：< 24% 綠、24%-26% 藍、> 26% 紅）`"
+                  :class="avgRateColorClass(row.recentAvgRateByInterval[j] ?? null, j)"
+                  :title="`含當期在內的最近 ${RECENT_AVG_WINDOW} 期該隔期命中機率平均；染色用該隔期自己的 mean ± 0.5σ（綠 = 明顯冷、藍 = 常態、紅 = 明顯熱）`"
                 >
-                  · 過去 5 期平均 {{ rateText(row.past5AvgRateByInterval[j] ?? null) }}
+                  · 過去 {{ RECENT_AVG_WINDOW }} 期平均 {{ rateText(row.recentAvgRateByInterval[j] ?? null) }}
                 </span>
               </div>
               <div
