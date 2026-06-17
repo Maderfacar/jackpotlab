@@ -107,7 +107,19 @@ const fromCache = computed(() => drawsQuery.data.value?.fromCache)
 const isLive = computed(() => isBingo.value && !isByDateMode.value)
 const lastFetchedAt = computed<string | null>(() => allResults.value[0]?.fetchedAt ?? null)
 
-function refresh() {
+async function refresh() {
+  // 慢彩種（539/大樂透/威力彩）的 recent endpoint 只讀 Firestore 鏡像、
+  // 不會主動去打 taiwanlottery API。如果使用者按重新整理時官方剛開出
+  // 新一期、但 cron 還沒跑到，recent 看到的還是舊資料。
+  // 解法：先觸發一次 forceFresh 把最新一期寫進 Firestore，再 refresh。
+  // 賓果走 by-date?date=today、那條路徑對「今天」本來就會強制現抓、不需要這個。
+  if (!isBingo.value && !isByDateMode.value) {
+    try {
+      await $fetch(`/api/admin/scrape/${gameId.value}`, { method: 'POST' })
+    } catch {
+      // 上游 503 / 官方 API 抖動時、不阻塞 UI、退回讀快取
+    }
+  }
   drawsQuery.refresh()
   if (isLive.value) remainingSec.value = BINGO_REFRESH_SEC
   hydrateAnalysis()
