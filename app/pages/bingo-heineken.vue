@@ -110,6 +110,8 @@ function closeNoop() {
         </template>
       </HindsightSignalDetail>
     </template>
+
+    <BingoHeinekenBetPickerFab />
   </UContainer>
 </template>
 
