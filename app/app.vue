@@ -42,6 +42,15 @@ useSeoMeta({
 
       <template #right>
         <UButton
+          to="/iverson"
+          color="neutral"
+          variant="ghost"
+          icon="i-lucide-target"
+          size="sm"
+        >
+          艾佛森
+        </UButton>
+        <UButton
           to="/draws"
           color="neutral"
           variant="ghost"
