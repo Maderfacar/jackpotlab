@@ -13,7 +13,7 @@
  * UI 與 QR 渲染不需要動。
  */
 
-export type Multiplier = 1 | 2 | 3 | 4 | 5 | 10 | 20
+export type Multiplier = 1 | 2 | 3 | 4 | 5 | 10
 
 export interface StarBet {
   kind: 'star'
@@ -47,7 +47,7 @@ export interface BetValidation {
 }
 
 export const STAR_OPTIONS: number[] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-export const MULTIPLIER_OPTIONS: Multiplier[] = [1, 2, 3, 4, 5, 10, 20]
+export const MULTIPLIER_OPTIONS: Multiplier[] = [1, 2, 3, 4, 5, 10]
 export const TOTAL_NUMBERS = 80
 
 function pad2(n: number): string {
