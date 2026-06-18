@@ -3,35 +3,47 @@
  * 賓果海尼根浮動選號工具
  *
  * - 右下角固定 FAB，點開全螢幕 modal（手機）/ 置中卡片（桌機）
- * - 內含 1-80 號碼牌、星等、大小、單雙、倍數選擇
- * - 即時產生 QR Code（暫時字串，正式編碼等樣本敲定）
- * - 提示「請把螢幕亮度調到最大」
+ * - 一張單可以含多注：星等注 / 大小注 / 單雙注，每注獨立倍數
+ * - 上：已加入注清單（可刪除）
+ * - 中：草稿區（切換注型 → 編輯 → 確認加入）
+ * - 下：QR Code（M 容錯 + 螢幕亮度提示）
  */
 import QRCode from 'qrcode'
 import {
-  buildBetDataString,
-  makeEmptyBet,
+  buildBetslipDataString,
+  makeEmptyBetslip,
+  newBigSmallBet,
+  newOddEvenBet,
+  newStarBet,
+  summarizeBet,
   validateBet,
+  validateBetslip,
   MULTIPLIER_OPTIONS,
   STAR_OPTIONS,
   TOTAL_NUMBERS,
-  type BigSmall,
-  type Multiplier,
-  type OddEven
+  type Bet,
+  type BetKind,
+  type Multiplier
 } from '~/utils/bingo-bet'
 
 const open = ref(false)
-const bet = ref(makeEmptyBet())
+const slip = ref(makeEmptyBetslip())
+const draft = ref<Bet>(newStarBet())
 const qrDataUrl = ref('')
 const qrError = ref<string | null>(null)
 
-const validation = computed(() => validateBet(bet.value))
-const dataString = computed(() => buildBetDataString(bet.value))
-const remainingPicks = computed(() => bet.value.stars - bet.value.numbers.length)
+const draftValidation = computed(() => validateBet(draft.value))
+const slipValidation = computed(() => validateBetslip(slip.value))
+const dataString = computed(() => buildBetslipDataString(slip.value))
 
-const playSelectionComplete = computed(
-  () => bet.value.numbers.length === bet.value.stars
+const allNumbers = computed(() =>
+  Array.from({ length: TOTAL_NUMBERS }, (_, i) => i + 1)
 )
+
+const draftRemainingPicks = computed(() => {
+  if (draft.value.kind !== 'star') return 0
+  return draft.value.stars - draft.value.numbers.length
+})
 
 function toggleOpen() {
   open.value = !open.value
@@ -41,44 +53,50 @@ function close() {
   open.value = false
 }
 
-function isPicked(n: number): boolean {
-  return bet.value.numbers.includes(n)
-}
-
-function toggleNumber(n: number) {
-  if (isPicked(n)) {
-    bet.value.numbers = bet.value.numbers.filter(x => x !== n)
-    return
-  }
-  if (bet.value.numbers.length >= bet.value.stars) return // 達上限不再加
-  bet.value.numbers = [...bet.value.numbers, n]
+function switchDraftKind(kind: BetKind) {
+  if (kind === 'star') draft.value = newStarBet()
+  else if (kind === 'bigsmall') draft.value = newBigSmallBet()
+  else draft.value = newOddEvenBet()
 }
 
 function setStars(s: number) {
-  bet.value.stars = s
-  // 如果之前選太多，裁掉多餘
-  if (bet.value.numbers.length > s) {
-    bet.value.numbers = bet.value.numbers.slice(0, s)
+  if (draft.value.kind !== 'star') return
+  draft.value.stars = s
+  if (draft.value.numbers.length > s) {
+    draft.value.numbers = draft.value.numbers.slice(0, s)
   }
 }
 
+function isPicked(n: number): boolean {
+  return draft.value.kind === 'star' && draft.value.numbers.includes(n)
+}
+
+function toggleNumber(n: number) {
+  if (draft.value.kind !== 'star') return
+  if (isPicked(n)) {
+    draft.value.numbers = draft.value.numbers.filter(x => x !== n)
+    return
+  }
+  if (draft.value.numbers.length >= draft.value.stars) return
+  draft.value.numbers = [...draft.value.numbers, n]
+}
+
 function setMultiplier(m: Multiplier) {
-  bet.value.multiplier = m
+  draft.value.multiplier = m
 }
 
-function setBigSmall(v: Exclude<BigSmall, null>) {
-  bet.value.bigSmall = bet.value.bigSmall === v ? null : v
+function setBigSmall(v: 'big' | 'small') {
+  if (draft.value.kind !== 'bigsmall') return
+  draft.value.value = v
 }
 
-function setOddEven(v: Exclude<OddEven, null>) {
-  bet.value.oddEven = bet.value.oddEven === v ? null : v
-}
-
-function clearAll() {
-  bet.value = makeEmptyBet()
+function setOddEven(v: 'odd' | 'even') {
+  if (draft.value.kind !== 'oddeven') return
+  draft.value.value = v
 }
 
 function randomPick() {
+  if (draft.value.kind !== 'star') return
   const pool = Array.from({ length: TOTAL_NUMBERS }, (_, i) => i + 1)
   for (let i = pool.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1))
@@ -86,12 +104,31 @@ function randomPick() {
     pool[i] = pool[j] as number
     pool[j] = tmp
   }
-  bet.value.numbers = pool.slice(0, bet.value.stars).sort((a, b) => a - b)
+  draft.value.numbers = pool.slice(0, draft.value.stars).sort((a, b) => a - b)
+}
+
+function clearDraft() {
+  switchDraftKind(draft.value.kind)
+}
+
+function addDraftToSlip() {
+  if (!draftValidation.value.valid) return
+  slip.value.bets = [...slip.value.bets, JSON.parse(JSON.stringify(draft.value)) as Bet]
+  // 加完之後保留同一注型，但欄位歸零，方便連續打同型不同號的注
+  clearDraft()
+}
+
+function removeBet(idx: number) {
+  slip.value.bets = slip.value.bets.filter((_, i) => i !== idx)
+}
+
+function clearAllBets() {
+  slip.value = makeEmptyBetslip()
 }
 
 async function renderQr() {
   qrError.value = null
-  if (!validation.value.valid) {
+  if (!slipValidation.value.valid) {
     qrDataUrl.value = ''
     return
   }
@@ -100,10 +137,7 @@ async function renderQr() {
       errorCorrectionLevel: 'M',
       margin: 2,
       width: 320,
-      color: {
-        dark: '#000000',
-        light: '#ffffff'
-      }
+      color: { dark: '#000000', light: '#ffffff' }
     })
   } catch (e: unknown) {
     qrError.value = e instanceof Error ? e.message : 'QR 產生失敗'
@@ -111,15 +145,10 @@ async function renderQr() {
   }
 }
 
-watch([dataString, () => validation.value.valid], () => {
+watch([dataString, () => slipValidation.value.valid], () => {
   renderQr()
 }, { immediate: true })
 
-const allNumbers = computed(() =>
-  Array.from({ length: TOTAL_NUMBERS }, (_, i) => i + 1)
-)
-
-// 點開時鎖 body scroll
 watch(open, (v) => {
   if (typeof document === 'undefined') return
   document.body.style.overflow = v ? 'hidden' : ''
@@ -128,6 +157,10 @@ watch(open, (v) => {
 onUnmounted(() => {
   if (typeof document !== 'undefined') document.body.style.overflow = ''
 })
+
+const kindLabel = (k: BetKind) => k === 'star' ? '星等注' : k === 'bigsmall' ? '大小注' : '單雙注'
+const kindIcon = (k: BetKind) =>
+  k === 'star' ? 'i-lucide-star' : k === 'bigsmall' ? 'i-lucide-scale' : 'i-lucide-binary'
 </script>
 
 <template>
@@ -143,6 +176,10 @@ onUnmounted(() => {
       class="size-6"
     />
     <span class="bet-fab-label">選號</span>
+    <span
+      v-if="slip.bets.length > 0"
+      class="bet-fab-badge"
+    >{{ slip.bets.length }}</span>
   </button>
 
   <!-- 浮動面板 -->
@@ -181,145 +218,236 @@ onUnmounted(() => {
           </header>
 
           <div class="bet-panel-body">
-            <!-- 星等 -->
+            <!-- 已加入注清單 -->
             <section class="bet-section">
               <div class="bet-section-title">
-                <span>星等</span>
-                <span class="text-xs text-muted">
-                  已選 {{ bet.numbers.length }} / {{ bet.stars }}
-                </span>
+                <span>本單注內容（{{ slip.bets.length }} 注）</span>
+                <button
+                  v-if="slip.bets.length > 0"
+                  type="button"
+                  class="bet-link-btn"
+                  @click="clearAllBets"
+                >
+                  全部清除
+                </button>
+              </div>
+              <ul
+                v-if="slip.bets.length > 0"
+                class="bet-list"
+              >
+                <li
+                  v-for="(b, i) in slip.bets"
+                  :key="i"
+                  class="bet-list-item"
+                >
+                  <UIcon
+                    :name="kindIcon(b.kind)"
+                    class="size-4 text-primary"
+                  />
+                  <span class="bet-list-text">{{ summarizeBet(b) }}</span>
+                  <button
+                    type="button"
+                    class="bet-list-del"
+                    aria-label="刪除此注"
+                    @click="removeBet(i)"
+                  >
+                    <UIcon
+                      name="i-lucide-x"
+                      class="size-4"
+                    />
+                  </button>
+                </li>
+              </ul>
+              <p
+                v-else
+                class="bet-empty-hint"
+              >
+                還沒有任何注，從下方草稿區加入。
+              </p>
+            </section>
+
+            <!-- 草稿區 -->
+            <section class="bet-section bet-draft">
+              <div class="bet-section-title">
+                <span>新增注</span>
+              </div>
+
+              <!-- 注型切換 -->
+              <div class="bet-chips">
+                <button
+                  v-for="k in (['star', 'bigsmall', 'oddeven'] as BetKind[])"
+                  :key="k"
+                  type="button"
+                  class="bet-chip"
+                  :class="{ active: draft.kind === k }"
+                  @click="switchDraftKind(k)"
+                >
+                  <UIcon
+                    :name="kindIcon(k)"
+                    class="size-3.5 mr-1 align-middle"
+                  />
+                  {{ kindLabel(k) }}
+                </button>
+              </div>
+
+              <!-- 星等注 -->
+              <template v-if="draft.kind === 'star'">
+                <div class="bet-subtitle">
+                  <span>星等</span>
+                  <span class="text-xs text-muted">
+                    已選 {{ draft.numbers.length }} / {{ draft.stars }}
+                  </span>
+                </div>
+                <div class="bet-chips">
+                  <button
+                    v-for="s in STAR_OPTIONS"
+                    :key="s"
+                    type="button"
+                    class="bet-chip"
+                    :class="{ active: draft.stars === s }"
+                    @click="setStars(s)"
+                  >
+                    {{ s }}星
+                  </button>
+                </div>
+
+                <div class="bet-subtitle">
+                  <span>號碼（01-80）</span>
+                  <span
+                    v-if="draftRemainingPicks > 0"
+                    class="text-xs text-primary"
+                  >還可選 {{ draftRemainingPicks }}</span>
+                  <span
+                    v-else
+                    class="text-xs text-success"
+                  >已選滿</span>
+                </div>
+                <div class="bet-grid">
+                  <button
+                    v-for="n in allNumbers"
+                    :key="n"
+                    type="button"
+                    class="bet-num"
+                    :class="{
+                      picked: isPicked(n),
+                      disabled: !isPicked(n) && draftRemainingPicks === 0
+                    }"
+                    @click="toggleNumber(n)"
+                  >
+                    {{ n.toString().padStart(2, '0') }}
+                  </button>
+                </div>
+                <div class="flex gap-2 pt-2">
+                  <UButton
+                    size="xs"
+                    color="neutral"
+                    variant="outline"
+                    icon="i-lucide-shuffle"
+                    @click="randomPick"
+                  >
+                    電腦選號
+                  </UButton>
+                  <UButton
+                    size="xs"
+                    color="neutral"
+                    variant="ghost"
+                    icon="i-lucide-eraser"
+                    @click="clearDraft"
+                  >
+                    清除
+                  </UButton>
+                </div>
+              </template>
+
+              <!-- 大小注 -->
+              <template v-else-if="draft.kind === 'bigsmall'">
+                <div class="bet-subtitle">
+                  <span>大或小</span>
+                </div>
+                <div class="bet-chips">
+                  <button
+                    type="button"
+                    class="bet-chip"
+                    :class="{ active: draft.value === 'big' }"
+                    @click="setBigSmall('big')"
+                  >
+                    大（&gt;40）
+                  </button>
+                  <button
+                    type="button"
+                    class="bet-chip"
+                    :class="{ active: draft.value === 'small' }"
+                    @click="setBigSmall('small')"
+                  >
+                    小（≤40）
+                  </button>
+                </div>
+              </template>
+
+              <!-- 單雙注 -->
+              <template v-else-if="draft.kind === 'oddeven'">
+                <div class="bet-subtitle">
+                  <span>單或雙</span>
+                </div>
+                <div class="bet-chips">
+                  <button
+                    type="button"
+                    class="bet-chip"
+                    :class="{ active: draft.value === 'odd' }"
+                    @click="setOddEven('odd')"
+                  >
+                    單
+                  </button>
+                  <button
+                    type="button"
+                    class="bet-chip"
+                    :class="{ active: draft.value === 'even' }"
+                    @click="setOddEven('even')"
+                  >
+                    雙
+                  </button>
+                </div>
+              </template>
+
+              <!-- 此注倍數 -->
+              <div class="bet-subtitle">
+                <span>此注倍數</span>
               </div>
               <div class="bet-chips">
                 <button
-                  v-for="s in STAR_OPTIONS"
-                  :key="s"
+                  v-for="m in MULTIPLIER_OPTIONS"
+                  :key="m"
                   type="button"
                   class="bet-chip"
-                  :class="{ active: bet.stars === s }"
-                  @click="setStars(s)"
+                  :class="{ active: draft.multiplier === m }"
+                  @click="setMultiplier(m)"
                 >
-                  {{ s }}星
+                  {{ m }}x
                 </button>
               </div>
-            </section>
 
-            <!-- 1-80 號碼牌 -->
-            <section class="bet-section">
-              <div class="bet-section-title">
-                <span>號碼（01-80）</span>
-                <span
-                  v-if="remainingPicks > 0"
-                  class="text-xs text-primary"
-                >還可選 {{ remainingPicks }}</span>
-                <span
-                  v-else
-                  class="text-xs text-success"
-                >已選滿</span>
-              </div>
-              <div class="bet-grid">
-                <button
-                  v-for="n in allNumbers"
-                  :key="n"
-                  type="button"
-                  class="bet-num"
-                  :class="{
-                    picked: isPicked(n),
-                    disabled: !isPicked(n) && remainingPicks === 0
-                  }"
-                  @click="toggleNumber(n)"
-                >
-                  {{ n.toString().padStart(2, '0') }}
-                </button>
-              </div>
-              <div class="flex gap-2 pt-2">
+              <!-- 加入此注 -->
+              <div class="bet-draft-actions">
                 <UButton
-                  size="xs"
-                  color="neutral"
-                  variant="outline"
-                  icon="i-lucide-shuffle"
-                  @click="randomPick"
+                  block
+                  color="primary"
+                  :disabled="!draftValidation.valid"
+                  icon="i-lucide-plus-circle"
+                  @click="addDraftToSlip"
                 >
-                  電腦選號
+                  加入此注 ({{ summarizeBet(draft) }})
                 </UButton>
-                <UButton
-                  size="xs"
-                  color="neutral"
-                  variant="ghost"
-                  icon="i-lucide-eraser"
-                  @click="clearAll"
+                <ul
+                  v-if="!draftValidation.valid"
+                  class="bet-warn"
                 >
-                  全部清除
-                </UButton>
-              </div>
-            </section>
-
-            <!-- 加注玩法 -->
-            <section class="bet-section">
-              <div class="bet-section-title">
-                <span>加注玩法</span>
-                <span
-                  v-if="!playSelectionComplete"
-                  class="text-xs text-muted"
-                >請先選滿號碼</span>
-              </div>
-              <div class="bet-rows">
-                <div class="bet-row">
-                  <span class="bet-row-label">大小</span>
-                  <div class="bet-chips">
-                    <button
-                      type="button"
-                      class="bet-chip"
-                      :class="{ active: bet.bigSmall === 'big' }"
-                      @click="setBigSmall('big')"
-                    >
-                      大（&gt;40）
-                    </button>
-                    <button
-                      type="button"
-                      class="bet-chip"
-                      :class="{ active: bet.bigSmall === 'small' }"
-                      @click="setBigSmall('small')"
-                    >
-                      小（≤40）
-                    </button>
-                  </div>
-                </div>
-                <div class="bet-row">
-                  <span class="bet-row-label">單雙</span>
-                  <div class="bet-chips">
-                    <button
-                      type="button"
-                      class="bet-chip"
-                      :class="{ active: bet.oddEven === 'odd' }"
-                      @click="setOddEven('odd')"
-                    >
-                      單
-                    </button>
-                    <button
-                      type="button"
-                      class="bet-chip"
-                      :class="{ active: bet.oddEven === 'even' }"
-                      @click="setOddEven('even')"
-                    >
-                      雙
-                    </button>
-                  </div>
-                </div>
-                <div class="bet-row">
-                  <span class="bet-row-label">倍數</span>
-                  <div class="bet-chips">
-                    <button
-                      v-for="m in MULTIPLIER_OPTIONS"
-                      :key="m"
-                      type="button"
-                      class="bet-chip"
-                      :class="{ active: bet.multiplier === m }"
-                      @click="setMultiplier(m)"
-                    >
-                      {{ m }}x
-                    </button>
-                  </div>
-                </div>
+                  <li
+                    v-for="r in draftValidation.reasons"
+                    :key="r"
+                  >
+                    {{ r }}
+                  </li>
+                </ul>
               </div>
             </section>
 
@@ -330,7 +458,7 @@ onUnmounted(() => {
                 <span class="text-xs text-muted">M 容錯</span>
               </div>
               <div
-                v-if="validation.valid"
+                v-if="slipValidation.valid"
                 class="bet-qr-wrap"
               >
                 <div class="bet-qr-tip">
@@ -368,7 +496,7 @@ onUnmounted(() => {
                 />
                 <ul>
                   <li
-                    v-for="r in validation.reasons"
+                    v-for="r in slipValidation.reasons"
                     :key="r"
                   >
                     {{ r }}
@@ -405,19 +533,25 @@ onUnmounted(() => {
   transition: transform 0.18s ease, box-shadow 0.18s ease;
 }
 
-.bet-fab:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.45);
-}
-
-.bet-fab:active {
-  transform: translateY(0);
-}
-
-.bet-fab-label {
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
+.bet-fab:hover { transform: translateY(-2px); box-shadow: 0 14px 32px rgba(0, 0, 0, 0.45); }
+.bet-fab:active { transform: translateY(0); }
+.bet-fab-label { font-size: 10px; font-weight: 600; letter-spacing: 0.04em; }
+.bet-fab-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #ef4444;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.4);
 }
 
 .bet-overlay {
@@ -445,13 +579,8 @@ onUnmounted(() => {
 }
 
 @media (min-width: 768px) {
-  .bet-overlay {
-    align-items: center;
-  }
-  .bet-panel {
-    border-radius: 16px;
-    max-height: 88vh;
-  }
+  .bet-overlay { align-items: center; }
+  .bet-panel { border-radius: 16px; max-height: 88vh; }
 }
 
 .bet-panel-header {
@@ -476,9 +605,7 @@ onUnmounted(() => {
   cursor: pointer;
 }
 
-.bet-close:hover {
-  background: rgba(255, 255, 255, 0.14);
-}
+.bet-close:hover { background: rgba(255, 255, 255, 0.14); }
 
 .bet-panel-body {
   flex: 1;
@@ -499,8 +626,79 @@ onUnmounted(() => {
   color: var(--ui-text);
 }
 
-.bet-section-title > :last-child {
-  font-weight: 400;
+.bet-section-title > :last-child { font-weight: 400; }
+
+.bet-subtitle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 12px;
+  padding-bottom: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ui-muted, #a1a1aa);
+}
+
+.bet-draft {
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.bet-link-btn {
+  background: none;
+  border: none;
+  color: var(--ui-muted, #a1a1aa);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 4px 8px;
+}
+
+.bet-link-btn:hover { color: var(--ui-text); text-decoration: underline; }
+
+.bet-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.bet-list-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.bet-list-text { flex: 1; }
+
+.bet-list-del {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--ui-text);
+  border: none;
+  cursor: pointer;
+}
+
+.bet-list-del:hover { background: rgba(239, 68, 68, 0.4); }
+
+.bet-empty-hint {
+  font-size: 12px;
+  color: var(--ui-muted, #a1a1aa);
+  padding: 10px 0;
 }
 
 .bet-chips {
@@ -521,10 +719,7 @@ onUnmounted(() => {
   min-width: 44px;
 }
 
-.bet-chip:hover {
-  background: rgba(255, 255, 255, 0.06);
-}
-
+.bet-chip:hover { background: rgba(255, 255, 255, 0.06); }
 .bet-chip.active {
   background: var(--ui-primary, #f59e0b);
   color: #1a1a1a;
@@ -550,10 +745,7 @@ onUnmounted(() => {
   transition: transform 0.06s ease, background 0.12s ease, border-color 0.12s ease;
 }
 
-.bet-num:hover {
-  background: rgba(255, 255, 255, 0.06);
-}
-
+.bet-num:hover { background: rgba(255, 255, 255, 0.06); }
 .bet-num.picked {
   background: var(--ui-primary, #f59e0b);
   color: #1a1a1a;
@@ -562,32 +754,21 @@ onUnmounted(() => {
   transform: scale(0.98);
 }
 
-.bet-num.disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
+.bet-num.disabled { opacity: 0.35; cursor: not-allowed; }
+.bet-num.disabled:hover { background: rgba(255, 255, 255, 0.03); }
+
+.bet-draft-actions {
+  padding-top: 12px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.08);
+  margin-top: 14px;
 }
 
-.bet-num.disabled:hover {
-  background: rgba(255, 255, 255, 0.03);
-}
-
-.bet-rows {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.bet-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.bet-row-label {
-  width: 56px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--ui-text);
+.bet-warn {
+  list-style: disc;
+  padding-left: 18px;
+  font-size: 12px;
+  color: #facc15;
+  margin-top: 8px;
 }
 
 .bet-qr-wrap {
@@ -624,11 +805,7 @@ onUnmounted(() => {
   color: var(--ui-muted, #a1a1aa);
 }
 
-.bet-debug summary {
-  cursor: pointer;
-  padding: 4px 0;
-}
-
+.bet-debug summary { cursor: pointer; padding: 4px 0; }
 .bet-debug code {
   display: block;
   background: rgba(0, 0, 0, 0.4);
@@ -651,15 +828,10 @@ onUnmounted(() => {
   color: #facc15;
 }
 
-.bet-qr-empty ul {
-  list-style: disc;
-  padding-left: 18px;
-}
+.bet-qr-empty ul { list-style: disc; padding-left: 18px; }
 
 .bet-fade-enter-active,
-.bet-fade-leave-active {
-  transition: opacity 0.18s ease;
-}
+.bet-fade-leave-active { transition: opacity 0.18s ease; }
 
 .bet-fade-enter-active .bet-panel,
 .bet-fade-leave-active .bet-panel {
@@ -667,12 +839,8 @@ onUnmounted(() => {
 }
 
 .bet-fade-enter-from,
-.bet-fade-leave-to {
-  opacity: 0;
-}
+.bet-fade-leave-to { opacity: 0; }
 
 .bet-fade-enter-from .bet-panel,
-.bet-fade-leave-to .bet-panel {
-  transform: translateY(20px);
-}
+.bet-fade-leave-to .bet-panel { transform: translateY(20px); }
 </style>
