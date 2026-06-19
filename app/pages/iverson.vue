@@ -90,7 +90,11 @@ function stopPolling() {
 const headerHeight = ref(0)
 let headerResizeObserver: ResizeObserver | null = null
 
+// config 改變→存 localStorage（deep watch、含 reactive 內所有欄位）
+watch(config, saveConfigToStorage, { deep: true })
+
 onMounted(() => {
+  loadConfigFromStorage()
   load()
   if (typeof window === 'undefined') return
 
@@ -288,34 +292,85 @@ const positionRows = computed<PositionRow[]>(() => {
   return rows
 })
 
-// ---- Tab 3：下一期 20 顆預測（N=60 / D=500，每期套規則選 20 號） ------
+// ---- Tab 3：符合規則的 20 顆（N=60 / D=500，每期套規則篩選） ----------
 //
-// 規則（2026-06-19 使用者拍板）：
-//
-// 單一隔期規則：
-//   - 只從隔期 0~5 選；只取 record CSV 首碼為 '0' 的隔期（最新一期此 slot 有命中）
-//   - 排除位置：用 T 自己的 positions CSV、取所有 Y 值 >= 10 的 Y、做去重集合
-//   - 5/6/7/8/9 五個位置在 20 顆裡每個位置最多 2 個
-//
-// 全域規則（cap）：
-//   - 候選排序優先序：3 (避免 cap 抵達) > 1 (小隔期優先) > 2 (低位置優先)
-//   - <=40 ≤ 12、>40 ≤ 12
-//   - 奇數 ≤ 12、偶數 ≤ 12
-//   - 任一相同尾數 ≤ 5
-//   - 連續號碼最大連跑 ≤ 5
-//
-// 候選不足 20 / cap 衝突湊不滿：顯示實際數、標「不足 20」（不填、不破 cap）
+// 使用者拍板（2026-06-19）：規則參數開放於 UI 即時調整、localStorage 持久化。
+// 預設：
+//   單一隔期規則：
+//     - 只從隔期 0~3 取候選；只取 record CSV 首碼為 '0' 的隔期
+//     - 排除位置：用 T 自己的 positions CSV、取所有 Y 值 >= 10 的 Y、做去重集合
+//     - 5/6/7/8/9 五個位置在 20 顆裡每個位置最多 2 個
+//   全域 cap：
+//     - <=40 ≤ 12、>40 ≤ 12
+//     - 奇數 ≤ 12、偶數 ≤ 12
+//     - 任一相同尾數 ≤ 5
+//     - 連續號碼最大連跑 ≤ 5
+//   候選排序優先序：3 (避免 cap 抵達) > 1 (小隔期優先) > 2 (低位置優先)
+//   候選不足 20 / cap 衝突湊不滿：顯示實際數、標「不足 20」（不填、不破 cap）
 
-const PREDICT_TARGET = 20
-const SOURCE_MAX_INTERVAL = 5 // 隔期 0~5
-const POS_CAP_HIGH = 10 // Y >= 10 排除
-const POS_5TO9_CAP = 2 // 位置 5/6/7/8/9 各自 ≤ 2
-const LE40_CAP = 12
-const GT40_CAP = 12
-const ODD_CAP = 12
-const EVEN_CAP = 12
-const TAIL_CAP = 5
-const CONSECUTIVE_CAP = 5
+interface RuleConfig {
+  predictTarget: number
+  sourceMaxInterval: number
+  posCapHigh: number
+  pos5to9Cap: number
+  le40Cap: number
+  gt40Cap: number
+  oddCap: number
+  evenCap: number
+  tailCap: number
+  consecutiveCap: number
+}
+
+const DEFAULT_CONFIG: Readonly<RuleConfig> = Object.freeze({
+  predictTarget: 20,
+  sourceMaxInterval: 3,
+  posCapHigh: 10,
+  pos5to9Cap: 2,
+  le40Cap: 12,
+  gt40Cap: 12,
+  oddCap: 12,
+  evenCap: 12,
+  tailCap: 5,
+  consecutiveCap: 5
+})
+
+const RULE_STORAGE_KEY = 'iverson-prediction-rules-v1'
+const config = reactive<RuleConfig>({ ...DEFAULT_CONFIG })
+const settingsOpen = ref(false)
+
+// snapshot 一律切 slot[0..SLOT_SNAPSHOT_DEPTH-1]，user 在此範圍內調整 sourceMaxInterval。
+// snapshots 不依賴 config，只依賴 allDraws、重算成本低；config 改變只觸發 predictionRows 重算。
+const SLOT_SNAPSHOT_DEPTH = 10
+
+function resetConfig() {
+  Object.assign(config, DEFAULT_CONFIG)
+}
+
+function loadConfigFromStorage() {
+  if (typeof window === 'undefined') return
+  try {
+    const raw = window.localStorage.getItem(RULE_STORAGE_KEY)
+    if (!raw) return
+    const parsed = JSON.parse(raw) as Partial<RuleConfig>
+    for (const k of Object.keys(DEFAULT_CONFIG) as Array<keyof RuleConfig>) {
+      const v = parsed[k]
+      if (typeof v === 'number' && Number.isFinite(v)) {
+        config[k] = v
+      }
+    }
+  } catch {
+    // 忽略 storage 故障、用預設
+  }
+}
+
+function saveConfigToStorage() {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(RULE_STORAGE_KEY, JSON.stringify(config))
+  } catch {
+    // 忽略 storage 故障
+  }
+}
 
 interface SlotSnapshot {
   period: number
@@ -327,10 +382,10 @@ interface PredictionSnapshot {
   drawTerm: number
   drawDate: string
   positions: string
-  slot06: SlotSnapshot[]
+  topSlots: SlotSnapshot[]
 }
 
-// 漸進式 hydration、每步快照 slot[0..5]。Tab 3 專用。
+// 漸進式 hydration、每步快照 slot[0..SLOT_SNAPSHOT_DEPTH-1]。
 const predictionSnapshots = computed<PredictionSnapshot[]>(() => {
   if (allDraws.value.length === 0) return []
   let s = createInitialState('bingo_bingo', POSITIONS_ANALYSIS_N)
@@ -346,7 +401,7 @@ const predictionSnapshots = computed<PredictionSnapshot[]>(() => {
       drawTerm: d.drawTerm,
       drawDate: d.drawDate,
       positions: hist.positions ?? '',
-      slot06: s.periods.slice(0, SOURCE_MAX_INTERVAL + 1).map(p => ({
+      topSlots: s.periods.slice(0, SLOT_SNAPSHOT_DEPTH).map(p => ({
         period: p.period,
         record: p.record,
         prizes: [...p.prizes]
@@ -366,7 +421,6 @@ function wouldViolatePredictionCap(picks: PredictionPick[], cand: PredictionPick
   const newNs = picks.map(p => p.n)
   newNs.push(cand.n)
 
-  // <=40 / >40
   let le40 = 0
   let gt40 = 0
   let odd = 0
@@ -377,21 +431,19 @@ function wouldViolatePredictionCap(picks: PredictionPick[], cand: PredictionPick
     if (x % 2 === 1) odd++
     else even++
   }
-  if (le40 > LE40_CAP) return true
-  if (gt40 > GT40_CAP) return true
-  if (odd > ODD_CAP) return true
-  if (even > EVEN_CAP) return true
+  if (le40 > config.le40Cap) return true
+  if (gt40 > config.gt40Cap) return true
+  if (odd > config.oddCap) return true
+  if (even > config.evenCap) return true
 
-  // 尾數
   const tailCount = new Map<number, number>()
   for (const x of newNs) {
     const t = x % 10
     const cur = (tailCount.get(t) ?? 0) + 1
-    if (cur > TAIL_CAP) return true
+    if (cur > config.tailCap) return true
     tailCount.set(t, cur)
   }
 
-  // 連跑
   const sorted = [...newNs].sort((a, b) => a - b)
   let cur = 1
   let max = 1
@@ -403,9 +455,9 @@ function wouldViolatePredictionCap(picks: PredictionPick[], cand: PredictionPick
       cur = 1
     }
   }
-  if (max > CONSECUTIVE_CAP) return true
+  if (max > config.consecutiveCap) return true
 
-  // 位置 5/6/7/8/9 各 ≤ 2
+  // 位置 5/6/7/8/9 各 ≤ pos5to9Cap
   const posCount = new Map<number, number>()
   for (const p of picks) {
     if (p.position >= 5 && p.position <= 9) {
@@ -414,7 +466,7 @@ function wouldViolatePredictionCap(picks: PredictionPick[], cand: PredictionPick
   }
   if (cand.position >= 5 && cand.position <= 9) {
     const cur2 = (posCount.get(cand.position) ?? 0) + 1
-    if (cur2 > POS_5TO9_CAP) return true
+    if (cur2 > config.pos5to9Cap) return true
   }
   return false
 }
@@ -482,13 +534,13 @@ function computeCapStats(picks: PredictionPick[]): CapStats {
       pos59MaxValue = v
     }
   }
-  const allWithinCap = le40 <= LE40_CAP
-    && gt40 <= GT40_CAP
-    && odd <= ODD_CAP
-    && even <= EVEN_CAP
-    && tailMax <= TAIL_CAP
-    && maxRun <= CONSECUTIVE_CAP
-    && pos59Max <= POS_5TO9_CAP
+  const allWithinCap = le40 <= config.le40Cap
+    && gt40 <= config.gt40Cap
+    && odd <= config.oddCap
+    && even <= config.evenCap
+    && tailMax <= config.tailCap
+    && maxRun <= config.consecutiveCap
+    && pos59Max <= config.pos5to9Cap
   return {
     le40,
     gt40,
@@ -531,8 +583,9 @@ function predictFromSnapshot(snap: PredictionSnapshot): {
   shortBy: number
   excludedYList: number[]
 } {
-  // 1. 過濾 slot[0..5]：record CSV 首碼為 '0'
-  const eligibleSlots = snap.slot06.filter((p) => {
+  // 1. 把 snapshot 切到 user 指定的 sourceMaxInterval 範圍；過濾 record 首碼 '0'
+  const inRange = snap.topSlots.slice(0, config.sourceMaxInterval + 1)
+  const eligibleSlots = inRange.filter((p) => {
     const first = p.record.split(',')[0]
     return first === '0'
   })
@@ -546,18 +599,18 @@ function predictFromSnapshot(snap: PredictionSnapshot): {
     })
   }
 
-  // 3. 排除位置：T positions CSV 內所有 Y >= 10 的 Y 集合
+  // 3. 排除位置：T positions CSV 內所有 Y >= posCapHigh 的 Y 集合
   const excludedY = new Set<number>()
   for (const s of snap.positions.split(',')) {
     if (!s) continue
     const dash = s.indexOf('-')
     if (dash < 0) continue
     const y = Number.parseInt(s.slice(dash + 1), 10)
-    if (Number.isFinite(y) && y >= POS_CAP_HIGH) excludedY.add(y)
+    if (Number.isFinite(y) && y >= config.posCapHigh) excludedY.add(y)
   }
   let filtered = allCands.filter(c => !excludedY.has(c.position))
 
-  // 4. 去重（同號可能跨多個 slot —— step b 已移除、理論上不會、但保險起見）
+  // 4. 去重
   const seenN = new Set<number>()
   filtered = filtered.filter((c) => {
     if (seenN.has(c.n)) return false
@@ -571,10 +624,10 @@ function predictFromSnapshot(snap: PredictionSnapshot): {
     return a.position - b.position
   })
 
-  // 6. Greedy 選 20：cap 抵達者跳過（cap 避免 = primary）
+  // 6. Greedy 選到 predictTarget：cap 抵達者跳過（cap 避免 = primary）
   const picks: PredictionPick[] = []
   const remaining = [...filtered]
-  while (picks.length < PREDICT_TARGET) {
+  while (picks.length < config.predictTarget) {
     let chosenIdx = -1
     for (let i = 0; i < remaining.length; i++) {
       if (!wouldViolatePredictionCap(picks, remaining[i]!)) {
@@ -588,7 +641,7 @@ function predictFromSnapshot(snap: PredictionSnapshot): {
   }
   return {
     picks,
-    shortBy: PREDICT_TARGET - picks.length,
+    shortBy: config.predictTarget - picks.length,
     excludedYList: [...excludedY].sort((a, b) => a - b)
   }
 }
@@ -682,11 +735,11 @@ function capColorClass(value: number, cap: number): string {
 
 type TabValue = 'interval' | 'positions' | 'prediction'
 const activeTab = ref<TabValue>('interval')
-const tabItems = [
+const tabItems = computed(() => [
   { label: '隔期剩餘號碼', value: 'interval' as const, icon: 'i-lucide-layers' },
   { label: '獎號關聯位置', value: 'positions' as const, icon: 'i-lucide-link' },
-  { label: '符合規則的 20 顆', value: 'prediction' as const, icon: 'i-lucide-filter' }
-]
+  { label: `符合規則的 ${config.predictTarget} 顆`, value: 'prediction' as const, icon: 'i-lucide-filter' }
+])
 </script>
 
 <template>
@@ -861,7 +914,7 @@ const tabItems = [
       </div>
       <template v-else>
         <div class="flex items-start flex-wrap gap-2 text-xs text-muted">
-          <span>依規則從每期當下「隔期 0~5」（最新記錄為 0、位置不在 T 排除集合內）篩選 20 顆、與下一期實際開出比對。共 {{ predictionRows.length }} 期，待開獎期釘頂、歷史最新在上。</span>
+          <span>依規則從每期當下「隔期 0~{{ config.sourceMaxInterval }}」（最新記錄為 0、位置不在 T 排除集合內）篩選 {{ config.predictTarget }} 顆、與下一期實際開出比對。共 {{ predictionRows.length }} 期，待開獎期釘頂、歷史最新在上。</span>
           <UPopover :content="{ side: 'bottom', align: 'start' }">
             <UButton
               color="neutral"
@@ -875,10 +928,10 @@ const tabItems = [
                 <div>
                   <div class="text-sm font-semibold mb-1">單一隔期規則（候選池）</div>
                   <ol class="list-decimal pl-5 space-y-1">
-                    <li>只從隔期 <span class="font-mono">0~{{ SOURCE_MAX_INTERVAL }}</span> 取候選</li>
+                    <li>只從隔期 <span class="font-mono">0~{{ config.sourceMaxInterval }}</span> 取候選</li>
                     <li>該隔期 <span class="font-mono">record</span> CSV 首碼為 <span class="font-mono">'0'</span>（最新一期此 slot 有命中）</li>
                     <li>
-                      位置排除：把該期 T 自家 <span class="font-mono">positions</span> CSV 中所有 <span class="font-mono">Y ≥ {{ POS_CAP_HIGH }}</span> 的 Y 值去重做集合；
+                      位置排除：把該期 T 自家 <span class="font-mono">positions</span> CSV 中所有 <span class="font-mono">Y ≥ {{ config.posCapHigh }}</span> 的 Y 值去重做集合；
                       候選的 1-indexed 位置在此集合內則排除
                     </li>
                   </ol>
@@ -886,11 +939,11 @@ const tabItems = [
                 <div>
                   <div class="text-sm font-semibold mb-1">全域 cap（一旦會超就跳過該候選）</div>
                   <ul class="list-disc pl-5 space-y-1 font-mono">
-                    <li>位置 5/6/7/8/9 各 ≤ {{ POS_5TO9_CAP }}</li>
-                    <li>≤40 ≤ {{ LE40_CAP }}、&gt;40 ≤ {{ GT40_CAP }}</li>
-                    <li>奇 ≤ {{ ODD_CAP }}、偶 ≤ {{ EVEN_CAP }}</li>
-                    <li>任一相同尾數 ≤ {{ TAIL_CAP }}</li>
-                    <li>連續號碼最大連跑 ≤ {{ CONSECUTIVE_CAP }}</li>
+                    <li>位置 5/6/7/8/9 各 ≤ {{ config.pos5to9Cap }}</li>
+                    <li>≤40 ≤ {{ config.le40Cap }}、&gt;40 ≤ {{ config.gt40Cap }}</li>
+                    <li>奇 ≤ {{ config.oddCap }}、偶 ≤ {{ config.evenCap }}</li>
+                    <li>任一相同尾數 ≤ {{ config.tailCap }}</li>
+                    <li>連續號碼最大連跑 ≤ {{ config.consecutiveCap }}</li>
                   </ul>
                 </div>
                 <div>
@@ -901,8 +954,8 @@ const tabItems = [
                   </p>
                 </div>
                 <div>
-                  <div class="text-sm font-semibold mb-1">不足 20</div>
-                  <p>顯示實際掛上的數、標「不足 20」，<strong>不破 cap、不補位</strong>。</p>
+                  <div class="text-sm font-semibold mb-1">不足 {{ config.predictTarget }}</div>
+                  <p>顯示實際掛上的數、標「不足 {{ config.predictTarget }}」，<strong>不破 cap、不補位</strong>。</p>
                 </div>
                 <div class="border-t border-default pt-2 text-[11px] text-muted">
                   每張卡片底下的 caps 是該期 picks 的實際 cap 使用量；數值 = cap 上限會染橘提醒（greedy 已保證不超過）。
@@ -911,6 +964,140 @@ const tabItems = [
             </template>
           </UPopover>
         </div>
+
+        <!-- 規則參數調整面板（即時影響、localStorage 持久化） -->
+        <UCard :ui="{ body: 'p-3 sm:p-4' }">
+          <div class="space-y-3">
+            <div class="flex items-center justify-between gap-2">
+              <button
+                type="button"
+                class="flex items-center gap-1 text-sm font-semibold"
+                @click="settingsOpen = !settingsOpen"
+              >
+                <UIcon
+                  :name="settingsOpen ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'"
+                  class="size-4"
+                />
+                規則參數調整
+              </button>
+              <UButton
+                v-if="settingsOpen"
+                size="xs"
+                color="neutral"
+                variant="ghost"
+                icon="i-lucide-rotate-ccw"
+                @click="resetConfig"
+              >
+                還原預設
+              </UButton>
+            </div>
+            <div
+              v-if="settingsOpen"
+              class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-x-3 gap-y-2 text-xs"
+            >
+              <label class="block space-y-1">
+                <span class="text-muted block">目標顆數</span>
+                <UInput
+                  v-model.number="config.predictTarget"
+                  type="number"
+                  min="1"
+                  max="80"
+                  size="sm"
+                />
+              </label>
+              <label class="block space-y-1">
+                <span class="text-muted block">隔期上限（0~）</span>
+                <UInput
+                  v-model.number="config.sourceMaxInterval"
+                  type="number"
+                  min="0"
+                  :max="SLOT_SNAPSHOT_DEPTH - 1"
+                  size="sm"
+                />
+              </label>
+              <label class="block space-y-1">
+                <span class="text-muted block">排除位置門檻（Y ≥）</span>
+                <UInput
+                  v-model.number="config.posCapHigh"
+                  type="number"
+                  min="1"
+                  max="80"
+                  size="sm"
+                />
+              </label>
+              <label class="block space-y-1">
+                <span class="text-muted block">位 5~9 各 ≤</span>
+                <UInput
+                  v-model.number="config.pos5to9Cap"
+                  type="number"
+                  min="0"
+                  max="20"
+                  size="sm"
+                />
+              </label>
+              <label class="block space-y-1">
+                <span class="text-muted block">≤40 ≤</span>
+                <UInput
+                  v-model.number="config.le40Cap"
+                  type="number"
+                  min="0"
+                  max="20"
+                  size="sm"
+                />
+              </label>
+              <label class="block space-y-1">
+                <span class="text-muted block">&gt;40 ≤</span>
+                <UInput
+                  v-model.number="config.gt40Cap"
+                  type="number"
+                  min="0"
+                  max="20"
+                  size="sm"
+                />
+              </label>
+              <label class="block space-y-1">
+                <span class="text-muted block">奇 ≤</span>
+                <UInput
+                  v-model.number="config.oddCap"
+                  type="number"
+                  min="0"
+                  max="20"
+                  size="sm"
+                />
+              </label>
+              <label class="block space-y-1">
+                <span class="text-muted block">偶 ≤</span>
+                <UInput
+                  v-model.number="config.evenCap"
+                  type="number"
+                  min="0"
+                  max="20"
+                  size="sm"
+                />
+              </label>
+              <label class="block space-y-1">
+                <span class="text-muted block">任一尾數 ≤</span>
+                <UInput
+                  v-model.number="config.tailCap"
+                  type="number"
+                  min="0"
+                  max="20"
+                  size="sm"
+                />
+              </label>
+              <label class="block space-y-1">
+                <span class="text-muted block">連跑 ≤</span>
+                <UInput
+                  v-model.number="config.consecutiveCap"
+                  type="number"
+                  min="0"
+                  max="20"
+                  size="sm"
+                />
+              </label>
+            </div>
+          </div>
+        </UCard>
 
         <!-- 待開獎期釘頂（sticky top 用 header 高度避開頂列 UHeader） -->
         <UCard
@@ -934,28 +1121,28 @@ const tabItems = [
             <!-- 規則執行軌跡（debug 用，幫使用者驗證規則確實有跑） -->
             <div class="text-[10px] text-muted font-mono space-y-0.5">
               <div>
-                排除位置（Y≥{{ POS_CAP_HIGH }}）：
+                排除位置（Y≥{{ config.posCapHigh }}）：
                 <span v-if="predictionPendingRow.excludedYList.length === 0">無</span>
                 <span v-else>{{ predictionPendingRow.excludedYList.join(', ') }}</span>
               </div>
               <div class="flex flex-wrap gap-x-2 gap-y-0.5">
-                <span :class="capColorClass(predictionPendingRow.capStats.le40, LE40_CAP)">≤40 {{ predictionPendingRow.capStats.le40 }}/{{ LE40_CAP }}</span>
+                <span :class="capColorClass(predictionPendingRow.capStats.le40, config.le40Cap)">≤40 {{ predictionPendingRow.capStats.le40 }}/{{ config.le40Cap }}</span>
                 <span>·</span>
-                <span :class="capColorClass(predictionPendingRow.capStats.gt40, GT40_CAP)">&gt;40 {{ predictionPendingRow.capStats.gt40 }}/{{ GT40_CAP }}</span>
+                <span :class="capColorClass(predictionPendingRow.capStats.gt40, config.gt40Cap)">&gt;40 {{ predictionPendingRow.capStats.gt40 }}/{{ config.gt40Cap }}</span>
                 <span>·</span>
-                <span :class="capColorClass(predictionPendingRow.capStats.odd, ODD_CAP)">奇 {{ predictionPendingRow.capStats.odd }}/{{ ODD_CAP }}</span>
+                <span :class="capColorClass(predictionPendingRow.capStats.odd, config.oddCap)">奇 {{ predictionPendingRow.capStats.odd }}/{{ config.oddCap }}</span>
                 <span>·</span>
-                <span :class="capColorClass(predictionPendingRow.capStats.even, EVEN_CAP)">偶 {{ predictionPendingRow.capStats.even }}/{{ EVEN_CAP }}</span>
+                <span :class="capColorClass(predictionPendingRow.capStats.even, config.evenCap)">偶 {{ predictionPendingRow.capStats.even }}/{{ config.evenCap }}</span>
                 <span>·</span>
-                <span :class="capColorClass(predictionPendingRow.capStats.tailMax, TAIL_CAP)">尾 max {{ predictionPendingRow.capStats.tailMax }}/{{ TAIL_CAP }}<span v-if="predictionPendingRow.capStats.tailMaxDigit >= 0"> (尾{{ predictionPendingRow.capStats.tailMaxDigit }})</span></span>
+                <span :class="capColorClass(predictionPendingRow.capStats.tailMax, config.tailCap)">尾 max {{ predictionPendingRow.capStats.tailMax }}/{{ config.tailCap }}<span v-if="predictionPendingRow.capStats.tailMaxDigit >= 0"> (尾{{ predictionPendingRow.capStats.tailMaxDigit }})</span></span>
                 <span>·</span>
-                <span :class="capColorClass(predictionPendingRow.capStats.maxRun, CONSECUTIVE_CAP)">連跑 {{ predictionPendingRow.capStats.maxRun }}/{{ CONSECUTIVE_CAP }}</span>
+                <span :class="capColorClass(predictionPendingRow.capStats.maxRun, config.consecutiveCap)">連跑 {{ predictionPendingRow.capStats.maxRun }}/{{ config.consecutiveCap }}</span>
                 <span>·</span>
-                <span :class="capColorClass(predictionPendingRow.capStats.pos59Max, POS_5TO9_CAP)">位5-9 max {{ predictionPendingRow.capStats.pos59Max }}/{{ POS_5TO9_CAP }}<span v-if="predictionPendingRow.capStats.pos59MaxValue >= 0"> (位{{ predictionPendingRow.capStats.pos59MaxValue }})</span></span>
+                <span :class="capColorClass(predictionPendingRow.capStats.pos59Max, config.pos5to9Cap)">位5-9 max {{ predictionPendingRow.capStats.pos59Max }}/{{ config.pos5to9Cap }}<span v-if="predictionPendingRow.capStats.pos59MaxValue >= 0"> (位{{ predictionPendingRow.capStats.pos59MaxValue }})</span></span>
                 <span
                   v-if="predictionPendingRow.shortBy > 0"
                   class="text-orange-500"
-                >· 不足 20（差 {{ predictionPendingRow.shortBy }} 顆）</span>
+                >· 不足 {{ config.predictTarget }}（差 {{ predictionPendingRow.shortBy }} 顆）</span>
               </div>
             </div>
 
@@ -1015,31 +1202,31 @@ const tabItems = [
                 <span
                   v-if="row.shortBy > 0"
                   class="ml-2 text-orange-500"
-                >不足 20（差 {{ row.shortBy }} 顆）</span>
+                >不足 {{ config.predictTarget }}（差 {{ row.shortBy }} 顆）</span>
               </div>
             </div>
 
             <!-- 規則執行軌跡 -->
             <div class="text-[10px] text-muted font-mono space-y-0.5">
               <div>
-                排除位置（Y≥{{ POS_CAP_HIGH }}）：
+                排除位置（Y≥{{ config.posCapHigh }}）：
                 <span v-if="row.excludedYList.length === 0">無</span>
                 <span v-else>{{ row.excludedYList.join(', ') }}</span>
               </div>
               <div class="flex flex-wrap gap-x-2 gap-y-0.5">
-                <span :class="capColorClass(row.capStats.le40, LE40_CAP)">≤40 {{ row.capStats.le40 }}/{{ LE40_CAP }}</span>
+                <span :class="capColorClass(row.capStats.le40, config.le40Cap)">≤40 {{ row.capStats.le40 }}/{{ config.le40Cap }}</span>
                 <span>·</span>
-                <span :class="capColorClass(row.capStats.gt40, GT40_CAP)">&gt;40 {{ row.capStats.gt40 }}/{{ GT40_CAP }}</span>
+                <span :class="capColorClass(row.capStats.gt40, config.gt40Cap)">&gt;40 {{ row.capStats.gt40 }}/{{ config.gt40Cap }}</span>
                 <span>·</span>
-                <span :class="capColorClass(row.capStats.odd, ODD_CAP)">奇 {{ row.capStats.odd }}/{{ ODD_CAP }}</span>
+                <span :class="capColorClass(row.capStats.odd, config.oddCap)">奇 {{ row.capStats.odd }}/{{ config.oddCap }}</span>
                 <span>·</span>
-                <span :class="capColorClass(row.capStats.even, EVEN_CAP)">偶 {{ row.capStats.even }}/{{ EVEN_CAP }}</span>
+                <span :class="capColorClass(row.capStats.even, config.evenCap)">偶 {{ row.capStats.even }}/{{ config.evenCap }}</span>
                 <span>·</span>
-                <span :class="capColorClass(row.capStats.tailMax, TAIL_CAP)">尾 max {{ row.capStats.tailMax }}/{{ TAIL_CAP }}</span>
+                <span :class="capColorClass(row.capStats.tailMax, config.tailCap)">尾 max {{ row.capStats.tailMax }}/{{ config.tailCap }}</span>
                 <span>·</span>
-                <span :class="capColorClass(row.capStats.maxRun, CONSECUTIVE_CAP)">連跑 {{ row.capStats.maxRun }}/{{ CONSECUTIVE_CAP }}</span>
+                <span :class="capColorClass(row.capStats.maxRun, config.consecutiveCap)">連跑 {{ row.capStats.maxRun }}/{{ config.consecutiveCap }}</span>
                 <span>·</span>
-                <span :class="capColorClass(row.capStats.pos59Max, POS_5TO9_CAP)">位5-9 max {{ row.capStats.pos59Max }}/{{ POS_5TO9_CAP }}</span>
+                <span :class="capColorClass(row.capStats.pos59Max, config.pos5to9Cap)">位5-9 max {{ row.capStats.pos59Max }}/{{ config.pos5to9Cap }}</span>
               </div>
             </div>
 

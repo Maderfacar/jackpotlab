@@ -41,20 +41,28 @@
 
 > ⚠️ **語意正名（2026-06-19 使用者拍板）**：Tab3 名稱是「**符合規則的 20 顆**」、**不是預測**。是依規則從分析數據裡篩選號碼，使用者強調這是統計篩選、不是預測下一期。UI 文案禁用「預測」一詞；內部變數名可以保留 `prediction*` 以減少 diff 雜訊，但 PR 描述與註解要明確標「篩選」。
 
-### 6. Tab3「符合規則的 20 顆」規則（2026-06-19 拍板）
+### 6. Tab3「符合規則的 N 顆」規則（2026-06-19 拍板、參數可調）
+
+預設參數（`DEFAULT_CONFIG`，存在 `localStorage['iverson-prediction-rules-v1']`、UI 可即時調整）：
+- `predictTarget = 20`（目標顆數）
+- `sourceMaxInterval = 3`（隔期 0~3）
+- `posCapHigh = 10`（Y ≥ 10 排除）
+- `pos5to9Cap = 2`、`le40Cap = 12`、`gt40Cap = 12`、`oddCap = 12`、`evenCap = 12`、`tailCap = 5`、`consecutiveCap = 5`
+
+snapshots 一律切 `slot[0..SLOT_SNAPSHOT_DEPTH-1]`（SLOT_SNAPSHOT_DEPTH=10），UI 控制 sourceMaxInterval 在 [0..9] 內調整、snapshots 不重算。
 
 候選來源：
-- 來源期 T 處理完後、slot[0..5]、且該 slot.record CSV 首碼為 `'0'`（最新一期該 slot 有命中）
+- 來源期 T 處理完後、`slot[0..config.sourceMaxInterval]`、且該 slot.record CSV 首碼為 `'0'`（最新一期該 slot 有命中）
 
 排除：
-- 從 T 自己的 positions CSV 取所有 Y 值 >= 10 的 Y、去重做集合；候選的 1-indexed 位置若在此集合則排除
+- 從 T 自己的 positions CSV 取所有 Y 值 >= `config.posCapHigh` 的 Y、去重做集合；候選的 1-indexed 位置若在此集合則排除
 
-caps（一旦會超就跳過該候選）：
-- `<=40` ≤ 12、`>40` ≤ 12
-- 奇 ≤ 12、偶 ≤ 12
-- 任一相同尾數 ≤ 5
-- 連續號碼最大連跑 ≤ 5
-- 位置 5/6/7/8/9 各 ≤ 2
+caps（一旦會超就跳過該候選、全部走 `config.*`）：
+- `<=40` ≤ `config.le40Cap`、`>40` ≤ `config.gt40Cap`
+- 奇 ≤ `config.oddCap`、偶 ≤ `config.evenCap`
+- 任一相同尾數 ≤ `config.tailCap`
+- 連續號碼最大連跑 ≤ `config.consecutiveCap`
+- 位置 5/6/7/8/9 各 ≤ `config.pos5to9Cap`
 
 候選排序優先序：**3 (避免 cap 抵達) > 1 (小隔期優先) > 2 (低位置優先)**
 - 實作法：先依 (隔期 asc, 位置 asc) 排序，再 greedy 跳過會 violate cap 的候選
