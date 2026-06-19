@@ -931,14 +931,6 @@ const tabItems = [
               <span class="font-mono text-sm font-semibold">第 {{ predictionPendingRow.predictForTerm }} 期</span>
               <span class="text-[10px] text-muted">尚未開出</span>
             </div>
-            <div class="text-[10px] text-muted">
-              來源期 第 {{ predictionPendingRow.sourceTerm }} 期
-              <span
-                v-if="predictionPendingRow.sourceDateLabel"
-                class="ml-1 font-mono"
-              >{{ predictionPendingRow.sourceDateLabel }}</span>
-            </div>
-
             <!-- 規則執行軌跡（debug 用，幫使用者驗證規則確實有跑） -->
             <div class="text-[10px] text-muted font-mono space-y-0.5">
               <div>
@@ -1024,13 +1016,6 @@ const tabItems = [
                   v-if="row.shortBy > 0"
                   class="ml-2 text-orange-500"
                 >不足 20（差 {{ row.shortBy }} 顆）</span>
-              </div>
-              <div class="text-[10px] text-muted">
-                來源期 第 {{ row.sourceTerm }} 期
-                <span
-                  v-if="row.sourceDateLabel"
-                  class="ml-1 font-mono"
-                >{{ row.sourceDateLabel }}</span>
               </div>
             </div>
 
