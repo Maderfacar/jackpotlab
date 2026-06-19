@@ -29,6 +29,10 @@ import {
   type AnalysisDrawInput
 } from '~/utils/analysis'
 import { bingoTimeFromMap, buildBingoMinTermByDate } from '~/utils/bingo-time'
+// 對比卡：直接 reuse 海尼根頁的兩層過濾純函式（位置 + 隔期 0 紅框），
+// 跟賓果海尼根頁同邏輯、避免 drift。第三層黑名單（高頻位置）這裡自己重做
+// 因為要對 500 期 sliding window 算、不依賴 brainState.scorecards.recentFirings 50 期 cap。
+import { computeHomeRunByInterval } from '~/hindsight/home-run-evidence'
 
 definePageMeta({
   title: '艾佛森'
@@ -1083,6 +1087,306 @@ function capColorClass(value: number, cap: number): string {
   return 'text-muted'
 }
 
+// ---- 對比卡：兩 tab 命中率對比（賓果海尼根 vs 艾佛森 Tab3）-----------
+//
+// 目的：用同一份 allDraws、對齊期數，看兩頁 picks 命中率的 Pearson r 與
+//       union / intersection 整體命中率，判斷 anti-correlation 是 signal 還是 cherry-pick。
+//
+// 海尼根 picks 在此頁手刻、重跑 500 期，不走 useHindsight：
+//   - 原因：brainState.scorecards.recentFirings 只保留 50 期、不夠 sample size
+//   - 邏輯與 HomeRunSection.vue 相同：
+//     · 兩層 (computeHomeRunByInterval)：位置排除 (positionYs) + 隔期 0 紅框 (carryoverInPeriod0)
+//     · 第三層：過去 10 期高頻位置黑名單 (y ≥ 5、出現 ≥ 8 期)
+//   - 隔期固定 0~3 (HEINEKEN_SLOT_COUNT = 4)、跟 /bingo-heineken 頁一致
+//   - 不受艾佛森 sourceIntervalMin/Max 影響（兩頁本來就用不同範圍）
+
+const HEINEKEN_SLOT_COUNT = 4
+const HEINEKEN_BLACKLIST_WINDOW = 10
+const HEINEKEN_BLACKLIST_POS_THRESHOLD = 5
+const HEINEKEN_BLACKLIST_FREQ_THRESHOLD = 8
+const COMPARISON_MIN_SAMPLE = 10
+
+interface HeinekenSnapMeta {
+  rawByInterval: number[][]
+  /** 用來算 sliding window blacklist；每期 union 自動去重 */
+  uniquePositionYs: Set<number>
+  /** 套兩層過濾後（位置 + 紅框）的每隔期殘餘號碼，第三層黑名單在 heinekenRows 內套 */
+  filteredByInterval: number[][]
+}
+
+const heinekenMetaBySnapIdx = computed<HeinekenSnapMeta[]>(() => {
+  const snaps = predictionSnapshots.value
+  const draws = allDraws.value
+  const out: HeinekenSnapMeta[] = []
+  for (let i = 0; i < snaps.length; i++) {
+    const snap = snaps[i]!
+    const tNums = draws[i]?.numbers ?? []
+
+    const rawByInterval: number[][] = []
+    for (let j = 0; j < HEINEKEN_SLOT_COUNT; j++) {
+      const slot = snap.topSlots[j]
+      rawByInterval.push(slot ? [...slot.prizes].sort((a, b) => a - b) : [])
+    }
+
+    // positionYs from periods + positions CSV：對齊 bingo_origin_distribution signal
+    const positionYsByInterval: number[][] = Array.from({ length: HEINEKEN_SLOT_COUNT }, () => [])
+    const periodParts = snap.periods.split(',')
+    const posParts = snap.positions.split(',')
+    const uniquePositionYs = new Set<number>()
+    for (let k = 0; k < periodParts.length; k++) {
+      const pStr = periodParts[k]
+      const sStr = posParts[k]
+      if (!pStr || !sStr) continue
+      const j = Number.parseInt(pStr, 10)
+      if (!Number.isFinite(j) || j < 0 || j >= HEINEKEN_SLOT_COUNT) continue
+      const dash = sStr.indexOf('-')
+      if (dash < 0) continue
+      const y = Number.parseInt(sStr.slice(dash + 1), 10)
+      if (!Number.isFinite(y)) continue
+      positionYsByInterval[j]!.push(y)
+      uniquePositionYs.add(y)
+    }
+    for (const arr of positionYsByInterval) arr.sort((a, b) => a - b)
+
+    // carryoverInPeriod0 = T 號 csv=0 對應 sorted-unique T 號 ∩ post-T period[0]
+    const period0Set = new Set(rawByInterval[0] ?? [])
+    const carryoverInPeriod0: number[] = []
+    for (let k = 0; k < periodParts.length; k++) {
+      const pStr = periodParts[k]
+      const n = tNums[k]
+      if (!pStr || typeof n !== 'number') continue
+      const idx = Number.parseInt(pStr, 10)
+      if (idx === 0 && period0Set.has(n)) carryoverInPeriod0.push(n)
+    }
+    const carryoverSet = new Set(carryoverInPeriod0)
+
+    const filteredByInterval = computeHomeRunByInterval(
+      rawByInterval,
+      positionYsByInterval,
+      carryoverSet,
+      HEINEKEN_SLOT_COUNT
+    )
+
+    out.push({ rawByInterval, uniquePositionYs, filteredByInterval })
+  }
+  return out
+})
+
+interface HeinekenRow {
+  /** 對齊艾佛森的 predictForTerm（= T+1）= 待預測期 */
+  drawTerm: number
+  picks: number[]
+  actual: number[]
+  hits: number
+  rate: number | null
+}
+
+const heinekenRows = computed<HeinekenRow[]>(() => {
+  const snaps = predictionSnapshots.value
+  const draws = allDraws.value
+  const metas = heinekenMetaBySnapIdx.value
+  const out: HeinekenRow[] = []
+  for (let i = 0; i < snaps.length; i++) {
+    const meta = metas[i]
+    if (!meta) continue
+    const targetIdx = i + 1
+    if (targetIdx >= draws.length) continue // T+1 還沒開出、不放進歷史對比
+    const target = draws[targetIdx]!
+
+    // Sliding blacklist：[i - WINDOW + 1, i] 共 10 期 firings union 計數
+    const lo = Math.max(0, i - HEINEKEN_BLACKLIST_WINDOW + 1)
+    const countByPos = new Map<number, number>()
+    for (let k = lo; k <= i; k++) {
+      const m = metas[k]
+      if (!m) continue
+      for (const y of m.uniquePositionYs) {
+        countByPos.set(y, (countByPos.get(y) ?? 0) + 1)
+      }
+    }
+    const blacklist = new Set<number>()
+    for (const [y, c] of countByPos) {
+      if (y >= HEINEKEN_BLACKLIST_POS_THRESHOLD && c >= HEINEKEN_BLACKLIST_FREQ_THRESHOLD) {
+        blacklist.add(y)
+      }
+    }
+
+    // 套黑名單 → union 4 個隔期得 picks
+    const picksSet = new Set<number>()
+    for (let j = 0; j < HEINEKEN_SLOT_COUNT; j++) {
+      const raw = meta.rawByInterval[j] ?? []
+      const filtered = meta.filteredByInterval[j] ?? []
+      const posMap = new Map<number, number>()
+      raw.forEach((v, idx) => posMap.set(v, idx + 1))
+      for (const n of filtered) {
+        const originPos = posMap.get(n) ?? 0
+        if (originPos > 0 && blacklist.has(originPos)) continue
+        picksSet.add(n)
+      }
+    }
+    const picks = [...picksSet].sort((a, b) => a - b)
+    const actualSet = new Set(target.numbers)
+    const hits = picks.reduce((acc, n) => acc + (actualSet.has(n) ? 1 : 0), 0)
+    const rate = picks.length > 0 ? hits / picks.length : null
+
+    out.push({
+      drawTerm: target.drawTerm,
+      picks,
+      actual: target.numbers,
+      hits,
+      rate
+    })
+  }
+  return out
+})
+
+interface ComparisonStats {
+  /** 同 targetTerm 對齊期數（heineken row 有、iverson row 也有） */
+  alignedPeriods: number
+  /** 兩邊都有 picks>0 的期數（算 Pearson 用） */
+  bothNonZeroPeriods: number
+  /** Pearson r、樣本數 < COMPARISON_MIN_SAMPLE 為 null */
+  pearsonR: number | null
+  heinekenTotalPicks: number
+  heinekenTotalHits: number
+  heinekenIntegratedRate: number | null
+  iversonTotalPicks: number
+  iversonTotalHits: number
+  iversonIntegratedRate: number | null
+  unionTotalPicks: number
+  unionTotalHits: number
+  unionIntegratedRate: number | null
+  intersectTotalPicks: number
+  intersectTotalHits: number
+  /** intersection 非空的期數（picks_intersect.length > 0） */
+  intersectNonZeroPeriods: number
+  intersectIntegratedRate: number | null
+}
+
+const comparisonStats = computed<ComparisonStats>(() => {
+  const ivByTerm = new Map<number, PredictionRow>()
+  for (const r of predictionHistoricalRows.value) ivByTerm.set(r.predictForTerm, r)
+
+  let aligned = 0
+  let bothNonZero = 0
+  const ratePairs: Array<{ h: number, i: number }> = []
+
+  let hPicksSum = 0
+  let hHitsSum = 0
+  let iPicksSum = 0
+  let iHitsSum = 0
+  let uPicksSum = 0
+  let uHitsSum = 0
+  let xPicksSum = 0
+  let xHitsSum = 0
+  let xNonZero = 0
+
+  for (const hr of heinekenRows.value) {
+    const ir = ivByTerm.get(hr.drawTerm)
+    if (!ir) continue
+    aligned++
+
+    hPicksSum += hr.picks.length
+    hHitsSum += hr.hits
+    iPicksSum += ir.picks.length
+    iHitsSum += ir.hitCount
+
+    const actualSet = new Set(hr.actual)
+    const ivPicksN = ir.picksSorted.map(p => p.n)
+    const hPicksSet = new Set(hr.picks)
+    const iPicksSet = new Set(ivPicksN)
+
+    const union = new Set<number>([...hr.picks, ...ivPicksN])
+    let unionHits = 0
+    for (const n of union) if (actualSet.has(n)) unionHits++
+    uPicksSum += union.size
+    uHitsSum += unionHits
+
+    let intersectCount = 0
+    let xHits = 0
+    for (const n of hPicksSet) {
+      if (!iPicksSet.has(n)) continue
+      intersectCount++
+      if (actualSet.has(n)) xHits++
+    }
+    xPicksSum += intersectCount
+    xHitsSum += xHits
+    if (intersectCount > 0) xNonZero++
+
+    if (hr.picks.length > 0 && ir.picks.length > 0) {
+      bothNonZero++
+      ratePairs.push({
+        h: hr.hits / hr.picks.length,
+        i: ir.hitCount / ir.picks.length
+      })
+    }
+  }
+
+  let pearsonR: number | null = null
+  if (ratePairs.length >= COMPARISON_MIN_SAMPLE) {
+    const n = ratePairs.length
+    let sumH = 0
+    let sumI = 0
+    for (const p of ratePairs) {
+      sumH += p.h
+      sumI += p.i
+    }
+    const meanH = sumH / n
+    const meanI = sumI / n
+    let num = 0
+    let denH = 0
+    let denI = 0
+    for (const p of ratePairs) {
+      const dh = p.h - meanH
+      const di = p.i - meanI
+      num += dh * di
+      denH += dh * dh
+      denI += di * di
+    }
+    const den = Math.sqrt(denH * denI)
+    pearsonR = den > 0 ? num / den : null
+  }
+
+  return {
+    alignedPeriods: aligned,
+    bothNonZeroPeriods: bothNonZero,
+    pearsonR,
+    heinekenTotalPicks: hPicksSum,
+    heinekenTotalHits: hHitsSum,
+    heinekenIntegratedRate: hPicksSum > 0 ? hHitsSum / hPicksSum : null,
+    iversonTotalPicks: iPicksSum,
+    iversonTotalHits: iHitsSum,
+    iversonIntegratedRate: iPicksSum > 0 ? iHitsSum / iPicksSum : null,
+    unionTotalPicks: uPicksSum,
+    unionTotalHits: uHitsSum,
+    unionIntegratedRate: uPicksSum > 0 ? uHitsSum / uPicksSum : null,
+    intersectTotalPicks: xPicksSum,
+    intersectTotalHits: xHitsSum,
+    intersectNonZeroPeriods: xNonZero,
+    intersectIntegratedRate: xPicksSum > 0 ? xHitsSum / xPicksSum : null
+  }
+})
+
+function formatRatePct(r: number | null): string {
+  if (r == null) return '—'
+  return `${(r * 100).toFixed(2)}%`
+}
+
+function pearsonColorClass(r: number | null): string {
+  if (r == null) return 'text-muted'
+  if (r <= -0.3) return 'text-orange-500 font-semibold' // 支持 anti-correlation 假說
+  if (r >= 0.3) return 'text-blue-500 font-semibold'
+  return 'text-muted'
+}
+
+function pearsonInterpretation(r: number | null): string {
+  if (r == null) return ''
+  if (r >= 0.7) return '強正相關（兩 tab 同進同退）'
+  if (r >= 0.3) return '中等正相關'
+  if (r > -0.3) return '弱/無相關'
+  if (r > -0.7) return '中等負相關（支持 anti-correlation）'
+  return '強負相關（強烈支持 anti-correlation）'
+}
+
 // ---- Tab state ----------------------------------------------------------
 
 type TabValue = 'interval' | 'positions' | 'prediction'
@@ -1688,6 +1992,76 @@ const tabItems = computed(() => [
                   class="text-muted"
                 >（含 {{ predictionAggregateStats.zeroPickCount }} 期 0 推）</span>
               </div>
+            </div>
+          </div>
+        </UCard>
+
+        <!-- 兩 tab 命中率對比（賓果海尼根 vs 艾佛森 Tab3）—— 同 allDraws 對齊 -->
+        <UCard
+          v-if="comparisonStats.alignedPeriods > 0"
+          :ui="{ body: 'p-3 sm:p-4' }"
+        >
+          <div class="space-y-2">
+            <div class="text-sm font-semibold">
+              兩 tab 命中率對比（賓果海尼根 vs 艾佛森 Tab3）
+              <span class="ml-2 text-[10px] text-muted font-normal">
+                對齊 {{ comparisonStats.alignedPeriods }} 期
+                <span v-if="comparisonStats.bothNonZeroPeriods > 0">
+                  · 兩邊都有推 {{ comparisonStats.bothNonZeroPeriods }} 期
+                </span>
+              </span>
+            </div>
+            <div class="text-xs font-mono tabular-nums">
+              <span class="text-muted">Pearson r：</span>
+              <span
+                v-if="comparisonStats.pearsonR != null"
+                :class="pearsonColorClass(comparisonStats.pearsonR)"
+              >{{ comparisonStats.pearsonR.toFixed(3) }}</span>
+              <span
+                v-else
+                class="text-muted"
+              >樣本不足（&lt; {{ COMPARISON_MIN_SAMPLE }} 期）</span>
+              <span class="text-muted ml-1 font-sans">{{ pearsonInterpretation(comparisonStats.pearsonR) }}</span>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-3 gap-y-1 text-xs font-mono tabular-nums">
+              <div>
+                <span class="text-muted">海尼根（隔期 0~3、3 層過濾）：</span>
+                <span
+                  :class="comparisonStats.heinekenIntegratedRate != null && comparisonStats.heinekenIntegratedRate > 0 ? 'text-emerald-500 font-semibold' : 'text-muted'"
+                >{{ formatRatePct(comparisonStats.heinekenIntegratedRate) }}</span>
+                <span class="text-muted">（{{ comparisonStats.heinekenTotalHits }}/{{ comparisonStats.heinekenTotalPicks }}）</span>
+              </div>
+              <div>
+                <span class="text-muted">艾佛森 Tab3（當前規則）：</span>
+                <span
+                  :class="comparisonStats.iversonIntegratedRate != null && comparisonStats.iversonIntegratedRate > 0 ? 'text-emerald-500 font-semibold' : 'text-muted'"
+                >{{ formatRatePct(comparisonStats.iversonIntegratedRate) }}</span>
+                <span class="text-muted">（{{ comparisonStats.iversonTotalHits }}/{{ comparisonStats.iversonTotalPicks }}）</span>
+              </div>
+              <div>
+                <span class="text-muted">Union（聯集）：</span>
+                <span
+                  :class="comparisonStats.unionIntegratedRate != null && comparisonStats.unionIntegratedRate > 0 ? 'text-emerald-500 font-semibold' : 'text-muted'"
+                >{{ formatRatePct(comparisonStats.unionIntegratedRate) }}</span>
+                <span class="text-muted">（{{ comparisonStats.unionTotalHits }}/{{ comparisonStats.unionTotalPicks }}）</span>
+              </div>
+              <div>
+                <span class="text-muted">Intersection（交集）：</span>
+                <span
+                  :class="comparisonStats.intersectIntegratedRate != null && comparisonStats.intersectIntegratedRate > 0 ? 'text-emerald-500 font-semibold' : 'text-muted'"
+                >{{ formatRatePct(comparisonStats.intersectIntegratedRate) }}</span>
+                <span class="text-muted">（{{ comparisonStats.intersectTotalHits }}/{{ comparisonStats.intersectTotalPicks }}）</span>
+                <span
+                  v-if="comparisonStats.alignedPeriods > comparisonStats.intersectNonZeroPeriods"
+                  class="text-muted text-[10px] ml-1"
+                >· {{ comparisonStats.intersectNonZeroPeriods }}/{{ comparisonStats.alignedPeriods }} 期非空</span>
+              </div>
+            </div>
+            <div class="text-[10px] text-muted leading-relaxed">
+              <strong>判讀</strong>：Pearson r = 1 ⇄ 兩 tab 完全同進同退；0 ⇄ 不相關；-1 ⇄ 完全相反。
+              <span class="text-orange-500">r ≤ -0.3 ⇄ 支持 anti-correlation 假說</span>（一邊高時另一邊低）。
+              Union 覆蓋廣、命中率通常被稀釋；Intersection 覆蓋窄、若 anti-correlation 為真 → intersect rate 該升高（兩 tab 共識更可信）。
+              海尼根 picks 在此頁手刻、跟 /bingo-heineken 同邏輯（位置排除 + 紅框 + 高頻黑名單）；不受艾佛森規則開關影響。
             </div>
           </div>
         </UCard>

@@ -127,6 +127,24 @@ caps（2026-06-19 重做位置 cap、2026-06-20 加每隔期 cap + toggle 化、
 - 實際開出（黃色 badge）**右下小黑字 = 該獎號於 T+1 positions CSV 的 Y**（找不到則不標）
   - 與「推」badge 右下標位置同邏輯、雙邊可直接視覺對齊命中號碼的位置軌跡
 
+### 8. 兩 tab 命中率對比卡（2026-06-20 新增、聚合命中卡下方）
+
+目的：用同一份 `allDraws` 比對 /bingo-heineken 與 /iverson Tab3 兩頁 picks 命中率，
+判斷使用者觀察到的 anti-correlation（一邊低時另一邊高）是 signal 還是 cherry-pick。
+
+實作：海尼根 picks 在 iverson 頁手刻、不走 useHindsight（brainState.recentFirings 只保留 50 期）：
+- 隔期固定 `HEINEKEN_SLOT_COUNT = 4`（隔期 0~3、跟 /bingo-heineken 一致）
+- 兩層過濾 reuse `computeHomeRunByInterval`（位置 positionYs + 隔期 0 紅框 carryoverInPeriod0）
+- 第三層黑名單：sliding window `HEINEKEN_BLACKLIST_WINDOW = 10` 期 firings union、`y ≥ 5` 且出現 `≥ 8` 期 → 排除
+- `positionYsByInterval` / `carryoverInPeriod0` 從 snapshot 的 periods + positions CSV + `allDraws[i].numbers` 推導
+- 不受艾佛森規則開關 / sourceInterval 影響
+
+對比輸出：
+- **Pearson r**（樣本 < 10 期顯示「樣本不足」、`r ≤ -0.3` 染橘支持 anti-correlation）
+- 兩頁各自整體命中率（同對齊期數內）
+- **Union picks** 整體命中率（聯集 / 預期覆蓋廣但稀釋）
+- **Intersection picks** 整體命中率（交集 / 若 anti-correlation 為真 → 該升）
+
 ---
 
 ## 紅線（碰到立刻停下來問）
