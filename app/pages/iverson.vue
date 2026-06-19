@@ -38,7 +38,9 @@ const INTERVAL_ANALYSIS_N = 50
 const INTERVAL_PAST_HOUR_DRAWS = 12
 // 獎號關聯位置 tab 對齊 /draws bingo 預設（defaultN() / defaultD('bingo_bingo')）
 const POSITIONS_ANALYSIS_N = defaultN()
-const FETCH_LIMIT = defaultD('bingo_bingo')
+// 預設 fetch 期數（= defaultD('bingo_bingo') = 500）寫進 DEFAULT_CONFIG.fetchLimit，
+// 實際抓取改讀 config.fetchLimit、可在 UI 上即時調整（debounce 後重抓）。
+const POSITIONS_DEFAULT_LIMIT = defaultD('bingo_bingo')
 
 interface NormalizedDraw {
   drawTerm: number
@@ -56,7 +58,7 @@ async function load() {
   try {
     // limit=500：同時供「隔期剩餘號碼」（取最新 12）與「獎號關聯位置」（用全部）使用
     const res = await $fetch<DrawQueryResponse>('/api/draws/bingo_bingo/recent', {
-      params: { limit: FETCH_LIMIT }
+      params: { limit: config.fetchLimit }
     })
     allDraws.value = [...res.results]
       .sort((a, b) => a.drawTerm - b.drawTerm)
@@ -306,6 +308,8 @@ const positionRows = computed<PositionRow[]>(() => {
 //   候選不足 20 / cap 衝突湊不滿：顯示實際數、標「不足 20」（不填、不破 cap）
 
 interface RuleConfig {
+  /** 抓取期數（影響 fetch limit、所有歷史比對與聚合命中率） */
+  fetchLimit: number
   predictTarget: number
   sourceMaxInterval: number
   posCapHigh: number
@@ -318,7 +322,12 @@ interface RuleConfig {
   consecutiveCap: number
 }
 
+const FETCH_LIMIT_MIN = 50
+const FETCH_LIMIT_MAX = 5000
+const FETCH_DEBOUNCE_MS = 500
+
 const DEFAULT_CONFIG: Readonly<RuleConfig> = Object.freeze({
+  fetchLimit: 500,
   predictTarget: 20,
   sourceMaxInterval: 3,
   posCapHigh: 10,
@@ -372,6 +381,18 @@ function saveConfigToStorage() {
 // config 改變→存 localStorage（deep watch）。
 // 注意：必須宣告在 const config 之後，否則 TDZ。
 watch(config, saveConfigToStorage, { deep: true })
+
+// fetchLimit 改變→ debounce 後重抓 allDraws。其他 config 欄位不需重抓，
+// 只觸發 predictionRows 重算（讀 config.* 的 reactive tracking）。
+let fetchLimitDebounce: ReturnType<typeof setTimeout> | null = null
+watch(() => config.fetchLimit, (next, prev) => {
+  if (next === prev) return
+  if (!Number.isFinite(next) || next < FETCH_LIMIT_MIN || next > FETCH_LIMIT_MAX) return
+  if (fetchLimitDebounce) clearTimeout(fetchLimitDebounce)
+  fetchLimitDebounce = setTimeout(() => {
+    load()
+  }, FETCH_DEBOUNCE_MS)
+})
 
 interface SlotSnapshot {
   period: number
@@ -754,6 +775,43 @@ const predictionHistoricalRows = computed<PredictionRow[]>(() => {
   return predictionRows.value.filter(r => !r.pending)
 })
 
+interface AggregateStats {
+  periods: number
+  totalPicks: number
+  totalHits: number
+  /** 整體命中率 = totalHits / totalPicks（避免 picks=0 期影響、用加權平均） */
+  integratedRatePct: number
+  /** 每期平均命中數 = totalHits / periods（含 picks=0 的期） */
+  avgHits: number
+  /** 不足 N 顆的期數 */
+  shortByCount: number
+  /** picks=0（候選池為空）的期數 */
+  zeroPickCount: number
+}
+
+const predictionAggregateStats = computed<AggregateStats>(() => {
+  const rows = predictionHistoricalRows.value
+  let totalPicks = 0
+  let totalHits = 0
+  let shortByCount = 0
+  let zeroPickCount = 0
+  for (const r of rows) {
+    totalPicks += r.picks.length
+    totalHits += r.hitCount
+    if (r.shortBy > 0) shortByCount++
+    if (r.picks.length === 0) zeroPickCount++
+  }
+  return {
+    periods: rows.length,
+    totalPicks,
+    totalHits,
+    integratedRatePct: totalPicks > 0 ? (totalHits / totalPicks) * 100 : 0,
+    avgHits: rows.length > 0 ? totalHits / rows.length : 0,
+    shortByCount,
+    zeroPickCount
+  }
+})
+
 function predictionRateText(row: PredictionRow): string {
   if (row.picks.length === 0) return '—'
   const pct = (row.hitCount / row.picks.length) * 100
@@ -902,7 +960,7 @@ const tabItems = computed(() => [
       </div>
       <template v-else>
         <p class="text-xs text-muted">
-          分析參數：N={{ POSITIONS_ANALYSIS_N }}、深度 {{ FETCH_LIMIT }} 期（對齊 /draws 賓果預設）。共 {{ positionRows.length }} 期，最新期在上。
+          分析參數：N={{ POSITIONS_ANALYSIS_N }}、深度 {{ config.fetchLimit }} 期（可在 Tab3 規則參數調整）。共 {{ positionRows.length }} 期，最新期在上。
         </p>
         <UCard
           v-for="row in positionRows"
@@ -1035,6 +1093,17 @@ const tabItems = computed(() => [
               class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-x-3 gap-y-2 text-xs"
             >
               <label class="block space-y-1">
+                <span class="text-muted block">比對期數（深度）</span>
+                <UInput
+                  v-model.number="config.fetchLimit"
+                  type="number"
+                  :min="FETCH_LIMIT_MIN"
+                  :max="FETCH_LIMIT_MAX"
+                  step="50"
+                  size="sm"
+                />
+              </label>
+              <label class="block space-y-1">
                 <span class="text-muted block">目標顆數</span>
                 <UInput
                   v-model.number="config.predictTarget"
@@ -1134,6 +1203,50 @@ const tabItems = computed(() => [
                   size="sm"
                 />
               </label>
+            </div>
+          </div>
+        </UCard>
+
+        <!-- 過去 X 期聚合命中率（即時隨任何參數變化重算） -->
+        <UCard
+          v-if="predictionAggregateStats.periods > 0"
+          :ui="{ body: 'p-3 sm:p-4' }"
+        >
+          <div class="space-y-2">
+            <div class="text-sm font-semibold">
+              過去 {{ predictionAggregateStats.periods }} 期整體命中
+              <span
+                v-if="loading"
+                class="ml-2 text-[10px] text-muted font-normal"
+              >（重新計算中…）</span>
+            </div>
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-x-3 gap-y-1 text-xs font-mono tabular-nums">
+              <div>
+                <span class="text-muted">整體命中率：</span>
+                <span
+                  :class="predictionAggregateStats.integratedRatePct > 0 ? 'text-emerald-500 font-semibold' : 'text-muted'"
+                >{{ predictionAggregateStats.integratedRatePct.toFixed(2) }}%</span>
+              </div>
+              <div>
+                <span class="text-muted">命中 / 推：</span>
+                <span>{{ predictionAggregateStats.totalHits }} / {{ predictionAggregateStats.totalPicks }}</span>
+              </div>
+              <div>
+                <span class="text-muted">平均命中：</span>
+                <span>{{ predictionAggregateStats.avgHits.toFixed(2) }}</span>
+                <span class="text-muted"> / {{ config.predictTarget }}</span>
+              </div>
+              <div>
+                <span class="text-muted">不足 {{ config.predictTarget }}：</span>
+                <span
+                  :class="predictionAggregateStats.shortByCount > 0 ? 'text-orange-500' : ''"
+                >{{ predictionAggregateStats.shortByCount }}</span>
+                <span class="text-muted"> 期</span>
+                <span
+                  v-if="predictionAggregateStats.zeroPickCount > 0"
+                  class="text-muted"
+                >（含 {{ predictionAggregateStats.zeroPickCount }} 期 0 推）</span>
+              </div>
             </div>
           </div>
         </UCard>

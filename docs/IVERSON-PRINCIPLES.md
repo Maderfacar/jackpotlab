@@ -44,10 +44,16 @@
 ### 6. Tab3「符合規則的 N 顆」規則（2026-06-19 拍板、參數可調）
 
 預設參數（`DEFAULT_CONFIG`，存在 `localStorage['iverson-prediction-rules-v1']`、UI 可即時調整）：
+- `fetchLimit = 500`（比對期數深度、範圍 50~5000；改值會 debounce 500ms 後重抓 allDraws）
 - `predictTarget = 20`（目標顆數）
 - `sourceMaxInterval = 3`（隔期 0~3）
 - `posCapHigh = 10`（Y ≥ 10 排除）
 - `pos5to9Cap = 2`、`le40Cap = 12`、`gt40Cap = 12`、`oddCap = 12`、`evenCap = 12`、`tailCap = 5`、`consecutiveCap = 4`
+
+聚合命中率（`predictionAggregateStats`、Tab3 頂部卡）即時隨任何參數變化重算：
+- 整體命中率 = totalHits / totalPicks（加權平均、不受 picks=0 期影響）
+- 平均命中 = totalHits / periods（含 picks=0 期）
+- 不足 N 期數 + 0 推期數
 
 snapshots 一律切 `slot[0..SLOT_SNAPSHOT_DEPTH-1]`（SLOT_SNAPSHOT_DEPTH=10），UI 控制 sourceMaxInterval 在 [0..9] 內調整、snapshots 不重算。
 
