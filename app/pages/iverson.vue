@@ -535,6 +535,8 @@ interface CapStats {
   pos39Max: number
   /** 位置 3-9 之中、有最大命中次數的那一個位置值（3..9）；無 = -1 */
   pos39MaxValue: number
+  /** 位置 10+ 的picks 數（沒有 cap、僅統計用、幫忙確認 picks 真的取到深位） */
+  pos10PlusCount: number
   hotCount: number
   coldCount: number
   /** 所有 cap 都沒超過 = true；應該永遠為 true（greedy 邏輯保證） */
@@ -548,6 +550,7 @@ function computeCapStats(picks: PredictionPick[]): CapStats {
   let even = 0
   let pos1Count = 0
   let pos2Count = 0
+  let pos10PlusCount = 0
   let hotCount = 0
   let coldCount = 0
   for (const p of picks) {
@@ -557,6 +560,7 @@ function computeCapStats(picks: PredictionPick[]): CapStats {
     else even++
     if (p.position === 1) pos1Count++
     else if (p.position === 2) pos2Count++
+    else if (p.position >= 10) pos10PlusCount++
     if (p.hot) hotCount++
     else coldCount++
   }
@@ -620,6 +624,7 @@ function computeCapStats(picks: PredictionPick[]): CapStats {
     pos2Count,
     pos39Max,
     pos39MaxValue,
+    pos10PlusCount,
     hotCount,
     coldCount,
     allWithinCap
@@ -1399,6 +1404,8 @@ const tabItems = computed(() => [
                 <span>·</span>
                 <span :class="capColorClass(predictionPendingRow.capStats.pos39Max, config.pos39Cap)">位3-9 max {{ predictionPendingRow.capStats.pos39Max }}/{{ config.pos39Cap }}<span v-if="predictionPendingRow.capStats.pos39MaxValue >= 0"> (位{{ predictionPendingRow.capStats.pos39MaxValue }})</span></span>
                 <span>·</span>
+                <span>位10+ {{ predictionPendingRow.capStats.pos10PlusCount }}<span class="text-muted">（無 cap、僅統計）</span></span>
+                <span>·</span>
                 <span>熱 {{ predictionPendingRow.capStats.hotCount }}/{{ predictionPendingRow.hotTarget }}</span>
                 <span>·</span>
                 <span>冷 {{ predictionPendingRow.capStats.coldCount }}/{{ predictionPendingRow.coldTarget }}</span>
@@ -1499,6 +1506,8 @@ const tabItems = computed(() => [
                 <span :class="capColorClass(row.capStats.pos2Count, config.pos12Cap)">位2 {{ row.capStats.pos2Count }}/{{ config.pos12Cap }}</span>
                 <span>·</span>
                 <span :class="capColorClass(row.capStats.pos39Max, config.pos39Cap)">位3-9 max {{ row.capStats.pos39Max }}/{{ config.pos39Cap }}<span v-if="row.capStats.pos39MaxValue >= 0"> (位{{ row.capStats.pos39MaxValue }})</span></span>
+                <span>·</span>
+                <span>位10+ {{ row.capStats.pos10PlusCount }}</span>
                 <span>·</span>
                 <span>熱 {{ row.capStats.hotCount }}/{{ row.hotTarget }}</span>
                 <span>·</span>
