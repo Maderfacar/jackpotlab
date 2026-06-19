@@ -44,14 +44,27 @@
 ### 6. Tab3「符合規則的 N 顆」規則（2026-06-19 拍板、參數可調）
 
 預設參數（`DEFAULT_CONFIG`，存在 `localStorage['iverson-prediction-rules-v1']`、UI 可即時調整）：
+
+基本參數：
 - `fetchLimit = 500`（比對期數深度、範圍 50~5000；改值會 debounce 500ms 後重抓 allDraws）
 - `predictTarget = 20`（目標顆數）
-- `sourceMaxInterval = 3`（隔期 0~3）
+- `sourceIntervalMin = 0` / `sourceIntervalMax = 3`（隔期範圍 [min..max]、2026-06-20 從單一上限拆成 range）
 - `posCapHigh = 10`（位置 ≥ 10 走 per-interval Y 排除）
 - `pos12Cap = 2`（位置 1、2 各 ≤ 2）
 - `pos39Cap = 1`（位置 3~9 各 ≤ 1）
 - `pos10PlusPercent = 30`（位 10+ 強制保留 30% 配額；2026-06-19 拍板）
 - `le40Cap = 12`、`gt40Cap = 12`、`oddCap = 12`、`evenCap = 12`、`tailCap = 5`、`consecutiveCap = 4`
+
+規則開關（2026-06-20 新增、預設全 `true`、UI 可單獨關閉以測命中率邊際貢獻）：
+- `enableHotColdSplit`：熱/冷池 85/15 分配；關掉 → 全部 record 首碼 '0'/'1' 的 slot 混進熱池
+- `enablePos10PlusQuota`：位 10+ 配額 + 4 phase greedy；關掉 → 不切位置 10+/1-9、變 2 phase（熱/冷）或 1 phase
+- `enableIntervalCap`：每隔期 ≤ ceil(target / 隔期數)；關掉 → 不強制分散
+- `enablePos12Cap`：位 1、2 各 ≤ `pos12Cap`；關掉 → 不限制
+- `enablePos39Cap`：位 3~9 各 ≤ `pos39Cap`；關掉 → 不限制
+- `enablePosHighExclusion`：per-interval Y ≥ `posCapHigh` 去重排除；關掉 → 不排除
+- `enableLe40Cap` / `enableGt40Cap` / `enableOddCap` / `enableEvenCap` / `enableTailCap` / `enableConsecutiveCap`：各 cap 開關
+
+> ⚠️ 同 storage key `iverson-prediction-rules-v1`、有 migration：若舊版本只有 `sourceMaxInterval`、自動對應到 `sourceIntervalMax`；`sourceIntervalMin` 預設 0。
 
 熱/冷池（hardcoded、`HOT_PICK_RATIO = 0.85`）：
 - 熱 = `record` CSV 首碼 `'0'`（最新一期該 slot 有命中）→ 佔 85%（20 顆=17 顆）
@@ -64,10 +77,10 @@
 - 平均命中 = totalHits / periods（含 picks=0 期）
 - 不足 N 期數 + 0 推期數
 
-snapshots 一律切 `slot[0..SLOT_SNAPSHOT_DEPTH-1]`（SLOT_SNAPSHOT_DEPTH=10），UI 控制 sourceMaxInterval 在 [0..9] 內調整、snapshots 不重算。
+snapshots 一律切 `slot[0..SLOT_SNAPSHOT_DEPTH-1]`（SLOT_SNAPSHOT_DEPTH=10），UI 控制 `sourceIntervalMin/Max` 在 [0..9] 內調整、snapshots 不重算。
 
-候選來源（2026-06-19 重做：分熱/冷池 + 位10+ 配額）：
-- 來源期 T 處理完後、`slot[0..config.sourceMaxInterval]`
+候選來源（2026-06-19 重做：分熱/冷池 + 位10+ 配額；2026-06-20 隔期改 range）：
+- 來源期 T 處理完後、`slot[sourceIntervalMin..sourceIntervalMax]`
 - **熱池** = `record` CSV 首碼 `'0'`（最新一期該 slot 有命中）
 - **冷池** = `record` CSV 首碼 `'1'`（差 1 期沒命中）；其餘首碼不入池
 - **位10+ 配額**：先按 `pos10PlusPercent%` 切出位 10+ 配額 / 位 1-9 配額；再各自切 85% 熱 / 15% 冷
@@ -84,20 +97,20 @@ snapshots 一律切 `slot[0..SLOT_SNAPSHOT_DEPTH-1]`（SLOT_SNAPSHOT_DEPTH=10）
 - 候選來自隔期 J 時、僅查 `excludedYByInterval[J]`；其他隔期的 Y 不波及
 - 早期實作版本是「全域排除」（所有 Y 攏在一起套全部 interval）→ 已修正
 
-caps（2026-06-19 重做位置 cap、2026-06-20 加每隔期 cap、一旦會超就跳過該候選）：
-- 位置 1 ≤ `config.pos12Cap`、位置 2 ≤ `config.pos12Cap`
-- 位置 3~9 各 ≤ `config.pos39Cap`（每個位置獨立 cap）
-- 位置 ≥ `config.posCapHigh`：走 per-interval Y 排除、不在 cap 機制裡
-- **每隔期 ≤ `ceil(predictTarget / (sourceMaxInterval+1))`** — 強制分散到 0..sourceMaxInterval 全部隔期、避免 slot 0 獨吞（2026-06-20 新增）
-- `<=40` ≤ `config.le40Cap`、`>40` ≤ `config.gt40Cap`
-- 奇 ≤ `config.oddCap`、偶 ≤ `config.evenCap`
-- 任一相同尾數 ≤ `config.tailCap`
-- 連續號碼最大連跑 ≤ `config.consecutiveCap`
+caps（2026-06-19 重做位置 cap、2026-06-20 加每隔期 cap + toggle 化、一旦會超就跳過該候選；toggle 關 = 整段 skip）：
+- 位置 1 ≤ `config.pos12Cap`、位置 2 ≤ `config.pos12Cap`（toggle: `enablePos12Cap`）
+- 位置 3~9 各 ≤ `config.pos39Cap`（每個位置獨立 cap；toggle: `enablePos39Cap`）
+- 位置 ≥ `config.posCapHigh`：走 per-interval Y 排除、不在 cap 機制裡（toggle: `enablePosHighExclusion`）
+- **每隔期 ≤ `ceil(predictTarget / 隔期數)`** — 強制分散到 [sourceIntervalMin..sourceIntervalMax] 全部隔期、避免單一 slot 獨吞（toggle: `enableIntervalCap`；2026-06-20 隔期數改算 max-min+1）
+- `<=40` ≤ `config.le40Cap`（toggle: `enableLe40Cap`）、`>40` ≤ `config.gt40Cap`（toggle: `enableGt40Cap`）
+- 奇 ≤ `config.oddCap`（toggle: `enableOddCap`）、偶 ≤ `config.evenCap`（toggle: `enableEvenCap`）
+- 任一相同尾數 ≤ `config.tailCap`（toggle: `enableTailCap`）
+- 連續號碼最大連跑 ≤ `config.consecutiveCap`（toggle: `enableConsecutiveCap`）
 
 候選排序（2026-06-20 改）：
 - 各 phase 內按 `(位置 asc, 隔期 asc)` 排序 — 位置外、隔期內
 - 同一位置先跨所有隔期試一輪、再進下一位置
-- 配合每隔期 cap、強制分散
+- 配合每隔期 cap、強制分散到 [sourceIntervalMin..sourceIntervalMax]
 
 候選排序優先序：**3 (避免 cap 抵達) > 1 (小隔期優先) > 2 (低位置優先)**
 - 實作法：先依 (隔期 asc, 位置 asc) 排序，再 greedy 跳過會 violate cap 的候選
