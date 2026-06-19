@@ -393,6 +393,90 @@ function wouldViolatePredictionCap(picks: PredictionPick[], cand: PredictionPick
   return false
 }
 
+interface CapStats {
+  le40: number
+  gt40: number
+  odd: number
+  even: number
+  tailMax: number
+  tailMaxDigit: number
+  maxRun: number
+  pos59Max: number
+  pos59MaxValue: number
+  /** 所有 cap 都沒超過 = true；應該永遠為 true（greedy 邏輯保證） */
+  allWithinCap: boolean
+}
+
+function computeCapStats(picks: PredictionPick[]): CapStats {
+  let le40 = 0
+  let gt40 = 0
+  let odd = 0
+  let even = 0
+  for (const p of picks) {
+    if (p.n <= 40) le40++
+    else gt40++
+    if (p.n % 2 === 1) odd++
+    else even++
+  }
+  const tailCounts = new Map<number, number>()
+  for (const p of picks) {
+    const t = p.n % 10
+    tailCounts.set(t, (tailCounts.get(t) ?? 0) + 1)
+  }
+  let tailMax = 0
+  let tailMaxDigit = -1
+  for (const [d, c] of tailCounts) {
+    if (c > tailMax) {
+      tailMax = c
+      tailMaxDigit = d
+    }
+  }
+  const sortedNs = picks.map(p => p.n).sort((a, b) => a - b)
+  let cur = 1
+  let maxRun = sortedNs.length > 0 ? 1 : 0
+  for (let i = 1; i < sortedNs.length; i++) {
+    if (sortedNs[i] === (sortedNs[i - 1] ?? 0) + 1) {
+      cur++
+      if (cur > maxRun) maxRun = cur
+    } else if (sortedNs[i] !== sortedNs[i - 1]) {
+      cur = 1
+    }
+  }
+  const posCounts = new Map<number, number>()
+  for (const p of picks) {
+    if (p.position >= 5 && p.position <= 9) {
+      posCounts.set(p.position, (posCounts.get(p.position) ?? 0) + 1)
+    }
+  }
+  let pos59Max = 0
+  let pos59MaxValue = -1
+  for (const [v, c] of posCounts) {
+    if (c > pos59Max) {
+      pos59Max = c
+      pos59MaxValue = v
+    }
+  }
+  const allWithinCap = le40 <= LE40_CAP
+    && gt40 <= GT40_CAP
+    && odd <= ODD_CAP
+    && even <= EVEN_CAP
+    && tailMax <= TAIL_CAP
+    && maxRun <= CONSECUTIVE_CAP
+    && pos59Max <= POS_5TO9_CAP
+  return {
+    le40,
+    gt40,
+    odd,
+    even,
+    tailMax,
+    tailMaxDigit,
+    maxRun,
+    pos59Max,
+    pos59MaxValue,
+    allWithinCap
+  }
+}
+
 interface PredictionRow {
   predictForTerm: number
   predictForDateLabel: string
@@ -401,13 +485,19 @@ interface PredictionRow {
   picks: PredictionPick[]
   picksSorted: PredictionPick[]
   shortBy: number
+  excludedYList: number[]
+  capStats: CapStats
   actualNumbers: number[]
   hitNumbers: number[]
   hitCount: number
   pending: boolean
 }
 
-function predictFromSnapshot(snap: PredictionSnapshot): { picks: PredictionPick[], shortBy: number } {
+function predictFromSnapshot(snap: PredictionSnapshot): {
+  picks: PredictionPick[]
+  shortBy: number
+  excludedYList: number[]
+} {
   // 1. 過濾 slot[0..5]：record CSV 首碼為 '0'
   const eligibleSlots = snap.slot06.filter((p) => {
     const first = p.record.split(',')[0]
@@ -463,7 +553,11 @@ function predictFromSnapshot(snap: PredictionSnapshot): { picks: PredictionPick[
     picks.push(remaining[chosenIdx]!)
     remaining.splice(chosenIdx, 1)
   }
-  return { picks, shortBy: PREDICT_TARGET - picks.length }
+  return {
+    picks,
+    shortBy: PREDICT_TARGET - picks.length,
+    excludedYList: [...excludedY].sort((a, b) => a - b)
+  }
 }
 
 const predictionRows = computed<PredictionRow[]>(() => {
@@ -472,8 +566,8 @@ const predictionRows = computed<PredictionRow[]>(() => {
   const rows: PredictionRow[] = []
   for (let i = 0; i < snaps.length; i++) {
     const snap = snaps[i]!
-    const { picks, shortBy } = predictFromSnapshot(snap)
-    // 預測目標 = 下一期 = drawsAsc[i+1]（若不存在則尚未開出）
+    const { picks, shortBy, excludedYList } = predictFromSnapshot(snap)
+    // 比對目標 = 下一期 = drawsAsc[i+1]（若不存在則尚未開出）
     const next = i + 1 < allDraws.value.length ? allDraws.value[i + 1]! : null
     const actualNumbers = next?.numbers ?? []
     const hitSet = new Set(actualNumbers)
@@ -481,6 +575,7 @@ const predictionRows = computed<PredictionRow[]>(() => {
     const hitNumbers: number[] = picksSorted
       .map(p => p.n)
       .filter(n => hitSet.has(n))
+    const capStats = computeCapStats(picks)
     rows.push({
       predictForTerm: next?.drawTerm ?? snap.drawTerm + 1,
       predictForDateLabel: next ? dateLabel(next.drawDate, next.drawTerm) : '',
@@ -489,6 +584,8 @@ const predictionRows = computed<PredictionRow[]>(() => {
       picks,
       picksSorted,
       shortBy,
+      excludedYList,
+      capStats,
       actualNumbers,
       hitNumbers,
       hitCount: hitNumbers.length,
@@ -497,6 +594,14 @@ const predictionRows = computed<PredictionRow[]>(() => {
   }
   rows.reverse() // 最新期在上
   return rows
+})
+
+const predictionPendingRow = computed<PredictionRow | null>(() => {
+  return predictionRows.value.find(r => r.pending) ?? null
+})
+
+const predictionHistoricalRows = computed<PredictionRow[]>(() => {
+  return predictionRows.value.filter(r => !r.pending)
 })
 
 function predictionRateText(row: PredictionRow): string {
@@ -509,6 +614,11 @@ function isPredictionHit(row: PredictionRow, n: number): boolean {
   return row.hitNumbers.includes(n)
 }
 
+function capColorClass(value: number, cap: number): string {
+  if (value >= cap) return 'text-orange-500'
+  return 'text-muted'
+}
+
 // ---- Tab state ----------------------------------------------------------
 
 type TabValue = 'interval' | 'positions' | 'prediction'
@@ -516,7 +626,7 @@ const activeTab = ref<TabValue>('interval')
 const tabItems = [
   { label: '隔期剩餘號碼', value: 'interval' as const, icon: 'i-lucide-layers' },
   { label: '獎號關聯位置', value: 'positions' as const, icon: 'i-lucide-link' },
-  { label: '下一期 20 顆預測', value: 'prediction' as const, icon: 'i-lucide-target' }
+  { label: '符合規則的 20 顆', value: 'prediction' as const, icon: 'i-lucide-filter' }
 ]
 </script>
 
@@ -682,7 +792,7 @@ const tabItems = [
       </template>
     </template>
 
-    <!-- Tab 3：下一期 20 顆預測 -->
+    <!-- Tab 3：符合規則的 20 顆（依規則篩選、非預測） -->
     <template v-else-if="activeTab === 'prediction'">
       <div
         v-if="predictionRows.length === 0"
@@ -691,16 +801,151 @@ const tabItems = [
         尚無資料
       </div>
       <template v-else>
-        <p class="text-xs text-muted">
-          每期套規則從當下「隔期 0~5」（最新記錄為 0、且位置不在 T 排除集合內）挑 20 顆、與下一期 actual 比對。共 {{ predictionRows.length }} 期，最新期在上。
-        </p>
+        <div class="flex items-start flex-wrap gap-2 text-xs text-muted">
+          <span>依規則從每期當下「隔期 0~5」（最新記錄為 0、位置不在 T 排除集合內）篩選 20 顆、與下一期實際開出比對。共 {{ predictionRows.length }} 期，待開獎期釘頂、歷史最新在上。</span>
+          <UPopover :content="{ side: 'bottom', align: 'start' }">
+            <UButton
+              color="neutral"
+              variant="subtle"
+              size="xs"
+              icon="i-lucide-info"
+              label="本頁規則"
+            />
+            <template #content>
+              <div class="max-w-md p-4 space-y-3 text-xs">
+                <div>
+                  <div class="text-sm font-semibold mb-1">單一隔期規則（候選池）</div>
+                  <ol class="list-decimal pl-5 space-y-1">
+                    <li>只從隔期 <span class="font-mono">0~{{ SOURCE_MAX_INTERVAL }}</span> 取候選</li>
+                    <li>該隔期 <span class="font-mono">record</span> CSV 首碼為 <span class="font-mono">'0'</span>（最新一期此 slot 有命中）</li>
+                    <li>
+                      位置排除：把該期 T 自家 <span class="font-mono">positions</span> CSV 中所有 <span class="font-mono">Y ≥ {{ POS_CAP_HIGH }}</span> 的 Y 值去重做集合；
+                      候選的 1-indexed 位置在此集合內則排除
+                    </li>
+                  </ol>
+                </div>
+                <div>
+                  <div class="text-sm font-semibold mb-1">全域 cap（一旦會超就跳過該候選）</div>
+                  <ul class="list-disc pl-5 space-y-1 font-mono">
+                    <li>位置 5/6/7/8/9 各 ≤ {{ POS_5TO9_CAP }}</li>
+                    <li>≤40 ≤ {{ LE40_CAP }}、&gt;40 ≤ {{ GT40_CAP }}</li>
+                    <li>奇 ≤ {{ ODD_CAP }}、偶 ≤ {{ EVEN_CAP }}</li>
+                    <li>任一相同尾數 ≤ {{ TAIL_CAP }}</li>
+                    <li>連續號碼最大連跑 ≤ {{ CONSECUTIVE_CAP }}</li>
+                  </ul>
+                </div>
+                <div>
+                  <div class="text-sm font-semibold mb-1">候選排序優先序</div>
+                  <p>3 (避免 cap 抵達) &gt; 1 (小隔期優先) &gt; 2 (低位置優先)</p>
+                  <p class="mt-1 text-muted">
+                    實作：先 sort by (隔期 asc, 位置 asc)、greedy 跳過會 violate cap 的候選。
+                  </p>
+                </div>
+                <div>
+                  <div class="text-sm font-semibold mb-1">不足 20</div>
+                  <p>顯示實際掛上的數、標「不足 20」，<strong>不破 cap、不補位</strong>。</p>
+                </div>
+                <div class="border-t border-default pt-2 text-[11px] text-muted">
+                  每張卡片底下的 caps 是該期 picks 的實際 cap 使用量；數值 = cap 上限會染橘提醒（greedy 已保證不超過）。
+                </div>
+              </div>
+            </template>
+          </UPopover>
+        </div>
+
+        <!-- 待開獎期釘頂 -->
         <UCard
-          v-for="row in predictionRows"
+          v-if="predictionPendingRow"
+          :ui="{ body: 'p-3 sm:p-4' }"
+          class="sticky top-0 z-10 bg-default/95 backdrop-blur supports-[backdrop-filter]:bg-default/70 ring-1 ring-primary/50"
+        >
+          <div class="space-y-3 text-xs">
+            <div class="flex items-baseline gap-2 flex-wrap">
+              <UBadge
+                color="primary"
+                variant="subtle"
+                size="sm"
+              >
+                待開獎
+              </UBadge>
+              <span class="font-mono text-sm font-semibold">第 {{ predictionPendingRow.predictForTerm }} 期</span>
+              <span class="text-[10px] text-muted">尚未開出</span>
+            </div>
+            <div class="text-[10px] text-muted">
+              來源期 第 {{ predictionPendingRow.sourceTerm }} 期
+              <span
+                v-if="predictionPendingRow.sourceDateLabel"
+                class="ml-1 font-mono"
+              >{{ predictionPendingRow.sourceDateLabel }}</span>
+            </div>
+
+            <!-- 規則執行軌跡（debug 用，幫使用者驗證規則確實有跑） -->
+            <div class="text-[10px] text-muted font-mono space-y-0.5">
+              <div>
+                排除位置（Y≥{{ POS_CAP_HIGH }}）：
+                <span v-if="predictionPendingRow.excludedYList.length === 0">無</span>
+                <span v-else>{{ predictionPendingRow.excludedYList.join(', ') }}</span>
+              </div>
+              <div class="flex flex-wrap gap-x-2 gap-y-0.5">
+                <span :class="capColorClass(predictionPendingRow.capStats.le40, LE40_CAP)">≤40 {{ predictionPendingRow.capStats.le40 }}/{{ LE40_CAP }}</span>
+                <span>·</span>
+                <span :class="capColorClass(predictionPendingRow.capStats.gt40, GT40_CAP)">&gt;40 {{ predictionPendingRow.capStats.gt40 }}/{{ GT40_CAP }}</span>
+                <span>·</span>
+                <span :class="capColorClass(predictionPendingRow.capStats.odd, ODD_CAP)">奇 {{ predictionPendingRow.capStats.odd }}/{{ ODD_CAP }}</span>
+                <span>·</span>
+                <span :class="capColorClass(predictionPendingRow.capStats.even, EVEN_CAP)">偶 {{ predictionPendingRow.capStats.even }}/{{ EVEN_CAP }}</span>
+                <span>·</span>
+                <span :class="capColorClass(predictionPendingRow.capStats.tailMax, TAIL_CAP)">尾 max {{ predictionPendingRow.capStats.tailMax }}/{{ TAIL_CAP }}<span v-if="predictionPendingRow.capStats.tailMaxDigit >= 0"> (尾{{ predictionPendingRow.capStats.tailMaxDigit }})</span></span>
+                <span>·</span>
+                <span :class="capColorClass(predictionPendingRow.capStats.maxRun, CONSECUTIVE_CAP)">連跑 {{ predictionPendingRow.capStats.maxRun }}/{{ CONSECUTIVE_CAP }}</span>
+                <span>·</span>
+                <span :class="capColorClass(predictionPendingRow.capStats.pos59Max, POS_5TO9_CAP)">位5-9 max {{ predictionPendingRow.capStats.pos59Max }}/{{ POS_5TO9_CAP }}<span v-if="predictionPendingRow.capStats.pos59MaxValue >= 0"> (位{{ predictionPendingRow.capStats.pos59MaxValue }})</span></span>
+                <span
+                  v-if="predictionPendingRow.shortBy > 0"
+                  class="text-orange-500"
+                >· 不足 20（差 {{ predictionPendingRow.shortBy }} 顆）</span>
+              </div>
+            </div>
+
+            <!-- 推（升冪、命中染綠，待開獎期應全部 neutral） -->
+            <div class="space-y-1">
+              <div class="text-[10px] text-muted">
+                推（{{ predictionPendingRow.picks.length }} 顆）
+              </div>
+              <div
+                v-if="predictionPendingRow.picksSorted.length === 0"
+                class="text-[10px] text-muted"
+              >
+                —
+              </div>
+              <div
+                v-else
+                class="flex flex-wrap items-center gap-1"
+              >
+                <UBadge
+                  v-for="p in predictionPendingRow.picksSorted"
+                  :key="`pred-pending-${p.n}`"
+                  color="neutral"
+                  variant="subtle"
+                  size="sm"
+                  class="relative min-w-7 justify-center font-mono"
+                >
+                  {{ pad(p.n) }}
+                  <span class="absolute bottom-0 right-0.5 text-[8px] leading-none font-normal text-black">{{ p.position }}</span>
+                </UBadge>
+              </div>
+            </div>
+          </div>
+        </UCard>
+
+        <!-- 歷史期：最新在上、可驗證命中 -->
+        <UCard
+          v-for="row in predictionHistoricalRows"
           :key="`pred-${row.sourceTerm}`"
           :ui="{ body: 'p-3 sm:p-4' }"
         >
           <div class="space-y-3 text-xs">
-            <!-- 預測目標期 + 命中機率 -->
+            <!-- 目標期 + 命中機率 -->
             <div class="space-y-1">
               <div class="flex items-baseline gap-2 flex-wrap">
                 <span class="font-mono text-sm font-semibold">第 {{ row.predictForTerm }} 期</span>
@@ -708,10 +953,6 @@ const tabItems = [
                   v-if="row.predictForDateLabel"
                   class="text-[10px] text-muted font-mono"
                 >{{ row.predictForDateLabel }}</span>
-                <span
-                  v-else
-                  class="text-[10px] text-muted"
-                >尚未開出</span>
               </div>
               <div
                 class="font-mono tabular-nums text-[11px]"
@@ -723,10 +964,6 @@ const tabItems = [
                   v-if="row.shortBy > 0"
                   class="ml-2 text-orange-500"
                 >不足 20（差 {{ row.shortBy }} 顆）</span>
-                <span
-                  v-if="row.pending"
-                  class="ml-2 text-muted"
-                >待開獎</span>
               </div>
               <div class="text-[10px] text-muted">
                 來源期 第 {{ row.sourceTerm }} 期
@@ -734,6 +971,30 @@ const tabItems = [
                   v-if="row.sourceDateLabel"
                   class="ml-1 font-mono"
                 >{{ row.sourceDateLabel }}</span>
+              </div>
+            </div>
+
+            <!-- 規則執行軌跡 -->
+            <div class="text-[10px] text-muted font-mono space-y-0.5">
+              <div>
+                排除位置（Y≥{{ POS_CAP_HIGH }}）：
+                <span v-if="row.excludedYList.length === 0">無</span>
+                <span v-else>{{ row.excludedYList.join(', ') }}</span>
+              </div>
+              <div class="flex flex-wrap gap-x-2 gap-y-0.5">
+                <span :class="capColorClass(row.capStats.le40, LE40_CAP)">≤40 {{ row.capStats.le40 }}/{{ LE40_CAP }}</span>
+                <span>·</span>
+                <span :class="capColorClass(row.capStats.gt40, GT40_CAP)">&gt;40 {{ row.capStats.gt40 }}/{{ GT40_CAP }}</span>
+                <span>·</span>
+                <span :class="capColorClass(row.capStats.odd, ODD_CAP)">奇 {{ row.capStats.odd }}/{{ ODD_CAP }}</span>
+                <span>·</span>
+                <span :class="capColorClass(row.capStats.even, EVEN_CAP)">偶 {{ row.capStats.even }}/{{ EVEN_CAP }}</span>
+                <span>·</span>
+                <span :class="capColorClass(row.capStats.tailMax, TAIL_CAP)">尾 max {{ row.capStats.tailMax }}/{{ TAIL_CAP }}</span>
+                <span>·</span>
+                <span :class="capColorClass(row.capStats.maxRun, CONSECUTIVE_CAP)">連跑 {{ row.capStats.maxRun }}/{{ CONSECUTIVE_CAP }}</span>
+                <span>·</span>
+                <span :class="capColorClass(row.capStats.pos59Max, POS_5TO9_CAP)">位5-9 max {{ row.capStats.pos59Max }}/{{ POS_5TO9_CAP }}</span>
               </div>
             </div>
 
@@ -765,7 +1026,7 @@ const tabItems = [
               </div>
             </div>
 
-            <!-- 推了哪幾個（升冪、命中染綠） -->
+            <!-- 推（升冪、命中染綠） -->
             <div class="space-y-1">
               <div class="text-[10px] text-muted">
                 推（{{ row.picks.length }} 顆）
