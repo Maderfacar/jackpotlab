@@ -508,12 +508,14 @@ function wouldViolatePredictionCap(picks: PredictionPick[], cand: PredictionPick
   let pos1 = 0
   let pos2 = 0
   const pos39Count = new Map<number, number>()
+  const intervalCount = new Map<number, number>()
   for (const p of picks) {
     if (p.position === 1) pos1++
     else if (p.position === 2) pos2++
     else if (p.position >= 3 && p.position <= 9) {
       pos39Count.set(p.position, (pos39Count.get(p.position) ?? 0) + 1)
     }
+    intervalCount.set(p.intervalJ, (intervalCount.get(p.intervalJ) ?? 0) + 1)
   }
   if (cand.position === 1) {
     if (pos1 + 1 > config.pos12Cap) return true
@@ -523,6 +525,11 @@ function wouldViolatePredictionCap(picks: PredictionPick[], cand: PredictionPick
     const cur2 = (pos39Count.get(cand.position) ?? 0) + 1
     if (cur2 > config.pos39Cap) return true
   }
+  // Per-interval cap（強制分散）：每隔期 ≤ ceil(predictTarget / (sourceMaxInterval+1))
+  // 例：target=20 / 4 隔期 → 5 顆/隔期；target=10 / 4 隔期 → 3 顆/隔期
+  const intervalCap = Math.ceil(config.predictTarget / (config.sourceMaxInterval + 1))
+  const candIntervalNext = (intervalCount.get(cand.intervalJ) ?? 0) + 1
+  if (candIntervalNext > intervalCap) return true
   return false
 }
 
@@ -544,6 +551,10 @@ interface CapStats {
   pos10PlusCount: number
   hotCount: number
   coldCount: number
+  /** 每隔期的 picks 數（含 0~sourceMaxInterval 全部隔期、0 picks 也列） */
+  intervalCounts: Array<{ interval: number, count: number }>
+  /** 每隔期 cap（= ceil(predictTarget / (sourceMaxInterval+1))） */
+  intervalCap: number
   /** 所有 cap 都沒超過 = true；應該永遠為 true（greedy 邏輯保證） */
   allWithinCap: boolean
 }
@@ -608,6 +619,18 @@ function computeCapStats(picks: PredictionPick[]): CapStats {
       pos39MaxValue = v
     }
   }
+  // Per-interval picks 數（0..sourceMaxInterval 全部列、0 picks 也保留）
+  const intervalMap = new Map<number, number>()
+  for (let i = 0; i <= config.sourceMaxInterval; i++) intervalMap.set(i, 0)
+  for (const p of picks) {
+    intervalMap.set(p.intervalJ, (intervalMap.get(p.intervalJ) ?? 0) + 1)
+  }
+  const intervalCounts = [...intervalMap.entries()]
+    .map(([interval, count]) => ({ interval, count }))
+    .sort((a, b) => a.interval - b.interval)
+  const intervalCap = Math.ceil(config.predictTarget / (config.sourceMaxInterval + 1))
+  const intervalCapOk = intervalCounts.every(s => s.count <= intervalCap)
+
   const allWithinCap = le40 <= config.le40Cap
     && gt40 <= config.gt40Cap
     && odd <= config.oddCap
@@ -617,6 +640,7 @@ function computeCapStats(picks: PredictionPick[]): CapStats {
     && pos1Count <= config.pos12Cap
     && pos2Count <= config.pos12Cap
     && pos39Max <= config.pos39Cap
+    && intervalCapOk
   return {
     le40,
     gt40,
@@ -632,6 +656,8 @@ function computeCapStats(picks: PredictionPick[]): CapStats {
     pos10PlusCount,
     hotCount,
     coldCount,
+    intervalCounts,
+    intervalCap,
     allWithinCap
   }
 }
@@ -750,10 +776,12 @@ function predictFromSnapshot(snap: PredictionSnapshot): {
     return true
   })
 
-  // 5. 排序：小隔期優先 > 低位置優先（兩池各自）
+  // 5. 排序：位置 asc 為外、隔期 asc 為內。
+  //    這樣同一位置會先跨所有隔期試一輪、再進下一位置。
+  //    配合 per-interval cap，候選會強制分散到 0..sourceMaxInterval 全部隔期、避免被 slot 0 獨吞。
   const sortFn = (a: PredictionPick, b: PredictionPick) => {
-    if (a.intervalJ !== b.intervalJ) return a.intervalJ - b.intervalJ
-    return a.position - b.position
+    if (a.position !== b.position) return a.position - b.position
+    return a.intervalJ - b.intervalJ
   }
   hotFiltered.sort(sortFn)
   coldFiltered.sort(sortFn)
@@ -1167,6 +1195,10 @@ const tabItems = computed(() => [
                   <ul class="list-disc pl-5 space-y-1 font-mono">
                     <li>位置 1 ≤ {{ config.pos12Cap }}、位置 2 ≤ {{ config.pos12Cap }}</li>
                     <li>位置 3~9 各 ≤ {{ config.pos39Cap }}（每個位置獨立 cap）</li>
+                    <li>
+                      <strong>每隔期 ≤ <span class="font-mono">ceil(predictTarget / (sourceMaxInterval+1))</span></strong>
+                      （強制分散、避免 slot 0 獨吞）
+                    </li>
                     <li>≤40 ≤ {{ config.le40Cap }}、&gt;40 ≤ {{ config.gt40Cap }}</li>
                     <li>奇 ≤ {{ config.oddCap }}、偶 ≤ {{ config.evenCap }}</li>
                     <li>任一相同尾數 ≤ {{ config.tailCap }}</li>
@@ -1174,11 +1206,14 @@ const tabItems = computed(() => [
                   </ul>
                 </div>
                 <div>
-                  <div class="text-sm font-semibold mb-1">候選排序優先序（暫未變更）</div>
-                  <p>3 (避免 cap 抵達) &gt; 1 (小隔期優先) &gt; 2 (低位置優先)</p>
+                  <div class="text-sm font-semibold mb-1">候選排序（2026-06-20 改）</div>
+                  <p class="text-muted">
+                    各 phase 內按 <strong>(位置 asc, 隔期 asc)</strong> 排序 — 位置外、隔期內：
+                    同一位置先跨所有隔期試一輪、再進下一位置。配合每隔期 cap、強制候選分散到 0~{{ config.sourceMaxInterval }}。
+                  </p>
                   <p class="mt-1 text-muted">
-                    實作：4 phase greedy — (1) 熱池位10+ → (2) 冷池位10+ → (3) 熱池位1-9 → (4) 冷池位1-9；
-                    各 phase 內按 (隔期 asc, 位置 asc) 排序、greedy 跳過會 violate cap 的候選。
+                    4 phase greedy：(1) 熱池位10+ → (2) 冷池位10+ → (3) 熱池位1-9 → (4) 冷池位1-9；
+                    greedy 跳過會 violate cap 的候選。
                   </p>
                 </div>
                 <div>
@@ -1465,6 +1500,14 @@ const tabItems = computed(() => [
                   class="text-orange-500"
                 >· 不足 {{ config.predictTarget }}（差 {{ predictionPendingRow.shortBy }} 顆）</span>
               </div>
+              <div class="flex flex-wrap gap-x-2 gap-y-0.5">
+                <span class="text-muted">隔期分佈 (cap {{ predictionPendingRow.capStats.intervalCap }}/隔期)：</span>
+                <span
+                  v-for="(seg, i) in predictionPendingRow.capStats.intervalCounts"
+                  :key="`intpend-${seg.interval}`"
+                  :class="seg.count >= predictionPendingRow.capStats.intervalCap ? 'text-orange-500' : (seg.count === 0 ? 'text-red-500' : '')"
+                >{{ i > 0 ? ' · ' : '' }}隔{{ seg.interval }}: {{ seg.count }}</span>
+              </div>
             </div>
 
             <!-- 推（升冪、命中染綠，待開獎期應全部 neutral） -->
@@ -1565,6 +1608,14 @@ const tabItems = computed(() => [
                 <span>熱 {{ row.capStats.hotCount }}/{{ row.hotTarget }}</span>
                 <span>·</span>
                 <span>冷 {{ row.capStats.coldCount }}/{{ row.coldTarget }}</span>
+              </div>
+              <div class="flex flex-wrap gap-x-2 gap-y-0.5">
+                <span class="text-muted">隔期分佈 (cap {{ row.capStats.intervalCap }}/隔期)：</span>
+                <span
+                  v-for="(seg, i) in row.capStats.intervalCounts"
+                  :key="`int-${row.sourceTerm}-${seg.interval}`"
+                  :class="seg.count >= row.capStats.intervalCap ? 'text-orange-500' : (seg.count === 0 ? 'text-red-500' : '')"
+                >{{ i > 0 ? ' · ' : '' }}隔{{ seg.interval }}: {{ seg.count }}</span>
               </div>
             </div>
 
