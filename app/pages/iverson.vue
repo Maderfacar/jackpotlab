@@ -312,8 +312,12 @@ interface RuleConfig {
   fetchLimit: number
   predictTarget: number
   sourceMaxInterval: number
+  /** 位置 ≥ posCapHigh 時走 per-interval Y 排除（與前一期 T 的 positions 比對去重） */
   posCapHigh: number
-  pos5to9Cap: number
+  /** 位置 1、2 各自的命中上限 */
+  pos12Cap: number
+  /** 位置 3-9 各自的命中上限 */
+  pos39Cap: number
   le40Cap: number
   gt40Cap: number
   oddCap: number
@@ -326,12 +330,19 @@ const FETCH_LIMIT_MIN = 50
 const FETCH_LIMIT_MAX = 5000
 const FETCH_DEBOUNCE_MS = 500
 
+/** 候選池熱/冷比例（2026-06-19 拍板、暫不開放 UI 調整）。
+ * 熱 = slot.record CSV 首碼 '0'（最新一期該 slot 有命中）
+ * 冷 = slot.record CSV 首碼 '1'（差一期沒命中）
+ * 其餘首碼（'2' 以上）的 slot 不進候選池。 */
+const HOT_PICK_RATIO = 0.85
+
 const DEFAULT_CONFIG: Readonly<RuleConfig> = Object.freeze({
   fetchLimit: 500,
   predictTarget: 20,
   sourceMaxInterval: 3,
   posCapHigh: 10,
-  pos5to9Cap: 2,
+  pos12Cap: 2,
+  pos39Cap: 1,
   le40Cap: 12,
   gt40Cap: 12,
   oddCap: 12,
@@ -441,6 +452,8 @@ interface PredictionPick {
   n: number
   position: number
   intervalJ: number
+  /** 候選來自熱池（record 首碼 '0'）= true、冷池（首碼 '1'）= false */
+  hot: boolean
 }
 
 function wouldViolatePredictionCap(picks: PredictionPick[], cand: PredictionPick): boolean {
@@ -483,16 +496,27 @@ function wouldViolatePredictionCap(picks: PredictionPick[], cand: PredictionPick
   }
   if (max > config.consecutiveCap) return true
 
-  // 位置 5/6/7/8/9 各 ≤ pos5to9Cap
-  const posCount = new Map<number, number>()
+  // 新位置 cap 結構（2026-06-19 重做）：
+  //   位置 1、2 各 ≤ pos12Cap
+  //   位置 3-9 各 ≤ pos39Cap
+  //   位置 ≥ 10 不在此檢查、走 per-interval Y 排除（在 predictFromSnapshot 預先過濾）
+  let pos1 = 0
+  let pos2 = 0
+  const pos39Count = new Map<number, number>()
   for (const p of picks) {
-    if (p.position >= 5 && p.position <= 9) {
-      posCount.set(p.position, (posCount.get(p.position) ?? 0) + 1)
+    if (p.position === 1) pos1++
+    else if (p.position === 2) pos2++
+    else if (p.position >= 3 && p.position <= 9) {
+      pos39Count.set(p.position, (pos39Count.get(p.position) ?? 0) + 1)
     }
   }
-  if (cand.position >= 5 && cand.position <= 9) {
-    const cur2 = (posCount.get(cand.position) ?? 0) + 1
-    if (cur2 > config.pos5to9Cap) return true
+  if (cand.position === 1) {
+    if (pos1 + 1 > config.pos12Cap) return true
+  } else if (cand.position === 2) {
+    if (pos2 + 1 > config.pos12Cap) return true
+  } else if (cand.position >= 3 && cand.position <= 9) {
+    const cur2 = (pos39Count.get(cand.position) ?? 0) + 1
+    if (cur2 > config.pos39Cap) return true
   }
   return false
 }
@@ -505,8 +529,14 @@ interface CapStats {
   tailMax: number
   tailMaxDigit: number
   maxRun: number
-  pos59Max: number
-  pos59MaxValue: number
+  pos1Count: number
+  pos2Count: number
+  /** 位置 3-9 之中、最大命中次數 */
+  pos39Max: number
+  /** 位置 3-9 之中、有最大命中次數的那一個位置值（3..9）；無 = -1 */
+  pos39MaxValue: number
+  hotCount: number
+  coldCount: number
   /** 所有 cap 都沒超過 = true；應該永遠為 true（greedy 邏輯保證） */
   allWithinCap: boolean
 }
@@ -516,11 +546,19 @@ function computeCapStats(picks: PredictionPick[]): CapStats {
   let gt40 = 0
   let odd = 0
   let even = 0
+  let pos1Count = 0
+  let pos2Count = 0
+  let hotCount = 0
+  let coldCount = 0
   for (const p of picks) {
     if (p.n <= 40) le40++
     else gt40++
     if (p.n % 2 === 1) odd++
     else even++
+    if (p.position === 1) pos1Count++
+    else if (p.position === 2) pos2Count++
+    if (p.hot) hotCount++
+    else coldCount++
   }
   const tailCounts = new Map<number, number>()
   for (const p of picks) {
@@ -546,18 +584,19 @@ function computeCapStats(picks: PredictionPick[]): CapStats {
       cur = 1
     }
   }
-  const posCounts = new Map<number, number>()
+  // 位置 3-9 各自命中次數最大值
+  const pos39Counts = new Map<number, number>()
   for (const p of picks) {
-    if (p.position >= 5 && p.position <= 9) {
-      posCounts.set(p.position, (posCounts.get(p.position) ?? 0) + 1)
+    if (p.position >= 3 && p.position <= 9) {
+      pos39Counts.set(p.position, (pos39Counts.get(p.position) ?? 0) + 1)
     }
   }
-  let pos59Max = 0
-  let pos59MaxValue = -1
-  for (const [v, c] of posCounts) {
-    if (c > pos59Max) {
-      pos59Max = c
-      pos59MaxValue = v
+  let pos39Max = 0
+  let pos39MaxValue = -1
+  for (const [v, c] of pos39Counts) {
+    if (c > pos39Max) {
+      pos39Max = c
+      pos39MaxValue = v
     }
   }
   const allWithinCap = le40 <= config.le40Cap
@@ -566,7 +605,9 @@ function computeCapStats(picks: PredictionPick[]): CapStats {
     && even <= config.evenCap
     && tailMax <= config.tailCap
     && maxRun <= config.consecutiveCap
-    && pos59Max <= config.pos5to9Cap
+    && pos1Count <= config.pos12Cap
+    && pos2Count <= config.pos12Cap
+    && pos39Max <= config.pos39Cap
   return {
     le40,
     gt40,
@@ -575,8 +616,12 @@ function computeCapStats(picks: PredictionPick[]): CapStats {
     tailMax,
     tailMaxDigit,
     maxRun,
-    pos59Max,
-    pos59MaxValue,
+    pos1Count,
+    pos2Count,
+    pos39Max,
+    pos39MaxValue,
+    hotCount,
+    coldCount,
     allWithinCap
   }
 }
@@ -602,6 +647,10 @@ interface PredictionRow {
   shortBy: number
   excludedByInterval: ExcludedYPerInterval[]
   capStats: CapStats
+  /** 熱池目標顆數（= round(predictTarget * 0.85)） */
+  hotTarget: number
+  /** 冷池目標顆數（= predictTarget - hotTarget） */
+  coldTarget: number
   actualNumbers: number[]
   actualPositions: ActualPositioned[]
   hitNumbers: number[]
@@ -613,27 +662,35 @@ function predictFromSnapshot(snap: PredictionSnapshot): {
   picks: PredictionPick[]
   shortBy: number
   excludedByInterval: ExcludedYPerInterval[]
+  hotTarget: number
+  coldTarget: number
 } {
-  // 1. 把 snapshot 切到 user 指定的 sourceMaxInterval 範圍；過濾 record 首碼 '0'
+  // 1. 把 snapshot 切到 user 指定的 sourceMaxInterval 範圍；
+  //    分熱（record 首碼 '0'）/ 冷（首碼 '1'）兩池；其餘首碼不入池。
   const inRange = snap.topSlots.slice(0, config.sourceMaxInterval + 1)
-  const eligibleSlots = inRange.filter((p) => {
+  const hotSlots: SlotSnapshot[] = []
+  const coldSlots: SlotSnapshot[] = []
+  for (const p of inRange) {
     const first = p.record.split(',')[0]
-    return first === '0'
-  })
-
-  // 2. 收集候選（每顆獎號帶 1-indexed 位置 + 隔期 j）
-  const allCands: PredictionPick[] = []
-  for (const slot of eligibleSlots) {
-    const sorted = [...slot.prizes].sort((a, b) => a - b)
-    sorted.forEach((n, idx) => {
-      allCands.push({ n, position: idx + 1, intervalJ: slot.period })
-    })
+    if (first === '0') hotSlots.push(p)
+    else if (first === '1') coldSlots.push(p)
   }
 
-  // 3. Per-interval 位置排除（使用者拍板：非全域）
-  //    - 把 T 的 periods CSV（每顆 T 獎號的 foundIdx）與 positions CSV（X-Y）zip
-  //    - 按 foundIdx 分組、Y >= posCapHigh 的 Y 進對應 interval 的排除集
-  //    - 候選來自 slot[J] 時，僅查 excludedYByInterval[J] 來排除（其他 interval 的 Y 不波及）
+  // 2. 收集候選（hot flag 跟著 slot 走）
+  function buildCands(slots: SlotSnapshot[], hot: boolean): PredictionPick[] {
+    const out: PredictionPick[] = []
+    for (const slot of slots) {
+      const sorted = [...slot.prizes].sort((a, b) => a - b)
+      sorted.forEach((n, idx) => {
+        out.push({ n, position: idx + 1, intervalJ: slot.period, hot })
+      })
+    }
+    return out
+  }
+  const hotCands = buildCands(hotSlots, true)
+  const coldCands = buildCands(coldSlots, false)
+
+  // 3. Per-interval 位置排除（與前一期 T 的 positions 比對、Y >= posCapHigh 去重）
   const excludedYByInterval = new Map<number, Set<number>>()
   const periodsParts = snap.periods.split(',')
   const positionsParts = snap.positions.split(',')
@@ -654,43 +711,66 @@ function predictFromSnapshot(snap: PredictionSnapshot): {
     }
     set.add(y)
   }
-  let filtered = allCands.filter((c) => {
-    const set = excludedYByInterval.get(c.intervalJ)
-    if (!set) return true
-    return !set.has(c.position)
-  })
+  function applyExclusion(cands: PredictionPick[]): PredictionPick[] {
+    return cands.filter((c) => {
+      const set = excludedYByInterval.get(c.intervalJ)
+      if (!set) return true
+      return !set.has(c.position)
+    })
+  }
+  let hotFiltered = applyExclusion(hotCands)
+  let coldFiltered = applyExclusion(coldCands)
 
-  // 4. 去重
+  // 4. 去重（n 全域、熱優先佔位、冷再補；不重複出現）
   const seenN = new Set<number>()
-  filtered = filtered.filter((c) => {
+  hotFiltered = hotFiltered.filter((c) => {
+    if (seenN.has(c.n)) return false
+    seenN.add(c.n)
+    return true
+  })
+  coldFiltered = coldFiltered.filter((c) => {
     if (seenN.has(c.n)) return false
     seenN.add(c.n)
     return true
   })
 
-  // 5. 排序：小隔期優先 > 低位置優先
-  filtered.sort((a, b) => {
+  // 5. 排序：小隔期優先 > 低位置優先（兩池各自）
+  const sortFn = (a: PredictionPick, b: PredictionPick) => {
     if (a.intervalJ !== b.intervalJ) return a.intervalJ - b.intervalJ
     return a.position - b.position
-  })
+  }
+  hotFiltered.sort(sortFn)
+  coldFiltered.sort(sortFn)
 
-  // 6. Greedy 選到 predictTarget：cap 抵達者跳過（cap 避免 = primary）
+  // 6. 熱/冷配額：熱 85% / 冷 15%（嚴格、不互補）
+  const hotTarget = Math.round(config.predictTarget * HOT_PICK_RATIO)
+  const coldTarget = config.predictTarget - hotTarget
+
   const picks: PredictionPick[] = []
-  const remaining = [...filtered]
-  while (picks.length < config.predictTarget) {
-    let chosenIdx = -1
-    for (let i = 0; i < remaining.length; i++) {
-      if (!wouldViolatePredictionCap(picks, remaining[i]!)) {
-        chosenIdx = i
-        break
+
+  function greedyPick(pool: PredictionPick[], target: number): number {
+    let picked = 0
+    const remaining = [...pool]
+    while (picked < target) {
+      let chosenIdx = -1
+      for (let i = 0; i < remaining.length; i++) {
+        if (!wouldViolatePredictionCap(picks, remaining[i]!)) {
+          chosenIdx = i
+          break
+        }
       }
+      if (chosenIdx === -1) break
+      picks.push(remaining[chosenIdx]!)
+      remaining.splice(chosenIdx, 1)
+      picked++
     }
-    if (chosenIdx === -1) break
-    picks.push(remaining[chosenIdx]!)
-    remaining.splice(chosenIdx, 1)
+    return picked
   }
 
-  // 為 UI 軌跡輸出：只列 0..sourceMaxInterval 範圍內、有 Y >= 10 的 interval
+  greedyPick(hotFiltered, hotTarget)
+  greedyPick(coldFiltered, coldTarget)
+
+  // UI 軌跡輸出：只列 0..sourceMaxInterval 範圍內、有 Y >= 10 的 interval
   const excludedByInterval: ExcludedYPerInterval[] = []
   for (const [iv, set] of excludedYByInterval) {
     if (iv > config.sourceMaxInterval) continue
@@ -701,7 +781,9 @@ function predictFromSnapshot(snap: PredictionSnapshot): {
   return {
     picks,
     shortBy: config.predictTarget - picks.length,
-    excludedByInterval
+    excludedByInterval,
+    hotTarget,
+    coldTarget
   }
 }
 
@@ -711,7 +793,7 @@ const predictionRows = computed<PredictionRow[]>(() => {
   const rows: PredictionRow[] = []
   for (let i = 0; i < snaps.length; i++) {
     const snap = snaps[i]!
-    const { picks, shortBy, excludedByInterval } = predictFromSnapshot(snap)
+    const { picks, shortBy, excludedByInterval, hotTarget, coldTarget } = predictFromSnapshot(snap)
     // 比對目標 = 下一期 = drawsAsc[i+1]（若不存在則尚未開出）
     const next = i + 1 < allDraws.value.length ? allDraws.value[i + 1]! : null
     const nextSnap = i + 1 < snaps.length ? snaps[i + 1]! : null
@@ -756,6 +838,8 @@ const predictionRows = computed<PredictionRow[]>(() => {
       shortBy,
       excludedByInterval,
       capStats,
+      hotTarget,
+      coldTarget,
       actualNumbers,
       actualPositions,
       hitNumbers,
@@ -1010,7 +1094,7 @@ const tabItems = computed(() => [
       </div>
       <template v-else>
         <div class="flex items-start flex-wrap gap-2 text-xs text-muted">
-          <span>依規則從每期當下「隔期 0~{{ config.sourceMaxInterval }}」（最新記錄為 0、位置不在 T 排除集合內）篩選 {{ config.predictTarget }} 顆、與下一期實際開出比對。共 {{ predictionRows.length }} 期，待開獎期釘頂、歷史最新在上。</span>
+          <span>依規則從每期當下「隔期 0~{{ config.sourceMaxInterval }}」（熱/冷池、位置 cap、per-interval Y 排除）篩選 {{ config.predictTarget }} 顆、與下一期實際開出比對。共 {{ predictionRows.length }} 期，待開獎期釘頂、歷史最新在上。</span>
           <UPopover :content="{ side: 'bottom', align: 'start' }">
             <UButton
               color="neutral"
@@ -1025,7 +1109,10 @@ const tabItems = computed(() => [
                   <div class="text-sm font-semibold mb-1">單一隔期規則（候選池）</div>
                   <ol class="list-decimal pl-5 space-y-1">
                     <li>只從隔期 <span class="font-mono">0~{{ config.sourceMaxInterval }}</span> 取候選</li>
-                    <li>該隔期 <span class="font-mono">record</span> CSV 首碼為 <span class="font-mono">'0'</span>（最新一期此 slot 有命中）</li>
+                    <li>
+                      <strong>熱/冷分池</strong>：<span class="font-mono">record</span> CSV 首碼 <span class="font-mono">'0'</span> = 熱、<span class="font-mono">'1'</span> = 冷；
+                      熱佔 <strong>85%</strong>、冷佔 <strong>15%</strong>（嚴格、不互補；其餘首碼不入池）
+                    </li>
                     <li>
                       位置排除（<strong>per-interval</strong>）：把該期 T 的 <span class="font-mono">periods</span> + <span class="font-mono">positions</span> CSV zip、按 foundIdx 分組；
                       隔期 J 的 Y 值集合僅取該組內 <span class="font-mono">Y ≥ {{ config.posCapHigh }}</span> 去重；
@@ -1036,7 +1123,8 @@ const tabItems = computed(() => [
                 <div>
                   <div class="text-sm font-semibold mb-1">全域 cap（一旦會超就跳過該候選）</div>
                   <ul class="list-disc pl-5 space-y-1 font-mono">
-                    <li>位置 5/6/7/8/9 各 ≤ {{ config.pos5to9Cap }}</li>
+                    <li>位置 1 ≤ {{ config.pos12Cap }}、位置 2 ≤ {{ config.pos12Cap }}</li>
+                    <li>位置 3~9 各 ≤ {{ config.pos39Cap }}（每個位置獨立 cap）</li>
                     <li>≤40 ≤ {{ config.le40Cap }}、&gt;40 ≤ {{ config.gt40Cap }}</li>
                     <li>奇 ≤ {{ config.oddCap }}、偶 ≤ {{ config.evenCap }}</li>
                     <li>任一相同尾數 ≤ {{ config.tailCap }}</li>
@@ -1044,10 +1132,10 @@ const tabItems = computed(() => [
                   </ul>
                 </div>
                 <div>
-                  <div class="text-sm font-semibold mb-1">候選排序優先序</div>
+                  <div class="text-sm font-semibold mb-1">候選排序優先序（暫未變更）</div>
                   <p>3 (避免 cap 抵達) &gt; 1 (小隔期優先) &gt; 2 (低位置優先)</p>
                   <p class="mt-1 text-muted">
-                    實作：先 sort by (隔期 asc, 位置 asc)、greedy 跳過會 violate cap 的候選。
+                    實作：兩池各自 sort by (隔期 asc, 位置 asc)、先熱後冷 greedy、跳過會 violate cap 的候選。
                   </p>
                 </div>
                 <div>
@@ -1134,9 +1222,19 @@ const tabItems = computed(() => [
                 />
               </label>
               <label class="block space-y-1">
-                <span class="text-muted block">位 5~9 各 ≤</span>
+                <span class="text-muted block">位 1、2 各 ≤</span>
                 <UInput
-                  v-model.number="config.pos5to9Cap"
+                  v-model.number="config.pos12Cap"
+                  type="number"
+                  min="0"
+                  max="20"
+                  size="sm"
+                />
+              </label>
+              <label class="block space-y-1">
+                <span class="text-muted block">位 3~9 各 ≤</span>
+                <UInput
+                  v-model.number="config.pos39Cap"
                   type="number"
                   min="0"
                   max="20"
@@ -1295,7 +1393,15 @@ const tabItems = computed(() => [
                 <span>·</span>
                 <span :class="capColorClass(predictionPendingRow.capStats.maxRun, config.consecutiveCap)">連跑 {{ predictionPendingRow.capStats.maxRun }}/{{ config.consecutiveCap }}</span>
                 <span>·</span>
-                <span :class="capColorClass(predictionPendingRow.capStats.pos59Max, config.pos5to9Cap)">位5-9 max {{ predictionPendingRow.capStats.pos59Max }}/{{ config.pos5to9Cap }}<span v-if="predictionPendingRow.capStats.pos59MaxValue >= 0"> (位{{ predictionPendingRow.capStats.pos59MaxValue }})</span></span>
+                <span :class="capColorClass(predictionPendingRow.capStats.pos1Count, config.pos12Cap)">位1 {{ predictionPendingRow.capStats.pos1Count }}/{{ config.pos12Cap }}</span>
+                <span>·</span>
+                <span :class="capColorClass(predictionPendingRow.capStats.pos2Count, config.pos12Cap)">位2 {{ predictionPendingRow.capStats.pos2Count }}/{{ config.pos12Cap }}</span>
+                <span>·</span>
+                <span :class="capColorClass(predictionPendingRow.capStats.pos39Max, config.pos39Cap)">位3-9 max {{ predictionPendingRow.capStats.pos39Max }}/{{ config.pos39Cap }}<span v-if="predictionPendingRow.capStats.pos39MaxValue >= 0"> (位{{ predictionPendingRow.capStats.pos39MaxValue }})</span></span>
+                <span>·</span>
+                <span>熱 {{ predictionPendingRow.capStats.hotCount }}/{{ predictionPendingRow.hotTarget }}</span>
+                <span>·</span>
+                <span>冷 {{ predictionPendingRow.capStats.coldCount }}/{{ predictionPendingRow.coldTarget }}</span>
                 <span
                   v-if="predictionPendingRow.shortBy > 0"
                   class="text-orange-500"
@@ -1388,7 +1494,15 @@ const tabItems = computed(() => [
                 <span>·</span>
                 <span :class="capColorClass(row.capStats.maxRun, config.consecutiveCap)">連跑 {{ row.capStats.maxRun }}/{{ config.consecutiveCap }}</span>
                 <span>·</span>
-                <span :class="capColorClass(row.capStats.pos59Max, config.pos5to9Cap)">位5-9 max {{ row.capStats.pos59Max }}/{{ config.pos5to9Cap }}</span>
+                <span :class="capColorClass(row.capStats.pos1Count, config.pos12Cap)">位1 {{ row.capStats.pos1Count }}/{{ config.pos12Cap }}</span>
+                <span>·</span>
+                <span :class="capColorClass(row.capStats.pos2Count, config.pos12Cap)">位2 {{ row.capStats.pos2Count }}/{{ config.pos12Cap }}</span>
+                <span>·</span>
+                <span :class="capColorClass(row.capStats.pos39Max, config.pos39Cap)">位3-9 max {{ row.capStats.pos39Max }}/{{ config.pos39Cap }}<span v-if="row.capStats.pos39MaxValue >= 0"> (位{{ row.capStats.pos39MaxValue }})</span></span>
+                <span>·</span>
+                <span>熱 {{ row.capStats.hotCount }}/{{ row.hotTarget }}</span>
+                <span>·</span>
+                <span>冷 {{ row.capStats.coldCount }}/{{ row.coldTarget }}</span>
               </div>
             </div>
 

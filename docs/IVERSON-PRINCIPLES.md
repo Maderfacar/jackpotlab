@@ -47,8 +47,16 @@
 - `fetchLimit = 500`（比對期數深度、範圍 50~5000；改值會 debounce 500ms 後重抓 allDraws）
 - `predictTarget = 20`（目標顆數）
 - `sourceMaxInterval = 3`（隔期 0~3）
-- `posCapHigh = 10`（Y ≥ 10 排除）
-- `pos5to9Cap = 2`、`le40Cap = 12`、`gt40Cap = 12`、`oddCap = 12`、`evenCap = 12`、`tailCap = 5`、`consecutiveCap = 4`
+- `posCapHigh = 10`（位置 ≥ 10 走 per-interval Y 排除）
+- `pos12Cap = 2`（位置 1、2 各 ≤ 2）
+- `pos39Cap = 1`（位置 3~9 各 ≤ 1）
+- `le40Cap = 12`、`gt40Cap = 12`、`oddCap = 12`、`evenCap = 12`、`tailCap = 5`、`consecutiveCap = 4`
+
+熱/冷池（hardcoded、`HOT_PICK_RATIO = 0.85`）：
+- 熱 = `record` CSV 首碼 `'0'`（最新一期該 slot 有命中）→ 佔 85%（20 顆=17 顆）
+- 冷 = `record` CSV 首碼 `'1'`（差 1 期沒命中）→ 佔 15%（20 顆=3 顆）
+- 其餘首碼（`'2'` 以上）不入池
+- 嚴格配額、不互補：若熱池候選不足、剩下的不會由冷池補（會反映在 shortBy）
 
 聚合命中率（`predictionAggregateStats`、Tab3 頂部卡）即時隨任何參數變化重算：
 - 整體命中率 = totalHits / totalPicks（加權平均、不受 picks=0 期影響）
@@ -57,8 +65,13 @@
 
 snapshots 一律切 `slot[0..SLOT_SNAPSHOT_DEPTH-1]`（SLOT_SNAPSHOT_DEPTH=10），UI 控制 sourceMaxInterval 在 [0..9] 內調整、snapshots 不重算。
 
-候選來源：
-- 來源期 T 處理完後、`slot[0..config.sourceMaxInterval]`、且該 slot.record CSV 首碼為 `'0'`（最新一期該 slot 有命中）
+候選來源（2026-06-19 重做：分熱/冷池）：
+- 來源期 T 處理完後、`slot[0..config.sourceMaxInterval]`
+- **熱池** = `record` CSV 首碼 `'0'`（最新一期該 slot 有命中）
+- **冷池** = `record` CSV 首碼 `'1'`（差 1 期沒命中）
+- 其餘首碼不入池
+- 熱目標 = `round(predictTarget * 0.85)`、冷目標 = `predictTarget - 熱目標`
+- 嚴格配額不互補：兩池各自 greedy；某池不足時、缺額不由另一池補
 
 排除（**per-interval**、2026-06-19 修正）：
 - 把 T 的 `periods` CSV（每顆 T 獎號的 foundIdx）+ `positions` CSV（X-Y）zip
@@ -66,12 +79,14 @@ snapshots 一律切 `slot[0..SLOT_SNAPSHOT_DEPTH-1]`（SLOT_SNAPSHOT_DEPTH=10）
 - 候選來自隔期 J 時、僅查 `excludedYByInterval[J]`；其他隔期的 Y 不波及
 - 早期實作版本是「全域排除」（所有 Y 攏在一起套全部 interval）→ 已修正
 
-caps（一旦會超就跳過該候選、全部走 `config.*`）：
+caps（2026-06-19 重做位置 cap、一旦會超就跳過該候選）：
+- 位置 1 ≤ `config.pos12Cap`、位置 2 ≤ `config.pos12Cap`
+- 位置 3~9 各 ≤ `config.pos39Cap`（每個位置獨立 cap）
+- 位置 ≥ `config.posCapHigh`：走 per-interval Y 排除、不在 cap 機制裡
 - `<=40` ≤ `config.le40Cap`、`>40` ≤ `config.gt40Cap`
 - 奇 ≤ `config.oddCap`、偶 ≤ `config.evenCap`
 - 任一相同尾數 ≤ `config.tailCap`
 - 連續號碼最大連跑 ≤ `config.consecutiveCap`
-- 位置 5/6/7/8/9 各 ≤ `config.pos5to9Cap`
 
 候選排序優先序：**3 (避免 cap 抵達) > 1 (小隔期優先) > 2 (低位置優先)**
 - 實作法：先依 (隔期 asc, 位置 asc) 排序，再 greedy 跳過會 violate cap 的候選
