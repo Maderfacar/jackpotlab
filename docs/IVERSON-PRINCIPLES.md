@@ -35,8 +35,29 @@
 |---|---|---|---|
 | 隔期剩餘號碼 | 50 | 過去 1 小時（最新 12 期） | 內建定義 |
 | 獎號關聯位置 | 60 | 500 期 | 對齊 `/draws` bingo 預設（`defaultN()` / `defaultD('bingo_bingo')`） |
+| 下一期 20 顆預測 | 60 | 500 期 | 同上、用漸進式 hydration 在每步快照 slot[0..5] |
 
-兩個 tab 用 **同一份 `allDraws` fetch**，分別 hydrate 兩個不同參數的 `analysisState`。
+三個 tab 用 **同一份 `allDraws` fetch**。Tab1 / Tab2 各自 hydrate analysisState；Tab3 用自家漸進式 hydration 保留每期 slot[0..5] 快照。
+
+### 6. Tab3「下一期 20 顆預測」規則（2026-06-19 拍板）
+
+候選來源：
+- 來源期 T 處理完後、slot[0..5]、且該 slot.record CSV 首碼為 `'0'`（最新一期該 slot 有命中）
+
+排除：
+- 從 T 自己的 positions CSV 取所有 Y 值 >= 10 的 Y、去重做集合；候選的 1-indexed 位置若在此集合則排除
+
+caps（一旦會超就跳過該候選）：
+- `<=40` ≤ 12、`>40` ≤ 12
+- 奇 ≤ 12、偶 ≤ 12
+- 任一相同尾數 ≤ 5
+- 連續號碼最大連跑 ≤ 5
+- 位置 5/6/7/8/9 各 ≤ 2
+
+候選排序優先序：**3 (避免 cap 抵達) > 1 (小隔期優先) > 2 (低位置優先)**
+- 實作法：先依 (隔期 asc, 位置 asc) 排序，再 greedy 跳過會 violate cap 的候選
+
+不足 20：顯示實際數、標「不足 20」，**不破 cap、不補位**。
 
 ---
 
