@@ -85,9 +85,27 @@ function stopPolling() {
   }
 }
 
+// Tab3 待開獎期 sticky 需要避開頂部 UHeader、不被蓋住。
+// onMounted 量 UHeader 高度、ResizeObserver 跟進視窗大小變化（手機橫直、字體放大）。
+const headerHeight = ref(0)
+let headerResizeObserver: ResizeObserver | null = null
+
 onMounted(() => {
   load()
   if (typeof window === 'undefined') return
+
+  // 量 header 高度（UHeader 渲染為 <header> 元素、sticky top:0）
+  const headerEl = document.querySelector('header')
+  if (headerEl instanceof HTMLElement) {
+    headerHeight.value = headerEl.offsetHeight
+    if (typeof ResizeObserver !== 'undefined') {
+      headerResizeObserver = new ResizeObserver(() => {
+        headerHeight.value = headerEl.offsetHeight
+      })
+      headerResizeObserver.observe(headerEl)
+    }
+  }
+
   pollTimer = setInterval(async () => {
     if (loading.value) return
     try {
@@ -105,7 +123,15 @@ onMounted(() => {
   }, BINGO_POLL_MS)
 })
 
-onBeforeUnmount(stopPolling)
+onBeforeUnmount(() => {
+  stopPolling()
+  headerResizeObserver?.disconnect()
+  headerResizeObserver = null
+})
+
+const pendingStickyStyle = computed(() => ({
+  top: `${headerHeight.value}px`
+}))
 
 // ---- 共用工具 -----------------------------------------------------------
 
@@ -477,6 +503,12 @@ function computeCapStats(picks: PredictionPick[]): CapStats {
   }
 }
 
+interface ActualPositioned {
+  n: number
+  /** 1-indexed Y 來自下一期（T+1）positions CSV、表示該獎號在 pre-T+1 (= post-T) 隔期的位置；找不到則 null */
+  y: number | null
+}
+
 interface PredictionRow {
   predictForTerm: number
   predictForDateLabel: string
@@ -488,6 +520,7 @@ interface PredictionRow {
   excludedYList: number[]
   capStats: CapStats
   actualNumbers: number[]
+  actualPositions: ActualPositioned[]
   hitNumbers: number[]
   hitCount: number
   pending: boolean
@@ -569,6 +602,7 @@ const predictionRows = computed<PredictionRow[]>(() => {
     const { picks, shortBy, excludedYList } = predictFromSnapshot(snap)
     // 比對目標 = 下一期 = drawsAsc[i+1]（若不存在則尚未開出）
     const next = i + 1 < allDraws.value.length ? allDraws.value[i + 1]! : null
+    const nextSnap = i + 1 < snaps.length ? snaps[i + 1]! : null
     const actualNumbers = next?.numbers ?? []
     const hitSet = new Set(actualNumbers)
     const picksSorted = [...picks].sort((a, b) => a.n - b.n)
@@ -576,6 +610,30 @@ const predictionRows = computed<PredictionRow[]>(() => {
       .map(p => p.n)
       .filter(n => hitSet.has(n))
     const capStats = computeCapStats(picks)
+
+    // 實際開出（T+1）每顆獎號的位置 Y：來自 T+1 snapshot 的 positions CSV。
+    // processDraw 內 positions CSV 第 k 個項目對應 T+1 sorted-unique prizes 的第 k 顆，
+    // 跟 next.numbers（已 sorted-unique）一一對齊。找不到（''）則 Y = null。
+    const actualPositions: ActualPositioned[] = []
+    if (next && nextSnap) {
+      const csvParts = nextSnap.positions.split(',')
+      for (let k = 0; k < next.numbers.length; k++) {
+        const n = next.numbers[k]!
+        const s = csvParts[k]
+        let y: number | null = null
+        if (s) {
+          const dash = s.indexOf('-')
+          if (dash >= 0) {
+            const parsed = Number.parseInt(s.slice(dash + 1), 10)
+            if (Number.isFinite(parsed)) y = parsed
+          }
+        }
+        actualPositions.push({ n, y })
+      }
+    } else {
+      for (const n of actualNumbers) actualPositions.push({ n, y: null })
+    }
+
     rows.push({
       predictForTerm: next?.drawTerm ?? snap.drawTerm + 1,
       predictForDateLabel: next ? dateLabel(next.drawDate, next.drawTerm) : '',
@@ -587,6 +645,7 @@ const predictionRows = computed<PredictionRow[]>(() => {
       excludedYList,
       capStats,
       actualNumbers,
+      actualPositions,
       hitNumbers,
       hitCount: hitNumbers.length,
       pending: next === null
@@ -853,11 +912,12 @@ const tabItems = [
           </UPopover>
         </div>
 
-        <!-- 待開獎期釘頂 -->
+        <!-- 待開獎期釘頂（sticky top 用 header 高度避開頂列 UHeader） -->
         <UCard
           v-if="predictionPendingRow"
           :ui="{ body: 'p-3 sm:p-4' }"
-          class="sticky top-0 z-10 bg-default/95 backdrop-blur supports-[backdrop-filter]:bg-default/70 ring-1 ring-primary/50"
+          class="sticky z-10 bg-default/95 backdrop-blur supports-[backdrop-filter]:bg-default/70 ring-1 ring-primary/50"
+          :style="pendingStickyStyle"
         >
           <div class="space-y-3 text-xs">
             <div class="flex items-baseline gap-2 flex-wrap">
@@ -998,13 +1058,13 @@ const tabItems = [
               </div>
             </div>
 
-            <!-- 實際開出 -->
+            <!-- 實際開出（右下小黑字 = 該獎號於 T+1 positions CSV 的 Y） -->
             <div class="space-y-1">
               <div class="text-[10px] text-muted">
-                實際開出（{{ row.actualNumbers.length }} 顆）
+                實際開出（{{ row.actualPositions.length }} 顆）
               </div>
               <div
-                v-if="row.actualNumbers.length === 0"
+                v-if="row.actualPositions.length === 0"
                 class="text-[10px] text-muted"
               >
                 —
@@ -1014,14 +1074,18 @@ const tabItems = [
                 class="flex flex-wrap items-center gap-1"
               >
                 <UBadge
-                  v-for="n in row.actualNumbers"
-                  :key="`pred-a-${row.sourceTerm}-${n}`"
+                  v-for="ap in row.actualPositions"
+                  :key="`pred-a-${row.sourceTerm}-${ap.n}`"
                   color="warning"
                   variant="solid"
                   size="sm"
-                  class="min-w-7 justify-center font-mono"
+                  class="relative min-w-7 justify-center font-mono"
                 >
-                  {{ pad(n) }}
+                  {{ pad(ap.n) }}
+                  <span
+                    v-if="ap.y != null"
+                    class="absolute bottom-0 right-0.5 text-[8px] leading-none font-normal text-black"
+                  >{{ ap.y }}</span>
                 </UBadge>
               </div>
             </div>

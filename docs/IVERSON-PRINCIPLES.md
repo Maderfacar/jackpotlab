@@ -63,10 +63,13 @@ caps（一旦會超就跳過該候選）：
 
 ### 7. Tab3 UI 規範（2026-06-19 補充）
 
-- 卡片排版：**待開獎期釘頂（sticky top, ring primary）**、其下歷史最新在上
+- 卡片排版：**待開獎期釘頂（sticky top = 量得的 UHeader 高度，避免被頂列蓋住）**、其下歷史最新在上
+  - 用 `ResizeObserver` 監看 `document.querySelector('header')` 的 offsetHeight；onMounted 量初值、SSR 階段 0、hydrate 後立即校正
 - 描述文字旁邊放 **UPopover「本頁規則」按鈕**，內列全部規則
 - 每張卡片底下顯示 **caps 使用量**（≤40、>40、奇、偶、尾 max、連跑、位5-9 max）+ **排除位置 Y 集合**；數值觸 cap 時染橘
   - 這是給使用者驗證 picks 確實照規則跑、不是裝飾
+- 實際開出（黃色 badge）**右下小黑字 = 該獎號於 T+1 positions CSV 的 Y**（找不到則不標）
+  - 與「推」badge 右下標位置同邏輯、雙邊可直接視覺對齊命中號碼的位置軌跡
 
 ---
 
