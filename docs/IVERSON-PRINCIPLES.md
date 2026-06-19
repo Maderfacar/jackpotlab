@@ -50,6 +50,7 @@
 - `posCapHigh = 10`（位置 ≥ 10 走 per-interval Y 排除）
 - `pos12Cap = 2`（位置 1、2 各 ≤ 2）
 - `pos39Cap = 1`（位置 3~9 各 ≤ 1）
+- `pos10PlusPercent = 30`（位 10+ 強制保留 30% 配額；2026-06-19 拍板）
 - `le40Cap = 12`、`gt40Cap = 12`、`oddCap = 12`、`evenCap = 12`、`tailCap = 5`、`consecutiveCap = 4`
 
 熱/冷池（hardcoded、`HOT_PICK_RATIO = 0.85`）：
@@ -65,13 +66,17 @@
 
 snapshots 一律切 `slot[0..SLOT_SNAPSHOT_DEPTH-1]`（SLOT_SNAPSHOT_DEPTH=10），UI 控制 sourceMaxInterval 在 [0..9] 內調整、snapshots 不重算。
 
-候選來源（2026-06-19 重做：分熱/冷池）：
+候選來源（2026-06-19 重做：分熱/冷池 + 位10+ 配額）：
 - 來源期 T 處理完後、`slot[0..config.sourceMaxInterval]`
 - **熱池** = `record` CSV 首碼 `'0'`（最新一期該 slot 有命中）
-- **冷池** = `record` CSV 首碼 `'1'`（差 1 期沒命中）
-- 其餘首碼不入池
-- 熱目標 = `round(predictTarget * 0.85)`、冷目標 = `predictTarget - 熱目標`
-- 嚴格配額不互補：兩池各自 greedy；某池不足時、缺額不由另一池補
+- **冷池** = `record` CSV 首碼 `'1'`（差 1 期沒命中）；其餘首碼不入池
+- **位10+ 配額**：先按 `pos10PlusPercent%` 切出位 10+ 配額 / 位 1-9 配額；再各自切 85% 熱 / 15% 冷
+- 4 phase greedy（嚴格不互補）：
+  1. 熱池位 10+（target = `round(round(predictTarget * pos10PlusPercent%) * 0.85)`）
+  2. 冷池位 10+
+  3. 熱池位 1-9
+  4. 冷池位 1-9
+- 位 10+ 先選確保配額；某 phase 不足時、缺額不由其他 phase 補
 
 排除（**per-interval**、2026-06-19 修正）：
 - 把 T 的 `periods` CSV（每顆 T 獎號的 foundIdx）+ `positions` CSV（X-Y）zip

@@ -318,6 +318,10 @@ interface RuleConfig {
   pos12Cap: number
   /** 位置 3-9 各自的命中上限 */
   pos39Cap: number
+  /** 位置 10+ 的最低佔比（整數百分比、0~100）。
+   * predictTarget * pos10PlusPercent% = 位10+ 配額；剩下給位 1-9。
+   * 規則：位10+ 先選、確保配額；不足會反映在 shortBy。 */
+  pos10PlusPercent: number
   le40Cap: number
   gt40Cap: number
   oddCap: number
@@ -343,6 +347,7 @@ const DEFAULT_CONFIG: Readonly<RuleConfig> = Object.freeze({
   posCapHigh: 10,
   pos12Cap: 2,
   pos39Cap: 1,
+  pos10PlusPercent: 30,
   le40Cap: 12,
   gt40Cap: 12,
   oddCap: 12,
@@ -652,10 +657,14 @@ interface PredictionRow {
   shortBy: number
   excludedByInterval: ExcludedYPerInterval[]
   capStats: CapStats
-  /** 熱池目標顆數（= round(predictTarget * 0.85)） */
+  /** 熱池目標顆數 */
   hotTarget: number
-  /** 冷池目標顆數（= predictTarget - hotTarget） */
+  /** 冷池目標顆數 */
   coldTarget: number
+  /** 位 10+ 配額（= round(predictTarget * pos10PlusPercent%)） */
+  pos10PlusTarget: number
+  /** 位 1-9 配額（= predictTarget - pos10PlusTarget） */
+  pos1to9Target: number
   actualNumbers: number[]
   actualPositions: ActualPositioned[]
   hitNumbers: number[]
@@ -669,6 +678,8 @@ function predictFromSnapshot(snap: PredictionSnapshot): {
   excludedByInterval: ExcludedYPerInterval[]
   hotTarget: number
   coldTarget: number
+  pos10PlusTarget: number
+  pos1to9Target: number
 } {
   // 1. 把 snapshot 切到 user 指定的 sourceMaxInterval 範圍；
   //    分熱（record 首碼 '0'）/ 冷（首碼 '1'）兩池；其餘首碼不入池。
@@ -747,13 +758,22 @@ function predictFromSnapshot(snap: PredictionSnapshot): {
   hotFiltered.sort(sortFn)
   coldFiltered.sort(sortFn)
 
-  // 6. 熱/冷配額：熱 85% / 冷 15%（嚴格、不互補）
-  const hotTarget = Math.round(config.predictTarget * HOT_PICK_RATIO)
-  const coldTarget = config.predictTarget - hotTarget
+  // 6. 配額分配（2026-06-19 拍板）：
+  //    - 先按位置 10+ / 1-9 比例切（pos10PlusPercent）
+  //    - 各自再按熱 85% / 冷 15% 切
+  //    - 4 phase greedy、嚴格不互補；pos10+ 先選確保配額
+  const pos10PlusTarget = Math.round(config.predictTarget * config.pos10PlusPercent / 100)
+  const pos1to9Target = config.predictTarget - pos10PlusTarget
+
+  const hotPos10Target = Math.round(pos10PlusTarget * HOT_PICK_RATIO)
+  const coldPos10Target = pos10PlusTarget - hotPos10Target
+  const hotPos19Target = Math.round(pos1to9Target * HOT_PICK_RATIO)
+  const coldPos19Target = pos1to9Target - hotPos19Target
 
   const picks: PredictionPick[] = []
 
-  function greedyPick(pool: PredictionPick[], target: number): number {
+  function greedyPickFrom(pool: PredictionPick[], target: number): number {
+    if (target <= 0) return 0
     let picked = 0
     const remaining = [...pool]
     while (picked < target) {
@@ -772,8 +792,17 @@ function predictFromSnapshot(snap: PredictionSnapshot): {
     return picked
   }
 
-  greedyPick(hotFiltered, hotTarget)
-  greedyPick(coldFiltered, coldTarget)
+  // Phase 1: 熱池位 10+
+  greedyPickFrom(hotFiltered.filter(c => c.position >= 10), hotPos10Target)
+  // Phase 2: 冷池位 10+
+  greedyPickFrom(coldFiltered.filter(c => c.position >= 10), coldPos10Target)
+  // Phase 3: 熱池位 1-9
+  greedyPickFrom(hotFiltered.filter(c => c.position < 10), hotPos19Target)
+  // Phase 4: 冷池位 1-9
+  greedyPickFrom(coldFiltered.filter(c => c.position < 10), coldPos19Target)
+
+  const hotTarget = hotPos10Target + hotPos19Target
+  const coldTarget = coldPos10Target + coldPos19Target
 
   // UI 軌跡輸出：只列 0..sourceMaxInterval 範圍內、有 Y >= 10 的 interval
   const excludedByInterval: ExcludedYPerInterval[] = []
@@ -788,7 +817,9 @@ function predictFromSnapshot(snap: PredictionSnapshot): {
     shortBy: config.predictTarget - picks.length,
     excludedByInterval,
     hotTarget,
-    coldTarget
+    coldTarget,
+    pos10PlusTarget,
+    pos1to9Target
   }
 }
 
@@ -798,7 +829,7 @@ const predictionRows = computed<PredictionRow[]>(() => {
   const rows: PredictionRow[] = []
   for (let i = 0; i < snaps.length; i++) {
     const snap = snaps[i]!
-    const { picks, shortBy, excludedByInterval, hotTarget, coldTarget } = predictFromSnapshot(snap)
+    const { picks, shortBy, excludedByInterval, hotTarget, coldTarget, pos10PlusTarget, pos1to9Target } = predictFromSnapshot(snap)
     // 比對目標 = 下一期 = drawsAsc[i+1]（若不存在則尚未開出）
     const next = i + 1 < allDraws.value.length ? allDraws.value[i + 1]! : null
     const nextSnap = i + 1 < snaps.length ? snaps[i + 1]! : null
@@ -845,6 +876,8 @@ const predictionRows = computed<PredictionRow[]>(() => {
       capStats,
       hotTarget,
       coldTarget,
+      pos10PlusTarget,
+      pos1to9Target,
       actualNumbers,
       actualPositions,
       hitNumbers,
@@ -1119,6 +1152,10 @@ const tabItems = computed(() => [
                       熱佔 <strong>85%</strong>、冷佔 <strong>15%</strong>（嚴格、不互補；其餘首碼不入池）
                     </li>
                     <li>
+                      <strong>位10+ 配額</strong>：<span class="font-mono">{{ config.pos10PlusPercent }}%</span> 強制保留給位置 10+；
+                      4 phase greedy（先 pos10+ 再 pos1-9、各自再分熱/冷）、嚴格不互補
+                    </li>
+                    <li>
                       位置排除（<strong>per-interval</strong>）：把該期 T 的 <span class="font-mono">periods</span> + <span class="font-mono">positions</span> CSV zip、按 foundIdx 分組；
                       隔期 J 的 Y 值集合僅取該組內 <span class="font-mono">Y ≥ {{ config.posCapHigh }}</span> 去重；
                       候選若來自隔期 J、其 1-indexed 位置 ∈ 隔期 J 的排除集則排除（其他隔期的 Y 不波及）
@@ -1140,7 +1177,8 @@ const tabItems = computed(() => [
                   <div class="text-sm font-semibold mb-1">候選排序優先序（暫未變更）</div>
                   <p>3 (避免 cap 抵達) &gt; 1 (小隔期優先) &gt; 2 (低位置優先)</p>
                   <p class="mt-1 text-muted">
-                    實作：兩池各自 sort by (隔期 asc, 位置 asc)、先熱後冷 greedy、跳過會 violate cap 的候選。
+                    實作：4 phase greedy — (1) 熱池位10+ → (2) 冷池位10+ → (3) 熱池位1-9 → (4) 冷池位1-9；
+                    各 phase 內按 (隔期 asc, 位置 asc) 排序、greedy 跳過會 violate cap 的候選。
                   </p>
                 </div>
                 <div>
@@ -1223,6 +1261,17 @@ const tabItems = computed(() => [
                   type="number"
                   min="1"
                   max="80"
+                  size="sm"
+                />
+              </label>
+              <label class="block space-y-1">
+                <span class="text-muted block">位10+ 佔比 %</span>
+                <UInput
+                  v-model.number="config.pos10PlusPercent"
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="5"
                   size="sm"
                 />
               </label>
@@ -1404,7 +1453,9 @@ const tabItems = computed(() => [
                 <span>·</span>
                 <span :class="capColorClass(predictionPendingRow.capStats.pos39Max, config.pos39Cap)">位3-9 max {{ predictionPendingRow.capStats.pos39Max }}/{{ config.pos39Cap }}<span v-if="predictionPendingRow.capStats.pos39MaxValue >= 0"> (位{{ predictionPendingRow.capStats.pos39MaxValue }})</span></span>
                 <span>·</span>
-                <span>位10+ {{ predictionPendingRow.capStats.pos10PlusCount }}<span class="text-muted">（無 cap、僅統計）</span></span>
+                <span
+                  :class="predictionPendingRow.capStats.pos10PlusCount < predictionPendingRow.pos10PlusTarget ? 'text-orange-500' : ''"
+                >位10+ {{ predictionPendingRow.capStats.pos10PlusCount }}/{{ predictionPendingRow.pos10PlusTarget }}</span>
                 <span>·</span>
                 <span>熱 {{ predictionPendingRow.capStats.hotCount }}/{{ predictionPendingRow.hotTarget }}</span>
                 <span>·</span>
@@ -1507,7 +1558,9 @@ const tabItems = computed(() => [
                 <span>·</span>
                 <span :class="capColorClass(row.capStats.pos39Max, config.pos39Cap)">位3-9 max {{ row.capStats.pos39Max }}/{{ config.pos39Cap }}<span v-if="row.capStats.pos39MaxValue >= 0"> (位{{ row.capStats.pos39MaxValue }})</span></span>
                 <span>·</span>
-                <span>位10+ {{ row.capStats.pos10PlusCount }}</span>
+                <span
+                  :class="row.capStats.pos10PlusCount < row.pos10PlusTarget ? 'text-orange-500' : ''"
+                >位10+ {{ row.capStats.pos10PlusCount }}/{{ row.pos10PlusTarget }}</span>
                 <span>·</span>
                 <span>熱 {{ row.capStats.hotCount }}/{{ row.hotTarget }}</span>
                 <span>·</span>
