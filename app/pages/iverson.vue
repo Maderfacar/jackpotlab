@@ -7,24 +7,34 @@
  *   - UI 承襲自 /bingo-heineken：UBadge size=md、warning solid、min-w-8、
  *     右下角小黑字標 1-indexed 位置
  *
- * 規格（2026-06-19 初稿）：
- *   - 隔期量 N = 50（analysisState.periods 50 格）
- *   - 深度 = 過去 1 小時（賓果 5 分鐘 1 期 → 餵入最新 12 期）
+ * 規格：
+ *   - Tab 1「隔期剩餘號碼」：N=50、深度=過去 1 小時（最新 12 期）
+ *   - Tab 2「獎號關聯位置」：N=60、D=500（對齊 /draws bingo 預設）
  *   - 日期格式：MM/DD HH:MM
  *
- * 每 30 秒輪詢 /api/draws/bingo_bingo/latest 比對最新一期；若 server 端已超過本地即重抓。
+ * 兩 tab 共用同一份 `allDraws` fetch（limit=500），分別 hydrate 兩個 analysisState。
+ *
+ * ⚠️ 動本頁前必看 docs/IVERSON-PRINCIPLES.md。
  */
 
 import type { DrawQueryResponse } from '~~/shared/lotto/types'
-import { hydrateFromDraws, type AnalysisDrawInput } from '~/utils/analysis'
+import {
+  defaultN,
+  defaultD,
+  hydrateFromDraws,
+  type AnalysisDrawInput
+} from '~/utils/analysis'
 import { bingoTimeFromMap, buildBingoMinTermByDate } from '~/utils/bingo-time'
 
 definePageMeta({
   title: '艾佛森'
 })
 
-const ANALYSIS_N = 50
-const PAST_HOUR_DRAWS = 12
+const INTERVAL_ANALYSIS_N = 50
+const INTERVAL_PAST_HOUR_DRAWS = 12
+// 獎號關聯位置 tab 對齊 /draws bingo 預設（defaultN() / defaultD('bingo_bingo')）
+const POSITIONS_ANALYSIS_N = defaultN()
+const FETCH_LIMIT = defaultD('bingo_bingo')
 
 interface NormalizedDraw {
   drawTerm: number
@@ -40,10 +50,9 @@ async function load() {
   loading.value = true
   error.value = null
   try {
-    // 抓 limit=300 是為了讓 buildBingoMinTermByDate 拿到當天最小 drawTerm
-    // 才能正確算 HH:MM；只把最近 12 期餵進 analysisState。
+    // limit=500：同時供「隔期剩餘號碼」（取最新 12）與「獎號關聯位置」（用全部）使用
     const res = await $fetch<DrawQueryResponse>('/api/draws/bingo_bingo/recent', {
-      params: { limit: 300 }
+      params: { limit: FETCH_LIMIT }
     })
     allDraws.value = [...res.results]
       .sort((a, b) => a.drawTerm - b.drawTerm)
@@ -94,23 +103,7 @@ onMounted(() => {
 
 onBeforeUnmount(stopPolling)
 
-const pastHourInputs = computed<AnalysisDrawInput[]>(() => {
-  if (allDraws.value.length === 0) return []
-  const latest = allDraws.value[allDraws.value.length - 1]!
-  const cutoff = latest.drawTerm - (PAST_HOUR_DRAWS - 1)
-  return allDraws.value
-    .filter(d => d.drawTerm >= cutoff)
-    .map(d => ({
-      drawTerm: d.drawTerm,
-      drawDate: d.drawDate,
-      prizes: d.numbers
-    }))
-})
-
-const analysisState = computed(() => {
-  if (pastHourInputs.value.length === 0) return null
-  return hydrateFromDraws('bingo_bingo', ANALYSIS_N, pastHourInputs.value)
-})
+// ---- 共用工具 -----------------------------------------------------------
 
 const bingoMinTermByDate = computed<Map<string, number>>(() => {
   return buildBingoMinTermByDate(allDraws.value)
@@ -127,6 +120,30 @@ function dateLabel(date: string, term: number): string {
   return time ? `${md} ${time}` : md
 }
 
+function pad(n: number): string {
+  return n.toString().padStart(2, '0')
+}
+
+// ---- Tab 1：隔期剩餘號碼（N=50、過去 1 小時） --------------------------
+
+const intervalInputs = computed<AnalysisDrawInput[]>(() => {
+  if (allDraws.value.length === 0) return []
+  const latest = allDraws.value[allDraws.value.length - 1]!
+  const cutoff = latest.drawTerm - (INTERVAL_PAST_HOUR_DRAWS - 1)
+  return allDraws.value
+    .filter(d => d.drawTerm >= cutoff)
+    .map(d => ({
+      drawTerm: d.drawTerm,
+      drawDate: d.drawDate,
+      prizes: d.numbers
+    }))
+})
+
+const intervalState = computed(() => {
+  if (intervalInputs.value.length === 0) return null
+  return hydrateFromDraws('bingo_bingo', INTERVAL_ANALYSIS_N, intervalInputs.value)
+})
+
 interface IntervalEntry {
   n: number
   originPos: number
@@ -140,7 +157,7 @@ interface IntervalRow {
 }
 
 const intervalRows = computed<IntervalRow[]>(() => {
-  const s = analysisState.value
+  const s = intervalState.value
   if (!s) return []
   return s.periods.map((p) => {
     const sorted = [...p.prizes].sort((a, b) => a - b)
@@ -164,9 +181,91 @@ const latestDrawInfo = computed<{ term: number, label: string } | null>(() => {
   }
 })
 
-function pad(n: number): string {
-  return n.toString().padStart(2, '0')
+// ---- Tab 2：獎號關聯位置（N=60、D=500） --------------------------------
+
+const positionsState = computed(() => {
+  if (allDraws.value.length === 0) return null
+  const inputs: AnalysisDrawInput[] = allDraws.value.map(d => ({
+    drawTerm: d.drawTerm,
+    drawDate: d.drawDate,
+    prizes: d.numbers
+  }))
+  return hydrateFromDraws('bingo_bingo', POSITIONS_ANALYSIS_N, inputs)
+})
+
+interface ParsedPosition {
+  x: number
+  y: number
 }
+
+function parsePositions(csv: string): Array<ParsedPosition | null> {
+  if (!csv) return []
+  return csv.split(',').map((s) => {
+    if (!s) return null
+    const dash = s.indexOf('-')
+    if (dash < 0) return null
+    const x = Number.parseInt(s.slice(0, dash), 10)
+    const y = Number.parseInt(s.slice(dash + 1), 10)
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null
+    return { x, y }
+  })
+}
+
+interface YStat {
+  y: number
+  count: number
+}
+
+interface PositionRow {
+  issue: string
+  dateLabel: string
+  positionsCsv: string
+  yList: number[]
+  yStats: YStat[]
+}
+
+const positionRows = computed<PositionRow[]>(() => {
+  const s = positionsState.value
+  if (!s) return []
+  const rows: PositionRow[] = []
+  for (const h of s.history) {
+    // 第一期 isEmpty 路徑沒有寫 positions、直接略過
+    if (!h.positions) continue
+    const parsed = parsePositions(h.positions)
+    // 使用者拍板：空位置（找不到的獎號）從 Y 清單與統計中排除
+    const yList: number[] = []
+    for (const p of parsed) {
+      if (p) yList.push(p.y)
+    }
+    const countMap = new Map<number, number>()
+    for (const y of yList) {
+      countMap.set(y, (countMap.get(y) ?? 0) + 1)
+    }
+    const yStats: YStat[] = [...countMap.entries()]
+      .map(([y, count]) => ({ y, count }))
+      .sort((a, b) => a.y - b.y)
+    const issueNum = Number.parseInt(h.issue, 10)
+    rows.push({
+      issue: h.issue,
+      dateLabel: Number.isFinite(issueNum) ? dateLabel(h.date, issueNum) : '',
+      positionsCsv: h.positions,
+      yList,
+      yStats
+    })
+  }
+  // 使用者拍板：最新期在上
+  rows.reverse()
+  return rows
+})
+
+// ---- Tab state ----------------------------------------------------------
+
+type TabValue = 'interval' | 'positions'
+const activeTab = ref<TabValue>('interval')
+const tabItems = [
+  { label: '隔期剩餘號碼', value: 'interval' as const, icon: 'i-lucide-layers' },
+  { label: '獎號關聯位置', value: 'positions' as const, icon: 'i-lucide-link' }
+]
 </script>
 
 <template>
@@ -177,7 +276,7 @@ function pad(n: number): string {
           艾佛森
         </h1>
         <p class="text-sm text-muted">
-          賓果賓果隔期狀態（隔期量 {{ ANALYSIS_N }} 期、深度過去 1 小時）。每顆號碼右下角小黑字＝該號於該隔期中的位置。
+          賓果賓果隔期狀態（隔期量 {{ INTERVAL_ANALYSIS_N }} 期、深度過去 1 小時）。每顆號碼右下角小黑字＝該號於該隔期中的位置。
         </p>
       </div>
       <div class="flex flex-wrap items-center gap-2">
@@ -193,6 +292,14 @@ function pad(n: number): string {
       </div>
     </header>
 
+    <UTabs
+      v-model="activeTab"
+      :items="tabItems"
+      :unmount-on-hide="false"
+      variant="pill"
+      color="neutral"
+    />
+
     <UAlert
       v-if="error"
       color="error"
@@ -202,7 +309,7 @@ function pad(n: number): string {
     />
 
     <div
-      v-if="loading && intervalRows.length === 0"
+      v-if="loading && allDraws.length === 0"
       class="space-y-3"
     >
       <USkeleton
@@ -212,8 +319,12 @@ function pad(n: number): string {
       />
     </div>
 
-    <template v-else-if="intervalRows.length > 0">
-      <UCard :ui="{ body: 'p-4' }">
+    <!-- Tab 1：隔期剩餘號碼 -->
+    <template v-else-if="activeTab === 'interval'">
+      <UCard
+        v-if="intervalRows.length > 0"
+        :ui="{ body: 'p-4' }"
+      >
         <div class="space-y-3">
           <div
             v-if="latestDrawInfo"
@@ -261,13 +372,62 @@ function pad(n: number): string {
           </div>
         </div>
       </UCard>
+      <div
+        v-else
+        class="rounded-md border border-dashed border-default p-6 text-center text-xs text-muted"
+      >
+        尚無資料
+      </div>
     </template>
 
-    <div
-      v-else
-      class="rounded-md border border-dashed border-default p-6 text-center text-xs text-muted"
-    >
-      尚無資料
-    </div>
+    <!-- Tab 2：獎號關聯位置 -->
+    <template v-else-if="activeTab === 'positions'">
+      <div
+        v-if="positionRows.length === 0"
+        class="rounded-md border border-dashed border-default p-6 text-center text-xs text-muted"
+      >
+        尚無資料
+      </div>
+      <template v-else>
+        <p class="text-xs text-muted">
+          分析參數：N={{ POSITIONS_ANALYSIS_N }}、深度 {{ FETCH_LIMIT }} 期（對齊 /draws 賓果預設）。共 {{ positionRows.length }} 期，最新期在上。
+        </p>
+        <UCard
+          v-for="row in positionRows"
+          :key="`pos-${row.issue}`"
+          :ui="{ body: 'p-4' }"
+        >
+          <div class="space-y-2">
+            <div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+              <span class="font-mono text-sm font-semibold">第 {{ row.issue }} 期</span>
+              <span
+                v-if="row.dateLabel"
+                class="text-[11px] text-muted font-mono"
+              >{{ row.dateLabel }}</span>
+            </div>
+            <div class="text-xs">
+              <span class="text-muted">對應的位置（{{ row.positionsCsv.split(',').length }} 顆）：</span>
+              <span class="font-mono break-all">{{ row.positionsCsv }}</span>
+            </div>
+            <div class="text-xs">
+              <span class="text-muted">Y（{{ row.yList.length }} 顆）：</span>
+              <span class="font-mono break-all">{{ row.yList.join(', ') }}</span>
+            </div>
+            <div class="text-xs">
+              <span class="text-muted">統計：</span>
+              <span
+                v-for="(stat, i) in row.yStats"
+                :key="`stat-${row.issue}-${stat.y}`"
+                class="font-mono"
+              >{{ i > 0 ? ' · ' : '' }}{{ stat.y }} 有 {{ stat.count }} 個</span>
+              <span
+                v-if="row.yStats.length === 0"
+                class="text-muted font-mono"
+              >—</span>
+            </div>
+          </div>
+        </UCard>
+      </template>
+    </template>
   </UContainer>
 </template>
