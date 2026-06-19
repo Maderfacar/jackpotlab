@@ -90,9 +90,6 @@ function stopPolling() {
 const headerHeight = ref(0)
 let headerResizeObserver: ResizeObserver | null = null
 
-// config 改變→存 localStorage（deep watch、含 reactive 內所有欄位）
-watch(config, saveConfigToStorage, { deep: true })
-
 onMounted(() => {
   loadConfigFromStorage()
   load()
@@ -371,6 +368,10 @@ function saveConfigToStorage() {
     // 忽略 storage 故障
   }
 }
+
+// config 改變→存 localStorage（deep watch）。
+// 注意：必須宣告在 const config 之後，否則 TDZ。
+watch(config, saveConfigToStorage, { deep: true })
 
 interface SlotSnapshot {
   period: number
