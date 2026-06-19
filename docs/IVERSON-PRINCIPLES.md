@@ -47,15 +47,18 @@
 - `predictTarget = 20`（目標顆數）
 - `sourceMaxInterval = 3`（隔期 0~3）
 - `posCapHigh = 10`（Y ≥ 10 排除）
-- `pos5to9Cap = 2`、`le40Cap = 12`、`gt40Cap = 12`、`oddCap = 12`、`evenCap = 12`、`tailCap = 5`、`consecutiveCap = 5`
+- `pos5to9Cap = 2`、`le40Cap = 12`、`gt40Cap = 12`、`oddCap = 12`、`evenCap = 12`、`tailCap = 5`、`consecutiveCap = 4`
 
 snapshots 一律切 `slot[0..SLOT_SNAPSHOT_DEPTH-1]`（SLOT_SNAPSHOT_DEPTH=10），UI 控制 sourceMaxInterval 在 [0..9] 內調整、snapshots 不重算。
 
 候選來源：
 - 來源期 T 處理完後、`slot[0..config.sourceMaxInterval]`、且該 slot.record CSV 首碼為 `'0'`（最新一期該 slot 有命中）
 
-排除：
-- 從 T 自己的 positions CSV 取所有 Y 值 >= `config.posCapHigh` 的 Y、去重做集合；候選的 1-indexed 位置若在此集合則排除
+排除（**per-interval**、2026-06-19 修正）：
+- 把 T 的 `periods` CSV（每顆 T 獎號的 foundIdx）+ `positions` CSV（X-Y）zip
+- 按 foundIdx 分組、每組內 Y >= `config.posCapHigh` 去重 → 該隔期的排除集
+- 候選來自隔期 J 時、僅查 `excludedYByInterval[J]`；其他隔期的 Y 不波及
+- 早期實作版本是「全域排除」（所有 Y 攏在一起套全部 interval）→ 已修正
 
 caps（一旦會超就跳過該候選、全部走 `config.*`）：
 - `<=40` ≤ `config.le40Cap`、`>40` ≤ `config.gt40Cap`

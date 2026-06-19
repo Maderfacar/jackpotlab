@@ -328,7 +328,7 @@ const DEFAULT_CONFIG: Readonly<RuleConfig> = Object.freeze({
   oddCap: 12,
   evenCap: 12,
   tailCap: 5,
-  consecutiveCap: 5
+  consecutiveCap: 4
 })
 
 const RULE_STORAGE_KEY = 'iverson-prediction-rules-v1'
@@ -383,6 +383,9 @@ interface PredictionSnapshot {
   drawTerm: number
   drawDate: string
   positions: string
+  /** T 的 periods CSV — 每顆 T 獎號被找到的 foundIdx（pre-shift slot 索引）。
+   * 用來把 positions CSV 內的 Y 值按來源隔期分組、做 per-interval 排除。 */
+  periods: string
   topSlots: SlotSnapshot[]
 }
 
@@ -402,6 +405,7 @@ const predictionSnapshots = computed<PredictionSnapshot[]>(() => {
       drawTerm: d.drawTerm,
       drawDate: d.drawDate,
       positions: hist.positions ?? '',
+      periods: hist.periods ?? '',
       topSlots: s.periods.slice(0, SLOT_SNAPSHOT_DEPTH).map(p => ({
         period: p.period,
         record: p.record,
@@ -562,6 +566,11 @@ interface ActualPositioned {
   y: number | null
 }
 
+interface ExcludedYPerInterval {
+  interval: number
+  ys: number[]
+}
+
 interface PredictionRow {
   predictForTerm: number
   predictForDateLabel: string
@@ -570,7 +579,7 @@ interface PredictionRow {
   picks: PredictionPick[]
   picksSorted: PredictionPick[]
   shortBy: number
-  excludedYList: number[]
+  excludedByInterval: ExcludedYPerInterval[]
   capStats: CapStats
   actualNumbers: number[]
   actualPositions: ActualPositioned[]
@@ -582,7 +591,7 @@ interface PredictionRow {
 function predictFromSnapshot(snap: PredictionSnapshot): {
   picks: PredictionPick[]
   shortBy: number
-  excludedYList: number[]
+  excludedByInterval: ExcludedYPerInterval[]
 } {
   // 1. 把 snapshot 切到 user 指定的 sourceMaxInterval 範圍；過濾 record 首碼 '0'
   const inRange = snap.topSlots.slice(0, config.sourceMaxInterval + 1)
@@ -600,16 +609,35 @@ function predictFromSnapshot(snap: PredictionSnapshot): {
     })
   }
 
-  // 3. 排除位置：T positions CSV 內所有 Y >= posCapHigh 的 Y 集合
-  const excludedY = new Set<number>()
-  for (const s of snap.positions.split(',')) {
-    if (!s) continue
-    const dash = s.indexOf('-')
+  // 3. Per-interval 位置排除（使用者拍板：非全域）
+  //    - 把 T 的 periods CSV（每顆 T 獎號的 foundIdx）與 positions CSV（X-Y）zip
+  //    - 按 foundIdx 分組、Y >= posCapHigh 的 Y 進對應 interval 的排除集
+  //    - 候選來自 slot[J] 時，僅查 excludedYByInterval[J] 來排除（其他 interval 的 Y 不波及）
+  const excludedYByInterval = new Map<number, Set<number>>()
+  const periodsParts = snap.periods.split(',')
+  const positionsParts = snap.positions.split(',')
+  for (let k = 0; k < periodsParts.length; k++) {
+    const fStr = periodsParts[k]
+    const pStr = positionsParts[k]
+    if (!fStr || !pStr) continue
+    const fIdx = Number.parseInt(fStr, 10)
+    if (!Number.isFinite(fIdx)) continue
+    const dash = pStr.indexOf('-')
     if (dash < 0) continue
-    const y = Number.parseInt(s.slice(dash + 1), 10)
-    if (Number.isFinite(y) && y >= config.posCapHigh) excludedY.add(y)
+    const y = Number.parseInt(pStr.slice(dash + 1), 10)
+    if (!Number.isFinite(y) || y < config.posCapHigh) continue
+    let set = excludedYByInterval.get(fIdx)
+    if (!set) {
+      set = new Set<number>()
+      excludedYByInterval.set(fIdx, set)
+    }
+    set.add(y)
   }
-  let filtered = allCands.filter(c => !excludedY.has(c.position))
+  let filtered = allCands.filter((c) => {
+    const set = excludedYByInterval.get(c.intervalJ)
+    if (!set) return true
+    return !set.has(c.position)
+  })
 
   // 4. 去重
   const seenN = new Set<number>()
@@ -640,10 +668,19 @@ function predictFromSnapshot(snap: PredictionSnapshot): {
     picks.push(remaining[chosenIdx]!)
     remaining.splice(chosenIdx, 1)
   }
+
+  // 為 UI 軌跡輸出：只列 0..sourceMaxInterval 範圍內、有 Y >= 10 的 interval
+  const excludedByInterval: ExcludedYPerInterval[] = []
+  for (const [iv, set] of excludedYByInterval) {
+    if (iv > config.sourceMaxInterval) continue
+    excludedByInterval.push({ interval: iv, ys: [...set].sort((a, b) => a - b) })
+  }
+  excludedByInterval.sort((a, b) => a.interval - b.interval)
+
   return {
     picks,
     shortBy: config.predictTarget - picks.length,
-    excludedYList: [...excludedY].sort((a, b) => a - b)
+    excludedByInterval
   }
 }
 
@@ -653,7 +690,7 @@ const predictionRows = computed<PredictionRow[]>(() => {
   const rows: PredictionRow[] = []
   for (let i = 0; i < snaps.length; i++) {
     const snap = snaps[i]!
-    const { picks, shortBy, excludedYList } = predictFromSnapshot(snap)
+    const { picks, shortBy, excludedByInterval } = predictFromSnapshot(snap)
     // 比對目標 = 下一期 = drawsAsc[i+1]（若不存在則尚未開出）
     const next = i + 1 < allDraws.value.length ? allDraws.value[i + 1]! : null
     const nextSnap = i + 1 < snaps.length ? snaps[i + 1]! : null
@@ -696,7 +733,7 @@ const predictionRows = computed<PredictionRow[]>(() => {
       picks,
       picksSorted,
       shortBy,
-      excludedYList,
+      excludedByInterval,
       capStats,
       actualNumbers,
       actualPositions,
@@ -932,8 +969,9 @@ const tabItems = computed(() => [
                     <li>只從隔期 <span class="font-mono">0~{{ config.sourceMaxInterval }}</span> 取候選</li>
                     <li>該隔期 <span class="font-mono">record</span> CSV 首碼為 <span class="font-mono">'0'</span>（最新一期此 slot 有命中）</li>
                     <li>
-                      位置排除：把該期 T 自家 <span class="font-mono">positions</span> CSV 中所有 <span class="font-mono">Y ≥ {{ config.posCapHigh }}</span> 的 Y 值去重做集合；
-                      候選的 1-indexed 位置在此集合內則排除
+                      位置排除（<strong>per-interval</strong>）：把該期 T 的 <span class="font-mono">periods</span> + <span class="font-mono">positions</span> CSV zip、按 foundIdx 分組；
+                      隔期 J 的 Y 值集合僅取該組內 <span class="font-mono">Y ≥ {{ config.posCapHigh }}</span> 去重；
+                      候選若來自隔期 J、其 1-indexed 位置 ∈ 隔期 J 的排除集則排除（其他隔期的 Y 不波及）
                     </li>
                   </ol>
                 </div>
@@ -1123,8 +1161,13 @@ const tabItems = computed(() => [
             <div class="text-[10px] text-muted font-mono space-y-0.5">
               <div>
                 排除位置（Y≥{{ config.posCapHigh }}）：
-                <span v-if="predictionPendingRow.excludedYList.length === 0">無</span>
-                <span v-else>{{ predictionPendingRow.excludedYList.join(', ') }}</span>
+                <span v-if="predictionPendingRow.excludedByInterval.length === 0">無</span>
+                <template v-else>
+                  <span
+                    v-for="(seg, i) in predictionPendingRow.excludedByInterval"
+                    :key="`exclpend-${seg.interval}`"
+                  >{{ i > 0 ? ' · ' : '' }}隔期 {{ seg.interval }}: {{ seg.ys.join(',') }}</span>
+                </template>
               </div>
               <div class="flex flex-wrap gap-x-2 gap-y-0.5">
                 <span :class="capColorClass(predictionPendingRow.capStats.le40, config.le40Cap)">≤40 {{ predictionPendingRow.capStats.le40 }}/{{ config.le40Cap }}</span>
@@ -1211,8 +1254,13 @@ const tabItems = computed(() => [
             <div class="text-[10px] text-muted font-mono space-y-0.5">
               <div>
                 排除位置（Y≥{{ config.posCapHigh }}）：
-                <span v-if="row.excludedYList.length === 0">無</span>
-                <span v-else>{{ row.excludedYList.join(', ') }}</span>
+                <span v-if="row.excludedByInterval.length === 0">無</span>
+                <template v-else>
+                  <span
+                    v-for="(seg, i) in row.excludedByInterval"
+                    :key="`excl-${row.sourceTerm}-${seg.interval}`"
+                  >{{ i > 0 ? ' · ' : '' }}隔期 {{ seg.interval }}: {{ seg.ys.join(',') }}</span>
+                </template>
               </div>
               <div class="flex flex-wrap gap-x-2 gap-y-0.5">
                 <span :class="capColorClass(row.capStats.le40, config.le40Cap)">≤40 {{ row.capStats.le40 }}/{{ config.le40Cap }}</span>
