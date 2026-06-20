@@ -319,6 +319,11 @@ interface RuleConfig {
   sourceIntervalMin: number
   /** 取候選的隔期上限（含），實際範圍 [sourceIntervalMin..sourceIntervalMax] */
   sourceIntervalMax: number
+  /** 記錄最新數據上限 n（0~9）。在 [sourceIntervalMin..sourceIntervalMax] 範圍內、
+   * 第二層條件：slot.record CSV 首碼 ≤ n 才入池。
+   * 首碼 '0' → 熱池；首碼 '1'..n → 冷池；首碼 > n → 不入池。
+   * 預設 1 = 維持原行為（只取 '0' 熱、'1' 冷）。 */
+  recordLatestMax: number
   /** 位置 ≥ posCapHigh 時走 per-interval Y 排除（與前一期 T 的 positions 比對去重） */
   posCapHigh: number
   /** 位置 1、2 各自的命中上限 */
@@ -349,6 +354,8 @@ interface RuleConfig {
   enableEvenCap: boolean
   enableTailCap: boolean
   enableConsecutiveCap: boolean
+  /** 開 = 用 recordLatestMax 卡首碼上限；關 = 無上限、所有首碼 0~9 都入池（首碼 '0' 熱、其餘冷） */
+  enableRecordLatestMax: boolean
 }
 
 const FETCH_LIMIT_MIN = 50
@@ -366,6 +373,7 @@ const DEFAULT_CONFIG: Readonly<RuleConfig> = Object.freeze({
   predictTarget: 20,
   sourceIntervalMin: 0,
   sourceIntervalMax: 3,
+  recordLatestMax: 1,
   posCapHigh: 10,
   pos12Cap: 2,
   pos39Cap: 1,
@@ -387,7 +395,8 @@ const DEFAULT_CONFIG: Readonly<RuleConfig> = Object.freeze({
   enableOddCap: true,
   enableEvenCap: true,
   enableTailCap: true,
-  enableConsecutiveCap: true
+  enableConsecutiveCap: true,
+  enableRecordLatestMax: true
 })
 
 const RULE_STORAGE_KEY = 'iverson-prediction-rules-v1'
@@ -772,17 +781,24 @@ function predictFromSnapshot(snap: PredictionSnapshot): {
   pos1to9Target: number
 } {
   // 1. 把 snapshot 切到 user 指定的 [sourceIntervalMin..sourceIntervalMax] 範圍；
-  //    分熱（record 首碼 '0'）/ 冷（首碼 '1'）兩池；其餘首碼不入池。
+  //    第二層條件：record CSV 首碼 ≤ recordLatestMax 才入池（toggle 關 → 無上限、0~9 全收）。
+  //    分熱（首碼 '0'）/ 冷（首碼 '1' ~ 上限）兩池。
   //    user 若關閉「熱/冷池分配」→ 全部混進熱池（單一池、不再 85/15）。
   const lo = Math.max(0, Math.min(config.sourceIntervalMin, config.sourceIntervalMax))
   const hi = Math.min(SLOT_SNAPSHOT_DEPTH - 1, Math.max(config.sourceIntervalMin, config.sourceIntervalMax))
   const inRange = snap.topSlots.slice(lo, hi + 1)
+  const recordMax = config.enableRecordLatestMax
+    ? Math.max(0, Math.min(9, config.recordLatestMax))
+    : 9
   const hotSlots: SlotSnapshot[] = []
   const coldSlots: SlotSnapshot[] = []
   for (const p of inRange) {
     const first = p.record.split(',')[0]
-    if (first === '0') hotSlots.push(p)
-    else if (first === '1') coldSlots.push(p)
+    if (!first) continue
+    const firstDigit = Number.parseInt(first, 10)
+    if (!Number.isFinite(firstDigit) || firstDigit < 0 || firstDigit > recordMax) continue
+    if (firstDigit === 0) hotSlots.push(p)
+    else coldSlots.push(p)
   }
   if (!config.enableHotColdSplit) {
     hotSlots.push(...coldSlots)
@@ -1586,12 +1602,21 @@ const tabItems = computed(() => [
                   <ol class="list-decimal pl-5 space-y-1">
                     <li>只從隔期 <span class="font-mono">{{ config.sourceIntervalMin }}~{{ config.sourceIntervalMax }}</span> 取候選（範圍可調）</li>
                     <li>
+                      <strong>記錄最新數據 ≤ <span class="font-mono">{{ config.recordLatestMax }}</span></strong>
+                      <span
+                        v-if="!config.enableRecordLatestMax"
+                        class="text-orange-500"
+                      >（已關閉、無上限、0~9 全收）</span>：上述隔期範圍內的第二層條件 —
+                      <span class="font-mono">record</span> CSV 首碼必須 ≤ n 才入池；首碼 &gt; n 整 slot 排除
+                    </li>
+                    <li>
                       <strong>熱/冷分池</strong>
                       <span
                         v-if="!config.enableHotColdSplit"
                         class="text-orange-500"
-                      >（已關閉、單一池）</span>：<span class="font-mono">record</span> CSV 首碼 <span class="font-mono">'0'</span> = 熱、<span class="font-mono">'1'</span> = 冷；
-                      熱佔 <strong>85%</strong>、冷佔 <strong>15%</strong>（嚴格、不互補；其餘首碼不入池）
+                      >（已關閉、單一池）</span>：<span class="font-mono">record</span> CSV 首碼 <span class="font-mono">'0'</span> = 熱、
+                      首碼 <span class="font-mono">'1'~'{{ config.enableRecordLatestMax ? config.recordLatestMax : 9 }}'</span> = 冷；
+                      熱佔 <strong>85%</strong>、冷佔 <strong>15%</strong>（嚴格、不互補）
                     </li>
                     <li>
                       <strong>位10+ 配額</strong>
@@ -1780,6 +1805,22 @@ const tabItems = computed(() => [
                   規則開關（關掉某條 → 該規則整段 skip，可單獨測命中率邊際貢獻）
                 </div>
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+                  <!-- 記錄最新數據 ≤ n（X~Y 範圍內第二層條件） -->
+                  <label class="flex items-center gap-2">
+                    <UCheckbox v-model="config.enableRecordLatestMax" />
+                    <span :class="config.enableRecordLatestMax ? '' : 'text-muted'">記錄最新數據 ≤</span>
+                    <UInput
+                      v-model.number="config.recordLatestMax"
+                      type="number"
+                      min="0"
+                      max="9"
+                      size="xs"
+                      class="w-16"
+                      :ui="{ base: 'text-xs' }"
+                    />
+                    <span class="text-muted text-[10px]">[X~Y 範圍內、首碼 ≤ n 才入池]</span>
+                  </label>
+
                   <!-- 熱/冷池分配（無參數、HOT_PICK_RATIO hardcoded 85/15） -->
                   <label class="flex items-center gap-2">
                     <UCheckbox v-model="config.enableHotColdSplit" />
