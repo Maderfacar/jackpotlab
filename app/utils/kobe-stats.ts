@@ -322,74 +322,15 @@ export interface HoldoutResult {
  *
  * 第一期一律不算（與 buildIntervalRemainingTable 對齊）。
  * X=0 樣本不計（無意義）。
+ *
+ * 實作上委派給 Phase 5 的通用 holdoutByCondition + 剩餘顆數 keyFn，
+ * 與 Phase 5 其他訊號 (數值 / 位置) 共用一致的訓練/測試切片邏輯。
  */
 export function holdoutValidate(snapshots: PerDrawSnapshot[], trainRatio = 0.8): HoldoutResult {
-  const effective = snapshots.slice(1)
-  const trainCount = Math.floor(effective.length * trainRatio)
-  const train = effective.slice(0, trainCount)
-  const test = effective.slice(trainCount)
-
-  interface MeanAcc { sum: number, n: number }
-  const condAcc = new Map<string, MeanAcc>()
-  const baseAcc = new Map<number, MeanAcc>()
-
-  for (const snap of train) {
-    for (const s of snap.slots) {
-      if (s.remainingBefore <= 0) continue
-      const condKey = `${s.interval}|${s.remainingBefore}`
-      const c = condAcc.get(condKey) ?? { sum: 0, n: 0 }
-      c.sum += s.hitsThisDraw
-      c.n += 1
-      condAcc.set(condKey, c)
-
-      const b = baseAcc.get(s.interval) ?? { sum: 0, n: 0 }
-      b.sum += s.hitsThisDraw
-      b.n += 1
-      baseAcc.set(s.interval, b)
-    }
-  }
-
-  let condErrSum = 0
-  let baseErrSum = 0
-  let obs = 0
-  let condCovered = 0
-
-  for (const snap of test) {
-    for (const s of snap.slots) {
-      if (s.remainingBefore <= 0) continue
-      const condKey = `${s.interval}|${s.remainingBefore}`
-      const c = condAcc.get(condKey)
-      const b = baseAcc.get(s.interval)
-      const basePred = b && b.n > 0 ? b.sum / b.n : 0
-      let condPred: number
-      if (c && c.n > 0) {
-        condPred = c.sum / c.n
-        condCovered++
-      } else {
-        // lookup miss → 退回基準預測
-        condPred = basePred
-      }
-      condErrSum += Math.abs(s.hitsThisDraw - condPred)
-      baseErrSum += Math.abs(s.hitsThisDraw - basePred)
-      obs += 1
-    }
-  }
-
-  const condMAE = obs > 0 ? condErrSum / obs : 0
-  const baseMAE = obs > 0 ? baseErrSum / obs : 0
-  const improvement = baseMAE - condMAE
-  const improvementRatio = baseMAE > 0 ? improvement / baseMAE : 0
-
-  return {
-    trainingCount: train.length,
-    testCount: test.length,
-    testObservations: obs,
-    conditionalMeanError: condMAE,
-    baselineMeanError: baseMAE,
-    improvement,
-    improvementRatio,
-    coverageRatio: obs > 0 ? condCovered / obs : 0
-  }
+  return holdoutByCondition(snapshots, ({ slot }) => {
+    if (slot.remainingBefore <= 0) return null
+    return `${slot.interval}|R${slot.remainingBefore}`
+  }, trainRatio)
 }
 
 // ---------------- Phase 2: 冷熱波段 ----------------
@@ -848,4 +789,211 @@ export function buildPositionAutoCorrelation(snapshots: PerDrawSnapshot[]): Posi
     })
   }
   return out
+}
+
+// ---------------- Phase 5: 訊號比拚 ----------------
+
+export interface HoldoutKeyContext {
+  snapshots: PerDrawSnapshot[]
+  snapshotIndex: number
+  slot: SlotSnapshot
+}
+
+/**
+ * 條件鍵函式：回傳該樣本的條件分組字串。null = 跳過該樣本（不入訓練 / 不入測試）。
+ *
+ * 注意：實作可使用 snapshots[snapshotIndex - 1] 取上一期狀態（例如「位置」訊號），
+ *   但必須自行處理 snapshotIndex <= 1 的邊界情況、回 null 即可。
+ */
+export type HoldoutKeyFn = (ctx: HoldoutKeyContext) => string | null
+
+/**
+ * Phase 5：通用後段保留期驗證 — 任意條件鍵都可代入。
+ *
+ * 與 holdoutValidate 一致的切片邏輯：第一期 (snapshots[0]) 跳過、剩下前 trainRatio 當訓練、
+ * 後段當測試。訓練用 keyFn 累計條件均值、baseline 用「同隔期」均值；測試比較兩者的平均誤差。
+ *
+ * 樣本被 keyFn 回 null → 同時跳過 baseline 累計、確保訊號之間在相同樣本集上比較。
+ */
+export function holdoutByCondition(
+  snapshots: PerDrawSnapshot[],
+  keyFn: HoldoutKeyFn,
+  trainRatio = 0.8
+): HoldoutResult {
+  const startIdx = 1
+  const totalEffective = Math.max(0, snapshots.length - startIdx)
+  const trainEnd = startIdx + Math.floor(totalEffective * trainRatio)
+
+  interface MeanAcc { sum: number, n: number }
+  const condAcc = new Map<string, MeanAcc>()
+  const baseAcc = new Map<number, MeanAcc>()
+
+  for (let i = startIdx; i < trainEnd; i++) {
+    const snap = snapshots[i]!
+    for (const s of snap.slots) {
+      const key = keyFn({ snapshots, snapshotIndex: i, slot: s })
+      if (key === null) continue
+      const c = condAcc.get(key) ?? { sum: 0, n: 0 }
+      c.sum += s.hitsThisDraw
+      c.n += 1
+      condAcc.set(key, c)
+
+      const b = baseAcc.get(s.interval) ?? { sum: 0, n: 0 }
+      b.sum += s.hitsThisDraw
+      b.n += 1
+      baseAcc.set(s.interval, b)
+    }
+  }
+
+  let condErrSum = 0
+  let baseErrSum = 0
+  let obs = 0
+  let condCovered = 0
+
+  for (let i = trainEnd; i < snapshots.length; i++) {
+    const snap = snapshots[i]!
+    for (const s of snap.slots) {
+      const key = keyFn({ snapshots, snapshotIndex: i, slot: s })
+      if (key === null) continue
+      const c = condAcc.get(key)
+      const b = baseAcc.get(s.interval)
+      const basePred = b && b.n > 0 ? b.sum / b.n : 0
+      let condPred: number
+      if (c && c.n > 0) {
+        condPred = c.sum / c.n
+        condCovered++
+      } else {
+        condPred = basePred
+      }
+      condErrSum += Math.abs(s.hitsThisDraw - condPred)
+      baseErrSum += Math.abs(s.hitsThisDraw - basePred)
+      obs += 1
+    }
+  }
+
+  const condMAE = obs > 0 ? condErrSum / obs : 0
+  const baseMAE = obs > 0 ? baseErrSum / obs : 0
+  const improvement = baseMAE - condMAE
+  const improvementRatio = baseMAE > 0 ? improvement / baseMAE : 0
+
+  return {
+    trainingCount: trainEnd - startIdx,
+    testCount: snapshots.length - trainEnd,
+    testObservations: obs,
+    conditionalMeanError: condMAE,
+    baselineMeanError: baseMAE,
+    improvement,
+    improvementRatio,
+    coverageRatio: obs > 0 ? condCovered / obs : 0
+  }
+}
+
+/**
+ * Phase 5 per-interval：在每個隔期 J 上獨立跑 holdoutByCondition、回傳 Map<J, HoldoutResult>。
+ *
+ * 與「對每個 J 各跑一次 holdoutByCondition 並限定 keyFn 只放行 J」等價、但只需一次掃描。
+ * baseline 仍是該隔期的整體均值（不分條件）、確保條件預測與基準是同一個樣本集上比較。
+ */
+export function holdoutByConditionPerInterval(
+  snapshots: PerDrawSnapshot[],
+  keyFn: HoldoutKeyFn,
+  trainRatio = 0.8
+): Map<number, HoldoutResult> {
+  const result = new Map<number, HoldoutResult>()
+  if (snapshots.length < 2) return result
+  const intervalCount = snapshots[1]!.slots.length
+
+  const startIdx = 1
+  const totalEffective = Math.max(0, snapshots.length - startIdx)
+  const trainEnd = startIdx + Math.floor(totalEffective * trainRatio)
+  const trainingCount = trainEnd - startIdx
+  const testCount = snapshots.length - trainEnd
+
+  interface MeanAcc { sum: number, n: number }
+  const condAcc: Array<Map<string, MeanAcc>> = []
+  const baseAcc: MeanAcc[] = []
+  for (let j = 0; j < intervalCount; j++) {
+    condAcc.push(new Map())
+    baseAcc.push({ sum: 0, n: 0 })
+  }
+
+  for (let i = startIdx; i < trainEnd; i++) {
+    const snap = snapshots[i]!
+    for (const s of snap.slots) {
+      const key = keyFn({ snapshots, snapshotIndex: i, slot: s })
+      if (key === null) continue
+      const j = s.interval
+      if (j < 0 || j >= intervalCount) continue
+      const cMap = condAcc[j]!
+      const c = cMap.get(key) ?? { sum: 0, n: 0 }
+      c.sum += s.hitsThisDraw
+      c.n += 1
+      cMap.set(key, c)
+      const b = baseAcc[j]!
+      b.sum += s.hitsThisDraw
+      b.n += 1
+    }
+  }
+
+  interface ErrAcc { cond: number, base: number, obs: number, covered: number }
+  const err: ErrAcc[] = []
+  for (let j = 0; j < intervalCount; j++) err.push({ cond: 0, base: 0, obs: 0, covered: 0 })
+
+  for (let i = trainEnd; i < snapshots.length; i++) {
+    const snap = snapshots[i]!
+    for (const s of snap.slots) {
+      const key = keyFn({ snapshots, snapshotIndex: i, slot: s })
+      if (key === null) continue
+      const j = s.interval
+      if (j < 0 || j >= intervalCount) continue
+      const c = condAcc[j]!.get(key)
+      const b = baseAcc[j]!
+      const basePred = b.n > 0 ? b.sum / b.n : 0
+      let condPred: number
+      if (c && c.n > 0) {
+        condPred = c.sum / c.n
+        err[j]!.covered += 1
+      } else {
+        condPred = basePred
+      }
+      err[j]!.cond += Math.abs(s.hitsThisDraw - condPred)
+      err[j]!.base += Math.abs(s.hitsThisDraw - basePred)
+      err[j]!.obs += 1
+    }
+  }
+
+  for (let j = 0; j < intervalCount; j++) {
+    const e = err[j]!
+    const condMAE = e.obs > 0 ? e.cond / e.obs : 0
+    const baseMAE = e.obs > 0 ? e.base / e.obs : 0
+    const improvement = baseMAE - condMAE
+    const improvementRatio = baseMAE > 0 ? improvement / baseMAE : 0
+    result.set(j, {
+      trainingCount,
+      testCount,
+      testObservations: e.obs,
+      conditionalMeanError: condMAE,
+      baselineMeanError: baseMAE,
+      improvement,
+      improvementRatio,
+      coverageRatio: e.obs > 0 ? e.covered / e.obs : 0
+    })
+  }
+  return result
+}
+
+/**
+ * 把多個 keyFn 串連起來、任一回 null 整個樣本就被略過、否則用 '||' 連接成複合條件鍵。
+ * 給「兩兩組合 / 三合一」訊號組合測試用。
+ */
+export function combineKeyFns(...fns: HoldoutKeyFn[]): HoldoutKeyFn {
+  return (ctx) => {
+    const parts: string[] = []
+    for (const fn of fns) {
+      const k = fn(ctx)
+      if (k === null) return null
+      parts.push(k)
+    }
+    return parts.join('||')
+  }
 }

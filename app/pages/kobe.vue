@@ -193,15 +193,9 @@ const activeTab = ref<string>('observation')
             v-else-if="item.value === 'journey'"
             :snapshots="snapshots"
           />
-          <KobePendingTab
+          <KobeSignalCompareTab
             v-else-if="item.value === 'compare'"
-            title="訊號比拚"
-            description="把『隔期的數值』與『位置』兩個訊號放一起比預測力。同樣的後段考試期、各自獨立做預測、平均誤差比一比，看哪個對下一期該隔期開出多少顆更有解釋力。結果可以直接餵回艾佛森頁的規則調整。"
-            :questions="[
-              '數值跟位置誰對下一期開出數更有預測力？',
-              '兩個訊號同時用、會比單獨用更好嗎（互補還是重疊）？',
-              '哪些隔期靠數值好用、哪些靠位置好用？'
-            ]"
+            :snapshots="snapshots"
           />
           <KobePendingTab
             v-else-if="item.value === 'regime'"
