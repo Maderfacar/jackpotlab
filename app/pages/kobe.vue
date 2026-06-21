@@ -181,15 +181,9 @@ const activeTab = ref<string>('observation')
             v-else-if="item.value === 'remaining'"
             :snapshots="snapshots"
           />
-          <KobePendingTab
+          <KobeColdHotCycleTab
             v-else-if="item.value === 'cycle'"
-            title="冷熱波段"
-            description="觀察每個隔期『記錄裡的數值』在時間序上的變化。一個隔期的數值是它連續幾期沒被開到的計數；越大代表越冷。這分頁要看：(1) 數值飆高之後、後面幾期該隔期是否真的更容易反彈被開；(2) 把全部隔期的數值加總當作『整盤冷度』，看一天當中是否有時段性的高低起伏。"
-            :questions="[
-              '某個隔期冷到一定程度後，下一期或下兩三期會反彈嗎？',
-              '整盤的整體冷度有沒有規律時段（早盤偏熱、晚盤偏冷之類）？',
-              '哪幾個隔期最常飆高？飆高之後反彈的時間差是多少？'
-            ]"
+            :snapshots="snapshots"
           />
           <KobePendingTab
             v-else-if="item.value === 'position'"

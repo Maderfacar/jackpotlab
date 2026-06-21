@@ -370,3 +370,150 @@ export function holdoutValidate(snapshots: PerDrawSnapshot[], trainRatio = 0.8):
     coverageRatio: obs > 0 ? condCovered / obs : 0
   }
 }
+
+// ---------------- Phase 2: 冷熱波段 ----------------
+
+export interface ColdReboundCell {
+  interval: number
+  threshold: number
+  /** 觸發後 1 期可用樣本數（後 2..5 期樣本通常更少、用於信心評估） */
+  sampleCount: number
+  /** 觸發後 1, 2, 3, 4, 5 期該隔期實際平均開出顆數 */
+  actualMeanAt: [number, number, number, number, number]
+  /** 該隔期不分閾值的整體平均開出顆數（對照基準） */
+  baselineMean: number
+}
+
+/**
+ * Phase 2 命題 1：對 (J, threshold) 蒐集所有「該隔期 pre-T recordValue ≥ threshold」的時點、
+ * 看後 1..5 期該隔期實際平均開出顆數。直接 vs baselineMean 看「冷了之後是否反彈」。
+ *
+ * 回傳 thresholdMin..thresholdMax × N 個 cell（UI 可依當下選擇的 threshold 過濾）。
+ * 第一期跳過（snapshot.slots 為初始狀態）。
+ */
+export function buildColdReboundTable(
+  snapshots: PerDrawSnapshot[],
+  thresholdMin = 1,
+  thresholdMax = 10
+): ColdReboundCell[] {
+  if (snapshots.length < 2) return []
+  const intervalCount = snapshots[1]!.slots.length
+
+  // baseline：每隔期的整體平均 K（跳過第一期、不限 V）
+  const baseSum = new Array<number>(intervalCount).fill(0)
+  const baseCnt = new Array<number>(intervalCount).fill(0)
+  for (let i = 1; i < snapshots.length; i++) {
+    const slots = snapshots[i]!.slots
+    for (let j = 0; j < intervalCount; j++) {
+      const s = slots[j]
+      if (!s) continue
+      baseSum[j]! += s.hitsThisDraw
+      baseCnt[j]! += 1
+    }
+  }
+
+  const cells: ColdReboundCell[] = []
+  for (let t = thresholdMin; t <= thresholdMax; t++) {
+    const meanSum: number[][] = []
+    const meanCnt: number[][] = []
+    for (let j = 0; j < intervalCount; j++) {
+      meanSum.push([0, 0, 0, 0, 0])
+      meanCnt.push([0, 0, 0, 0, 0])
+    }
+
+    for (let i = 1; i < snapshots.length; i++) {
+      const slots = snapshots[i]!.slots
+      for (let j = 0; j < intervalCount; j++) {
+        const s = slots[j]
+        if (!s) continue
+        if (s.recordValueBefore < t) continue
+        for (let k = 1; k <= 5; k++) {
+          const future = snapshots[i + k]
+          if (!future) continue
+          const fSlot = future.slots[j]
+          if (!fSlot) continue
+          meanSum[j]![k - 1]! += fSlot.hitsThisDraw
+          meanCnt[j]![k - 1]! += 1
+        }
+      }
+    }
+
+    for (let j = 0; j < intervalCount; j++) {
+      const counts = meanCnt[j]!
+      const sums = meanSum[j]!
+      const sampleCount = counts[0]!
+      const actualMeanAt: [number, number, number, number, number] = [0, 0, 0, 0, 0]
+      for (let k = 0; k < 5; k++) {
+        const n = counts[k]!
+        actualMeanAt[k] = n > 0 ? sums[k]! / n : 0
+      }
+      const baseN = baseCnt[j]!
+      const baselineMean = baseN > 0 ? baseSum[j]! / baseN : 0
+      cells.push({
+        interval: j,
+        threshold: t,
+        sampleCount,
+        actualMeanAt,
+        baselineMean
+      })
+    }
+  }
+  return cells
+}
+
+export interface GlobalColdnessPoint {
+  drawTerm: number
+  drawDate: string
+  /** 由 drawDate + drawTerm 推得的小時（0-23）；無法推算 → -1 */
+  hour: number
+  /** 該期所有 slot.recordValueBefore 加總 = 整盤冷度 */
+  coldness: number
+  /** 該期所有 slot.hitsThisDraw 加總（從追蹤隔期內開出的顆數、不含新號） */
+  hitsThisDraw: number
+}
+
+/**
+ * Phase 2 命題 2：每期把所有 slot.recordValueBefore 加總當「整盤冷度」、
+ * 並推算該期屬於一天哪個小時（用每日最早期數 = 07:05 為基準、每 5 分鐘一期）。
+ *
+ * 第一期跳過（snapshot.slots 為初始狀態、值無意義）。
+ */
+export function buildGlobalColdnessSeries(snapshots: PerDrawSnapshot[]): GlobalColdnessPoint[] {
+  const minTermByDate = new Map<string, number>()
+  for (const snap of snapshots) {
+    const cur = minTermByDate.get(snap.drawDate)
+    if (cur === undefined || snap.drawTerm < cur) {
+      minTermByDate.set(snap.drawDate, snap.drawTerm)
+    }
+  }
+
+  const out: GlobalColdnessPoint[] = []
+  const BINGO_START_MIN = 7 * 60 + 5
+  const BINGO_INTERVAL_MIN = 5
+  for (let i = 1; i < snapshots.length; i++) {
+    const snap = snapshots[i]!
+    let coldness = 0
+    let hits = 0
+    for (const s of snap.slots) {
+      coldness += s.recordValueBefore
+      hits += s.hitsThisDraw
+    }
+    let hour = -1
+    const base = minTermByDate.get(snap.drawDate)
+    if (base !== undefined) {
+      const offset = snap.drawTerm - base
+      if (offset >= 0 && offset <= 230) {
+        const totalMin = BINGO_START_MIN + offset * BINGO_INTERVAL_MIN
+        hour = Math.floor(totalMin / 60) % 24
+      }
+    }
+    out.push({
+      drawTerm: snap.drawTerm,
+      drawDate: snap.drawDate,
+      hour,
+      coldness,
+      hitsThisDraw: hits
+    })
+  }
+  return out
+}
