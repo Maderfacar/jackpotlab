@@ -66,16 +66,11 @@ function buildRow(snap: PerDrawSnapshot): KobeRow | null {
   const hitSet = new Set<number>()
   for (const slot of snap.slots) {
     if (slot.hitsThisDraw === 0) continue
-    // 取得每顆號在原 slot sorted 序列中的 1-indexed 位置
-    // hint：snapshot 已記錄 hitNumbers，但沒記 origPos。
-    // 用「pre-T slot.prizes」反推需要 raw prizes —— snapshot 沒帶 raw。
-    // 退而求其次：對 hitNumbers 排序、依序給 1..K 當顯示用「該隔期內第幾顆被開出」。
-    // 這跟原本「在 sorted 序列中第 origPos 位」不同 — 改成「本期該隔期被命中第幾顆」。
-    // 顯示語意可接受：使用者要的是「位置」、不限定原始位置 vs 命中順序。
-    // → 為了忠於規格、加 originalPosition 欄到 SlotSnapshot 太大；先用 hitNumbers 排序的 1..K。
-    const entries: KobeEntry[] = [...slot.hitNumbers]
-      .sort((a, b) => a - b)
-      .map((n, idx) => ({ n, posY: idx + 1 }))
+    // hitNumbers 已 sorted asc、hitPositions 與其同步、皆為該號在原 slot sorted 序列的 1-indexed 位置
+    const entries: KobeEntry[] = slot.hitNumbers.map((n, idx) => ({
+      n,
+      posY: slot.hitPositions[idx] ?? (idx + 1)
+    }))
     for (const n of slot.hitNumbers) hitSet.add(n)
     groups.push({
       interval: slot.interval,

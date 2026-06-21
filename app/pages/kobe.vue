@@ -185,15 +185,9 @@ const activeTab = ref<string>('observation')
             v-else-if="item.value === 'cycle'"
             :snapshots="snapshots"
           />
-          <KobePendingTab
+          <KobePositionPatternTab
             v-else-if="item.value === 'position'"
-            title="位置規律"
-            description="每個隔期內，被開出的號碼處於該隔期排序後的第幾位（位置）。理論上若完全隨機，位置應該平均分布。這分頁要看：(1) 每個隔期的位置分布是否真的平均、還是有偏好；(2) 相鄰兩期同一隔期的位置是否會重複（位置黏性）。"
-            :questions="[
-              '熱門隔期（0、1、2）的位置選擇是平均分散還是偏向特定位置？',
-              '上一期在某隔期開了第幾位、下一期同隔期會傾向開附近的位置嗎？',
-              '位置 1（最小號）與最末位有沒有比中間位置常被開？'
-            ]"
+            :snapshots="snapshots"
           />
           <KobePendingTab
             v-else-if="item.value === 'journey'"

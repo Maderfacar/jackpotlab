@@ -44,6 +44,11 @@ export interface SlotSnapshot {
   hitsThisDraw: number
   /** T 期該隔期被命中的具體號碼（已 sorted asc） */
   hitNumbers: number[]
+  /**
+   * T 期該隔期每顆命中號碼在 pre-T sorted 序列中的 1-indexed 位置 Y，
+   * 索引與 hitNumbers 對齊。歷史資料解析不到 → 退而填 0。
+   */
+  hitPositions: number[]
 }
 
 export interface PerDrawSnapshot {
@@ -102,7 +107,8 @@ export function buildSnapshots(drawsAsc: KobeDraw[], n: number): PerDrawSnapshot
           remainingBefore: s.remainingBefore,
           recordValueBefore: s.recordValueBefore,
           hitsThisDraw: 0,
-          hitNumbers: []
+          hitNumbers: [],
+          hitPositions: []
         })),
         newcomerCount: 0
       })
@@ -110,8 +116,9 @@ export function buildSnapshots(drawsAsc: KobeDraw[], n: number): PerDrawSnapshot
     }
 
     const periodsParts = hist.periods.split(',')
+    const positionsParts = hist.positions ? hist.positions.split(',') : []
     const prizeNums = hist.prizes ? hist.prizes.split(',').map(s => Number.parseInt(s, 10)) : []
-    const hitNumbersByInterval = new Map<number, number[]>()
+    const hitsByInterval = new Map<number, Array<{ num: number, pos: number }>>()
     let newcomers = 0
 
     for (let k = 0; k < prizeNums.length; k++) {
@@ -123,19 +130,33 @@ export function buildSnapshots(drawsAsc: KobeDraw[], n: number): PerDrawSnapshot
         newcomers++
         continue
       }
-      const arr = hitNumbersByInterval.get(pNum) ?? []
-      arr.push(num)
-      hitNumbersByInterval.set(pNum, arr)
+      // positions[k] = "X-Y"：X = pre-T 剩餘顆數、Y = 號碼在 sorted 序列中的 1-indexed 位置
+      let posY = 0
+      const posStr = positionsParts[k]
+      if (posStr) {
+        const dash = posStr.indexOf('-')
+        if (dash > 0) {
+          const yStr = posStr.slice(dash + 1)
+          const yNum = Number.parseInt(yStr, 10)
+          if (Number.isFinite(yNum)) posY = yNum
+        }
+      }
+      const arr = hitsByInterval.get(pNum) ?? []
+      arr.push({ num, pos: posY })
+      hitsByInterval.set(pNum, arr)
     }
 
     const slots: SlotSnapshot[] = preSlots.map((s) => {
-      const hits = hitNumbersByInterval.get(s.interval) ?? []
+      const hits = hitsByInterval.get(s.interval) ?? []
+      // 按號碼升序排（保持 hitNumbers 升序），hitPositions 與其同步
+      const sorted = [...hits].sort((a, b) => a.num - b.num)
       return {
         interval: s.interval,
         remainingBefore: s.remainingBefore,
         recordValueBefore: s.recordValueBefore,
-        hitsThisDraw: hits.length,
-        hitNumbers: [...hits].sort((a, b) => a - b)
+        hitsThisDraw: sorted.length,
+        hitNumbers: sorted.map(h => h.num),
+        hitPositions: sorted.map(h => h.pos)
       }
     })
 
@@ -513,6 +534,187 @@ export function buildGlobalColdnessSeries(snapshots: PerDrawSnapshot[]): GlobalC
       hour,
       coldness,
       hitsThisDraw: hits
+    })
+  }
+  return out
+}
+
+// ---------------- Phase 3: 位置規律 ----------------
+
+export interface PositionDistributionRow {
+  interval: number
+  /** 1-indexed；索引 0 永遠 = 0、不使用。長度 = maxPosition + 1 */
+  positionCounts: number[]
+  /** 1-indexed；該位置「曾經是有效位置」的期數計數（即 pre-T 該隔期 remaining ≥ Y 的期數） */
+  positionExposure: number[]
+  /** 該隔期所有有命中的期、命中顆數總和（= sum of positionCounts） */
+  totalSamples: number
+  /** 最大可能位置（= 該隔期歷史上 pre-T remaining 最大值） */
+  maxPosition: number
+  /** 1 / maxPosition；UI 顯示「位置完全平均下、每個位置應佔的命中比例」參考線 */
+  expectedUniformPct: number
+  /**
+   * 「偏離平均的程度」（chi-square 改名）：
+   *   = sum over y of (observed_y − expected_y)^2 / expected_y、再除以 (maxPosition − 1) 標準化、
+   *   其中 expected_y = positionExposure[y] × (totalSamples / sum(positionExposure))；
+   *   值 ≈ 0 代表分布均勻、值越大代表越偏離平均。
+   */
+  deviationScore: number
+}
+
+/**
+ * Phase 3 命題 1：每個隔期內、被開出號碼在 sorted 序列中的位置 Y 的分布。
+ *
+ * 用「曝光次數」當分母（位置 Y 在 pre-T 該隔期 remaining ≥ Y 的期數），
+ * 避免「位置 1 永遠存在、位置 20 只有 R=20 時存在」造成的計數偏差。
+ */
+export function buildPositionDistribution(snapshots: PerDrawSnapshot[]): PositionDistributionRow[] {
+  if (snapshots.length < 2) return []
+  const intervalCount = snapshots[1]!.slots.length
+
+  // 先掃一遍找出每個隔期的 maxPosition
+  const maxPos = new Array<number>(intervalCount).fill(0)
+  for (let i = 1; i < snapshots.length; i++) {
+    const slots = snapshots[i]!.slots
+    for (let j = 0; j < intervalCount; j++) {
+      const r = slots[j]?.remainingBefore ?? 0
+      if (r > maxPos[j]!) maxPos[j] = r
+    }
+  }
+
+  const out: PositionDistributionRow[] = []
+  for (let j = 0; j < intervalCount; j++) {
+    const M = maxPos[j]!
+    if (M <= 0) continue
+    const positionCounts = new Array<number>(M + 1).fill(0)
+    const positionExposure = new Array<number>(M + 1).fill(0)
+    let total = 0
+
+    for (let i = 1; i < snapshots.length; i++) {
+      const slot = snapshots[i]!.slots[j]
+      if (!slot) continue
+      const R = Math.min(slot.remainingBefore, M)
+      for (let y = 1; y <= R; y++) positionExposure[y]! += 1
+      for (const y of slot.hitPositions) {
+        if (y >= 1 && y <= M) {
+          positionCounts[y]! += 1
+          total += 1
+        }
+      }
+    }
+
+    let totalExposure = 0
+    for (let y = 1; y <= M; y++) totalExposure += positionExposure[y]!
+    let chi2 = 0
+    if (totalExposure > 0 && total > 0) {
+      for (let y = 1; y <= M; y++) {
+        const exp = positionExposure[y]! * (total / totalExposure)
+        if (exp <= 0) continue
+        const obs = positionCounts[y]!
+        const diff = obs - exp
+        chi2 += (diff * diff) / exp
+      }
+    }
+    const dof = Math.max(1, M - 1)
+    out.push({
+      interval: j,
+      positionCounts,
+      positionExposure,
+      totalSamples: total,
+      maxPosition: M,
+      expectedUniformPct: M > 0 ? 1 / M : 0,
+      deviationScore: chi2 / dof
+    })
+  }
+  return out
+}
+
+export interface PositionAutoCorrelationRow {
+  interval: number
+  /** 上下兩期同隔期、同位置都被開出的合計次數 */
+  jointCount: number
+  /** 假設兩期獨立時的期望合計次數（基於各自邊際機率） */
+  independentExpected: number
+  /** 提升幅度 = (jointCount − independentExpected) / independentExpected */
+  liftPct: number
+  /** 配對樣本數（兩期都在該隔期有命中的配對） */
+  sampleCount: number
+}
+
+/**
+ * Phase 3 命題 2：上下兩期同隔期、是否傾向開到同一個位置（位置黏性 / autocorrelation）。
+ *
+ * 對每個隔期 J、掃所有 (i, i+1) 配對，雙方都有命中時：
+ *   joint = ΣY 1{Y ∈ T 命中位置 ∩ T+1 命中位置}
+ *   expected = ΣY marginal_T[Y] × marginal_T+1[Y] / pairs
+ * 比值 lift > 0 代表有黏性、< 0 代表斥性。
+ */
+export function buildPositionAutoCorrelation(snapshots: PerDrawSnapshot[]): PositionAutoCorrelationRow[] {
+  if (snapshots.length < 3) return []
+  const intervalCount = snapshots[1]!.slots.length
+
+  const maxPos = new Array<number>(intervalCount).fill(0)
+  for (let i = 1; i < snapshots.length; i++) {
+    const slots = snapshots[i]!.slots
+    for (let j = 0; j < intervalCount; j++) {
+      const r = slots[j]?.remainingBefore ?? 0
+      if (r > maxPos[j]!) maxPos[j] = r
+    }
+  }
+
+  const out: PositionAutoCorrelationRow[] = []
+  for (let j = 0; j < intervalCount; j++) {
+    const M = maxPos[j]!
+    if (M <= 0) continue
+    const marginalCurr = new Array<number>(M + 1).fill(0)
+    const marginalNext = new Array<number>(M + 1).fill(0)
+    const joint = new Array<number>(M + 1).fill(0)
+    let pairs = 0
+
+    for (let i = 1; i < snapshots.length - 1; i++) {
+      const cur = snapshots[i]!.slots[j]
+      const nxt = snapshots[i + 1]!.slots[j]
+      if (!cur || !nxt) continue
+      if (cur.hitsThisDraw === 0 || nxt.hitsThisDraw === 0) continue
+      const curSet = new Set<number>()
+      for (const y of cur.hitPositions) {
+        if (y >= 1 && y <= M) {
+          if (!curSet.has(y)) {
+            curSet.add(y)
+            marginalCurr[y]! += 1
+          }
+        }
+      }
+      const nxtSet = new Set<number>()
+      for (const y of nxt.hitPositions) {
+        if (y >= 1 && y <= M) {
+          if (!nxtSet.has(y)) {
+            nxtSet.add(y)
+            marginalNext[y]! += 1
+          }
+        }
+      }
+      for (const y of curSet) {
+        if (nxtSet.has(y)) joint[y]! += 1
+      }
+      pairs += 1
+    }
+
+    let jointSum = 0
+    let expectedSum = 0
+    for (let y = 1; y <= M; y++) {
+      jointSum += joint[y]!
+      if (pairs > 0) {
+        expectedSum += (marginalCurr[y]! * marginalNext[y]!) / pairs
+      }
+    }
+    const liftPct = expectedSum > 0 ? (jointSum - expectedSum) / expectedSum : 0
+    out.push({
+      interval: j,
+      jointCount: jointSum,
+      independentExpected: expectedSum,
+      liftPct,
+      sampleCount: pairs
     })
   }
   return out
