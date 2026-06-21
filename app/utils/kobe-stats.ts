@@ -649,6 +649,136 @@ export interface PositionAutoCorrelationRow {
  *   expected = ΣY marginal_T[Y] × marginal_T+1[Y] / pairs
  * 比值 lift > 0 代表有黏性、< 0 代表斥性。
  */
+// ---------------- Phase 4: 號碼軌跡 ----------------
+
+export interface NumberAppearance {
+  drawTerm: number
+  drawDate: string
+  /** 來源隔期 J；-1 = 新號（不在任一 pre-T slot 內） */
+  sourceInterval: number
+  /** 在 snapshots 陣列中的索引（給時間序圖 x 軸用） */
+  snapshotIndex: number
+}
+
+export interface NumberHistoryRow {
+  /** 號碼 1..80 */
+  number: number
+  /** 過去 N 期內被開出的總次數 */
+  appearances: number
+  /** 理論平均次數 = effectiveDraws × 20 / 80 */
+  expectedAppearances: number
+  /** 平均間隔期數 */
+  avgGap: number
+  /** 中位數間隔期數 */
+  medianGap: number
+  /** 最長乾期（最久沒被開出） */
+  maxGap: number
+  /** 連續兩期都被開出的次數（gap = 1） */
+  consecutiveCount: number
+  /** 來源隔期次數陣列、index = 隔期 0..N-1 */
+  sourceIntervalCounts: number[]
+  /** 每次出現的紀錄、依時序 — 給「號碼明細」時間序圖用 */
+  timeline: NumberAppearance[]
+}
+
+const BINGO_POOL_SIZE = 80
+const BINGO_PRIZES_PER_DRAW = 20
+
+/**
+ * Phase 4：對每個號 (1..80) 算 N 期內的出場史 —
+ *   appearances / 期望次數 / 平均/中位/最長間隔 / 連兩期次數 / 來源隔期分布 / 完整時間序。
+ *
+ * 第一期跳過（snapshot.slots 為初始狀態、命中資訊不完整）。
+ */
+export function buildNumberHistory(snapshots: PerDrawSnapshot[]): NumberHistoryRow[] {
+  if (snapshots.length < 2) return []
+  const intervalCount = snapshots[1]!.slots.length
+  const effectiveDraws = snapshots.length - 1
+
+  interface Acc {
+    appearances: number
+    lastIdx: number
+    gaps: number[]
+    consecutiveCount: number
+    sourceIntervalCounts: number[]
+    timeline: NumberAppearance[]
+  }
+  const acc = new Map<number, Acc>()
+  for (let n = 1; n <= BINGO_POOL_SIZE; n++) {
+    acc.set(n, {
+      appearances: 0,
+      lastIdx: -1,
+      gaps: [],
+      consecutiveCount: 0,
+      sourceIntervalCounts: new Array<number>(intervalCount).fill(0),
+      timeline: []
+    })
+  }
+
+  for (let i = 1; i < snapshots.length; i++) {
+    const snap = snapshots[i]!
+    const sourceMap = new Map<number, number>()
+    for (const slot of snap.slots) {
+      for (const num of slot.hitNumbers) {
+        sourceMap.set(num, slot.interval)
+      }
+    }
+    for (const num of snap.actualNumbers) {
+      const a = acc.get(num)
+      if (!a) continue
+      a.appearances += 1
+      if (a.lastIdx >= 0) {
+        const gap = i - a.lastIdx
+        a.gaps.push(gap)
+        if (gap === 1) a.consecutiveCount += 1
+      }
+      a.lastIdx = i
+      const src = sourceMap.get(num) ?? -1
+      if (src >= 0 && src < intervalCount) {
+        a.sourceIntervalCounts[src]! += 1
+      }
+      a.timeline.push({
+        drawTerm: snap.drawTerm,
+        drawDate: snap.drawDate,
+        sourceInterval: src,
+        snapshotIndex: i
+      })
+    }
+  }
+
+  const expectedAppearances = (effectiveDraws * BINGO_PRIZES_PER_DRAW) / BINGO_POOL_SIZE
+  const out: NumberHistoryRow[] = []
+  for (let n = 1; n <= BINGO_POOL_SIZE; n++) {
+    const a = acc.get(n)!
+    const sortedGaps = [...a.gaps].sort((x, y) => x - y)
+    let avgGap = 0
+    let medianGap = 0
+    let maxGap = 0
+    if (sortedGaps.length > 0) {
+      let sum = 0
+      for (const g of sortedGaps) sum += g
+      avgGap = sum / sortedGaps.length
+      const midIdx = Math.floor(sortedGaps.length / 2)
+      medianGap = sortedGaps.length % 2 === 1
+        ? sortedGaps[midIdx]!
+        : (sortedGaps[midIdx - 1]! + sortedGaps[midIdx]!) / 2
+      maxGap = sortedGaps[sortedGaps.length - 1]!
+    }
+    out.push({
+      number: n,
+      appearances: a.appearances,
+      expectedAppearances,
+      avgGap,
+      medianGap,
+      maxGap,
+      consecutiveCount: a.consecutiveCount,
+      sourceIntervalCounts: a.sourceIntervalCounts,
+      timeline: a.timeline
+    })
+  }
+  return out
+}
+
 export function buildPositionAutoCorrelation(snapshots: PerDrawSnapshot[]): PositionAutoCorrelationRow[] {
   if (snapshots.length < 3) return []
   const intervalCount = snapshots[1]!.slots.length

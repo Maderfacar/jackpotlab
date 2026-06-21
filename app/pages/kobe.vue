@@ -189,15 +189,9 @@ const activeTab = ref<string>('observation')
             v-else-if="item.value === 'position'"
             :snapshots="snapshots"
           />
-          <KobePendingTab
+          <KobeNumberJourneyTab
             v-else-if="item.value === 'journey'"
-            title="號碼軌跡"
-            description="追蹤每個號碼（1-80）一路的『隔期旅程』：它上一次被開時是從第幾隔期出來、再下一次被開又從第幾隔期出來。可以看到哪些號習慣『連莊跳階』、哪些號習慣『沉睡很久才回來』。"
-            :questions="[
-              '某個號平均隔多少期會再被開？',
-              '有沒有號特別容易連兩期被開（隔期 0 持續命中）？',
-              '所有號的回歸間隔是否符合理論（每號平均 4 期一次）？'
-            ]"
+            :snapshots="snapshots"
           />
           <KobePendingTab
             v-else-if="item.value === 'compare'"
