@@ -356,6 +356,10 @@ interface RuleConfig {
   enableConsecutiveCap: boolean
   /** 開 = 用 recordLatestMax 卡首碼上限；關 = 無上限、所有首碼 0~9 都入池（首碼 '0' 熱、其餘冷） */
   enableRecordLatestMax: boolean
+  /** 開 = 每隔期 cap 按該隔期剩餘號碼數比例分配（剩越多 → 權重越高 → cap 越大）；
+   * 關 = 均分（cap = ceil(predictTarget / 隔期數)，每隔期相等）。
+   * 需 enableIntervalCap 為 true 才生效。 */
+  enableProportionalIntervalCap: boolean
 }
 
 const FETCH_LIMIT_MIN = 50
@@ -396,7 +400,8 @@ const DEFAULT_CONFIG: Readonly<RuleConfig> = Object.freeze({
   enableEvenCap: true,
   enableTailCap: true,
   enableConsecutiveCap: true,
-  enableRecordLatestMax: true
+  enableRecordLatestMax: true,
+  enableProportionalIntervalCap: true
 })
 
 const RULE_STORAGE_KEY = 'iverson-prediction-rules-v1'
@@ -515,7 +520,86 @@ interface PredictionPick {
   hot: boolean
 }
 
-function wouldViolatePredictionCap(picks: PredictionPick[], cand: PredictionPick): boolean {
+/** 算出 [lo..hi] 範圍內每個隔期的 cap。
+ *  - enableProportionalIntervalCap 開：cap[J] = max(1, round(predictTarget * (slot[J].prizes.length / 總剩餘)))
+ *    並把整數化的餘數從大權重隔期往小權重隔期分配，確保 Σ cap = predictTarget。
+ *  - 關（或總剩餘 = 0）：cap[J] = ceil(predictTarget / 隔期數)，均分。
+ *  注意：呼叫前 caller 自行檢查 enableIntervalCap；此函數不卡 toggle，純算 cap map。 */
+function computeIntervalCapMap(
+  inRangeSlots: SlotSnapshot[],
+  lo: number,
+  hi: number
+): Map<number, number> {
+  const map = new Map<number, number>()
+  const intervalRange = Math.max(1, hi - lo + 1)
+  const totalRemaining = inRangeSlots.reduce((sum, s) => sum + s.prizes.length, 0)
+  if (!config.enableProportionalIntervalCap || totalRemaining === 0) {
+    const flatCap = Math.ceil(config.predictTarget / intervalRange)
+    for (let i = lo; i <= hi; i++) map.set(i, flatCap)
+    return map
+  }
+  // 1. 先給每隔期 floor(predictTarget * 權重)
+  // 2. 收集 fractional 部分，按大到小分配剩餘額度直到 Σ = predictTarget
+  interface Slot {
+    interval: number
+    remaining: number
+    raw: number
+    floor: number
+    frac: number
+  }
+  const slots: Slot[] = []
+  for (const s of inRangeSlots) {
+    const raw = config.predictTarget * (s.prizes.length / totalRemaining)
+    const floor = Math.floor(raw)
+    slots.push({
+      interval: s.period,
+      remaining: s.prizes.length,
+      raw,
+      floor,
+      frac: raw - floor
+    })
+  }
+  const assigned = slots.reduce((sum, s) => sum + s.floor, 0)
+  let leftover = Math.max(0, config.predictTarget - assigned)
+  // 餘數分配：fractional 大者優先；同 fractional 則 remaining 多者優先
+  const order = [...slots].sort((a, b) => {
+    if (b.frac !== a.frac) return b.frac - a.frac
+    return b.remaining - a.remaining
+  })
+  for (const s of order) {
+    if (leftover === 0) break
+    s.floor += 1
+    leftover -= 1
+  }
+  // 至少 1：若某隔期剩餘 > 0 但 floor = 0，提升至 1（從最大 cap 借出 1）
+  // 剩餘 = 0 的隔期 cap 可為 0（反正也沒候選）
+  const nonZeroEligible = slots.filter(s => s.remaining > 0 && s.floor === 0)
+  for (const s of nonZeroEligible) {
+    // 找目前最大 floor 的隔期借 1（且該隔期借出後仍 >= 1）
+    let donor: Slot | undefined
+    for (const t of slots) {
+      if (t === s) continue
+      if (t.floor <= 1) continue
+      if (!donor || t.floor > donor.floor) donor = t
+    }
+    if (donor) {
+      donor.floor -= 1
+      s.floor += 1
+    }
+  }
+  for (const s of slots) map.set(s.interval, s.floor)
+  // 填補沒有 slot 的 interval（剩餘 = 0、不在 inRangeSlots 內）：cap 0
+  for (let i = lo; i <= hi; i++) {
+    if (!map.has(i)) map.set(i, 0)
+  }
+  return map
+}
+
+function wouldViolatePredictionCap(
+  picks: PredictionPick[],
+  cand: PredictionPick,
+  intervalCapMap: ReadonlyMap<number, number>
+): boolean {
   const newNs = picks.map(p => p.n)
   newNs.push(cand.n)
 
@@ -587,17 +671,16 @@ function wouldViolatePredictionCap(picks: PredictionPick[], cand: PredictionPick
     }
   }
 
-  // Per-interval cap（強制分散）：每隔期 ≤ ceil(predictTarget / 隔期數)
-  // 隔期數 = sourceIntervalMax - sourceIntervalMin + 1（min<=max 保證、clamp >= 1）
+  // Per-interval cap（強制分散）：每隔期 cap 來自 intervalCapMap
+  // (均分 or 按剩餘號碼數比例、由 enableProportionalIntervalCap 決定；caller 已算好傳入)
   if (config.enableIntervalCap) {
     const intervalCount = new Map<number, number>()
     for (const p of picks) {
       intervalCount.set(p.intervalJ, (intervalCount.get(p.intervalJ) ?? 0) + 1)
     }
-    const intervalRange = Math.max(1, config.sourceIntervalMax - config.sourceIntervalMin + 1)
-    const intervalCap = Math.ceil(config.predictTarget / intervalRange)
     const candIntervalNext = (intervalCount.get(cand.intervalJ) ?? 0) + 1
-    if (candIntervalNext > intervalCap) return true
+    const candCap = intervalCapMap.get(cand.intervalJ) ?? Number.POSITIVE_INFINITY
+    if (candIntervalNext > candCap) return true
   }
   return false
 }
@@ -620,15 +703,20 @@ interface CapStats {
   pos10PlusCount: number
   hotCount: number
   coldCount: number
-  /** 每隔期的 picks 數（含 [sourceIntervalMin..sourceIntervalMax] 全部隔期、0 picks 也列） */
-  intervalCounts: Array<{ interval: number, count: number }>
-  /** 每隔期 cap（= ceil(predictTarget / 隔期數)、隔期數 = sourceIntervalMax - sourceIntervalMin + 1） */
-  intervalCap: number
+  /** 每隔期的 picks 數 + cap（含 [sourceIntervalMin..sourceIntervalMax] 全部隔期、0 picks 也列）。
+   * cap 由 enableProportionalIntervalCap 決定：開 = 按剩餘號碼比例分配、關 = 均分。 */
+  intervalCounts: Array<{ interval: number, count: number, cap: number, remaining: number }>
+  /** 每隔期 cap 計算模式 — 'proportional'（按剩餘比例）或 'flat'（均分） */
+  intervalCapMode: 'proportional' | 'flat'
   /** 所有 cap 都沒超過 = true；應該永遠為 true（greedy 邏輯保證） */
   allWithinCap: boolean
 }
 
-function computeCapStats(picks: PredictionPick[]): CapStats {
+function computeCapStats(
+  picks: PredictionPick[],
+  inRangeSlots: SlotSnapshot[],
+  intervalCapMap: ReadonlyMap<number, number>
+): CapStats {
   let le40 = 0
   let gt40 = 0
   let odd = 0
@@ -689,20 +777,26 @@ function computeCapStats(picks: PredictionPick[]): CapStats {
     }
   }
   // Per-interval picks 數（[sourceIntervalMin..sourceIntervalMax] 全部列、0 picks 也保留）
-  const intervalMap = new Map<number, number>()
   const lo = Math.max(0, Math.min(config.sourceIntervalMin, config.sourceIntervalMax))
   const hi = Math.min(SLOT_SNAPSHOT_DEPTH - 1, Math.max(config.sourceIntervalMin, config.sourceIntervalMax))
+  const remainingByInterval = new Map<number, number>()
+  for (const s of inRangeSlots) remainingByInterval.set(s.period, s.prizes.length)
+  const intervalMap = new Map<number, number>()
   for (let i = lo; i <= hi; i++) intervalMap.set(i, 0)
   for (const p of picks) {
     intervalMap.set(p.intervalJ, (intervalMap.get(p.intervalJ) ?? 0) + 1)
   }
   const intervalCounts = [...intervalMap.entries()]
-    .map(([interval, count]) => ({ interval, count }))
+    .map(([interval, count]) => ({
+      interval,
+      count,
+      cap: intervalCapMap.get(interval) ?? 0,
+      remaining: remainingByInterval.get(interval) ?? 0
+    }))
     .sort((a, b) => a.interval - b.interval)
-  const intervalRange = Math.max(1, hi - lo + 1)
-  const intervalCap = Math.ceil(config.predictTarget / intervalRange)
   // 關閉 intervalCap toggle 時、cap 數值仍顯示（供視覺參考），但 allWithinCap 不會卡這條
-  const intervalCapOk = config.enableIntervalCap ? intervalCounts.every(s => s.count <= intervalCap) : true
+  const intervalCapOk = config.enableIntervalCap ? intervalCounts.every(s => s.count <= s.cap) : true
+  const intervalCapMode: 'proportional' | 'flat' = config.enableProportionalIntervalCap ? 'proportional' : 'flat'
 
   // allWithinCap：被關掉的 toggle 不卡這條（被關 = 該 cap 視為「沒上限」）
   const allWithinCap = (!config.enableLe40Cap || le40 <= config.le40Cap)
@@ -730,7 +824,7 @@ function computeCapStats(picks: PredictionPick[]): CapStats {
     hotCount,
     coldCount,
     intervalCounts,
-    intervalCap,
+    intervalCapMode,
     allWithinCap
   }
 }
@@ -779,6 +873,8 @@ function predictFromSnapshot(snap: PredictionSnapshot): {
   coldTarget: number
   pos10PlusTarget: number
   pos1to9Target: number
+  inRangeSlots: SlotSnapshot[]
+  intervalCapMap: Map<number, number>
 } {
   // 1. 把 snapshot 切到 user 指定的 [sourceIntervalMin..sourceIntervalMax] 範圍；
   //    第二層條件：record CSV 首碼 ≤ recordLatestMax 才入池（toggle 關 → 無上限、0~9 全收）。
@@ -804,6 +900,12 @@ function predictFromSnapshot(snap: PredictionSnapshot): {
     hotSlots.push(...coldSlots)
     coldSlots.length = 0
   }
+
+  // 1b. 每隔期 cap（候選池決定後算）— 只對實際入池的隔期分配 cap；
+  //     被 recordLatestMax 排除的隔期 cap 隱含 0、不影響 greedy。
+  //     按 enableProportionalIntervalCap 切「比例分配」或「均分」。
+  const inRangeSlotsForCap: SlotSnapshot[] = [...hotSlots, ...coldSlots]
+  const intervalCapMap = computeIntervalCapMap(inRangeSlotsForCap, lo, hi)
 
   // 2. 收集候選（hot flag 跟著 slot 走）
   function buildCands(slots: SlotSnapshot[], hot: boolean): PredictionPick[] {
@@ -925,7 +1027,7 @@ function predictFromSnapshot(snap: PredictionSnapshot): {
     while (picked < target) {
       let chosenIdx = -1
       for (let i = 0; i < remaining.length; i++) {
-        if (!wouldViolatePredictionCap(picks, remaining[i]!)) {
+        if (!wouldViolatePredictionCap(picks, remaining[i]!, intervalCapMap)) {
           chosenIdx = i
           break
         }
@@ -973,7 +1075,9 @@ function predictFromSnapshot(snap: PredictionSnapshot): {
     hotTarget,
     coldTarget,
     pos10PlusTarget,
-    pos1to9Target
+    pos1to9Target,
+    inRangeSlots: inRangeSlotsForCap,
+    intervalCapMap
   }
 }
 
@@ -983,7 +1087,7 @@ const predictionRows = computed<PredictionRow[]>(() => {
   const rows: PredictionRow[] = []
   for (let i = 0; i < snaps.length; i++) {
     const snap = snaps[i]!
-    const { picks, shortBy, excludedByInterval, hotTarget, coldTarget, pos10PlusTarget, pos1to9Target } = predictFromSnapshot(snap)
+    const { picks, shortBy, excludedByInterval, hotTarget, coldTarget, pos10PlusTarget, pos1to9Target, inRangeSlots, intervalCapMap } = predictFromSnapshot(snap)
     // 比對目標 = 下一期 = drawsAsc[i+1]（若不存在則尚未開出）
     const next = i + 1 < allDraws.value.length ? allDraws.value[i + 1]! : null
     const nextSnap = i + 1 < snaps.length ? snaps[i + 1]! : null
@@ -993,7 +1097,7 @@ const predictionRows = computed<PredictionRow[]>(() => {
     const hitNumbers: number[] = picksSorted
       .map(p => p.n)
       .filter(n => hitSet.has(n))
-    const capStats = computeCapStats(picks)
+    const capStats = computeCapStats(picks, inRangeSlots, intervalCapMap)
 
     // 實際開出（T+1）每顆獎號的位置 Y：來自 T+1 snapshot 的 positions CSV。
     // processDraw 內 positions CSV 第 k 個項目對應 T+1 sorted-unique prizes 的第 k 顆，
@@ -1655,8 +1759,15 @@ const tabItems = computed(() => [
                       >（關）</span>
                     </li>
                     <li>
-                      <strong>每隔期 ≤ <span class="font-mono">ceil(predictTarget / 隔期數)</span></strong>
-                      （強制分散、避免單一 slot 獨吞）
+                      <strong>每隔期 cap</strong>
+                      <span v-if="config.enableProportionalIntervalCap">
+                        ＝ <span class="font-mono">round(predictTarget × slot.剩餘 / Σ 剩餘)</span>
+                        <span class="text-muted text-[10px]">（按剩餘號碼比例、剩越多權重越高）</span>
+                      </span>
+                      <span v-else>
+                        ＝ <span class="font-mono">ceil(predictTarget / 隔期數)</span>
+                        <span class="text-muted text-[10px]">（均分）</span>
+                      </span>
                       <span
                         v-if="!config.enableIntervalCap"
                         class="text-orange-500"
@@ -1697,10 +1808,18 @@ const tabItems = computed(() => [
                   </ul>
                 </div>
                 <div>
-                  <div class="text-sm font-semibold mb-1">候選排序（2026-06-20 改）</div>
+                  <div class="text-sm font-semibold mb-1">候選排序（2026-06-21 改）</div>
                   <p class="text-muted">
-                    各 phase 內按 <strong>(位置 asc, 隔期 asc)</strong> 排序 — 位置外、隔期內：
-                    同一位置先跨所有隔期試一輪、再進下一位置。配合每隔期 cap、強制候選分散到 {{ config.sourceIntervalMin }}~{{ config.sourceIntervalMax }}。
+                    <strong>外層</strong>：{{ config.sourceIntervalMin }}~{{ config.sourceIntervalMax }} 範圍內的每個隔期視為獨立桶；
+                    <span v-if="config.enableProportionalIntervalCap && config.enableIntervalCap">
+                      <strong>剩餘號碼越多 → 該桶的 cap 佔比越高</strong>
+                      （cap[J] = <span class="font-mono">round(predictTarget × slot[J].剩餘 / Σ 剩餘)</span>，至少 1）
+                    </span>
+                    <span v-else>每桶 cap 均分</span>。
+                  </p>
+                  <p class="mt-1 text-muted">
+                    <strong>內層</strong>：各 phase 內按 <strong>(位置 asc, 隔期 asc)</strong> 排序 — 位置外、隔期內：
+                    同一位置先跨所有隔期試一輪、再進下一位置。配合每隔期 cap、強制候選分散。
                   </p>
                   <p class="mt-1 text-muted">
                     4 phase greedy：(1) 熱池位10+ → (2) 冷池位10+ → (3) 熱池位1-9 → (4) 冷池位1-9；
@@ -1849,7 +1968,17 @@ const tabItems = computed(() => [
                   <label class="flex items-center gap-2">
                     <UCheckbox v-model="config.enableIntervalCap" />
                     <span :class="config.enableIntervalCap ? '' : 'text-muted'">每隔期 cap</span>
-                    <span class="text-muted text-[10px]">[auto = ceil(target / 隔期數)]</span>
+                    <span class="text-muted text-[10px]">[auto = 均分 or 按剩餘比例]</span>
+                  </label>
+
+                  <!-- 每隔期 cap 按剩餘號碼比例分配（需 enableIntervalCap 為 true 才生效） -->
+                  <label class="flex items-center gap-2">
+                    <UCheckbox
+                      v-model="config.enableProportionalIntervalCap"
+                      :disabled="!config.enableIntervalCap"
+                    />
+                    <span :class="config.enableProportionalIntervalCap && config.enableIntervalCap ? '' : 'text-muted'">每隔期 cap 按剩餘比例</span>
+                    <span class="text-muted text-[10px]">[關 → 均分；需先開「每隔期 cap」]</span>
                   </label>
 
                   <!-- pos10+ Y 去重 per-interval 排除（參數 posCapHigh） -->
@@ -2170,12 +2299,12 @@ const tabItems = computed(() => [
                 >· 不足 {{ config.predictTarget }}（差 {{ predictionPendingRow.shortBy }} 顆）</span>
               </div>
               <div class="flex flex-wrap gap-x-2 gap-y-0.5">
-                <span class="text-muted">隔期分佈 (cap {{ predictionPendingRow.capStats.intervalCap }}/隔期)：</span>
+                <span class="text-muted">隔期分佈 (cap {{ predictionPendingRow.capStats.intervalCapMode === 'proportional' ? '按剩餘比例' : '均分' }})：</span>
                 <span
                   v-for="(seg, i) in predictionPendingRow.capStats.intervalCounts"
                   :key="`intpend-${seg.interval}`"
-                  :class="seg.count >= predictionPendingRow.capStats.intervalCap ? 'text-orange-500' : (seg.count === 0 ? 'text-red-500' : '')"
-                >{{ i > 0 ? ' · ' : '' }}隔{{ seg.interval }}: {{ seg.count }}</span>
+                  :class="seg.count >= seg.cap && seg.cap > 0 ? 'text-orange-500' : (seg.count === 0 ? 'text-red-500' : '')"
+                >{{ i > 0 ? ' · ' : '' }}隔{{ seg.interval }}: {{ seg.count }}/{{ seg.cap }}<span class="text-[10px] text-muted">（剩{{ seg.remaining }}）</span></span>
               </div>
             </div>
 
@@ -2279,12 +2408,12 @@ const tabItems = computed(() => [
                 <span>冷 {{ row.capStats.coldCount }}/{{ row.coldTarget }}</span>
               </div>
               <div class="flex flex-wrap gap-x-2 gap-y-0.5">
-                <span class="text-muted">隔期分佈 (cap {{ row.capStats.intervalCap }}/隔期)：</span>
+                <span class="text-muted">隔期分佈 (cap {{ row.capStats.intervalCapMode === 'proportional' ? '按剩餘比例' : '均分' }})：</span>
                 <span
                   v-for="(seg, i) in row.capStats.intervalCounts"
                   :key="`int-${row.sourceTerm}-${seg.interval}`"
-                  :class="seg.count >= row.capStats.intervalCap ? 'text-orange-500' : (seg.count === 0 ? 'text-red-500' : '')"
-                >{{ i > 0 ? ' · ' : '' }}隔{{ seg.interval }}: {{ seg.count }}</span>
+                  :class="seg.count >= seg.cap && seg.cap > 0 ? 'text-orange-500' : (seg.count === 0 ? 'text-red-500' : '')"
+                >{{ i > 0 ? ' · ' : '' }}隔{{ seg.interval }}: {{ seg.count }}/{{ seg.cap }}<span class="text-[10px] text-muted">（剩{{ seg.remaining }}）</span></span>
               </div>
             </div>
 
