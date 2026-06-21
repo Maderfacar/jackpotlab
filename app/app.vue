@@ -22,6 +22,27 @@ useSeoMeta({
   ogDescription: description,
   twitterCard: 'summary_large_image'
 })
+
+interface NavItem {
+  label: string
+  icon: string
+  to: string
+}
+
+const navItems: NavItem[] = [
+  { label: '艾佛森', icon: 'i-lucide-target', to: '/iverson' },
+  { label: '柯比', icon: 'i-lucide-crosshair', to: '/kobe' },
+  { label: '賓果海尼根', icon: 'i-lucide-beer', to: '/bingo-heineken' },
+  { label: '鑑古', icon: 'i-lucide-brain', to: '/hindsight' },
+  { label: '開獎號碼', icon: 'i-lucide-list-checks', to: '/draws' },
+  { label: '系統健康', icon: 'i-lucide-activity', to: '/admin/health' }
+]
+
+const navMenuItems = computed(() => navItems.map(item => ({
+  label: item.label,
+  icon: item.icon,
+  to: item.to
+})))
 </script>
 
 <template>
@@ -41,51 +62,18 @@ useSeoMeta({
       </template>
 
       <template #right>
-        <UButton
-          to="/iverson"
-          color="neutral"
-          variant="ghost"
-          icon="i-lucide-target"
-          size="sm"
+        <UDropdownMenu
+          :items="navMenuItems"
+          :ui="{ content: 'min-w-44' }"
         >
-          艾佛森
-        </UButton>
-        <UButton
-          to="/draws"
-          color="neutral"
-          variant="ghost"
-          icon="i-lucide-list-checks"
-          size="sm"
-        >
-          開獎號碼
-        </UButton>
-        <UButton
-          to="/hindsight"
-          color="neutral"
-          variant="ghost"
-          icon="i-lucide-brain"
-          size="sm"
-        >
-          鑑古
-        </UButton>
-        <UButton
-          to="/bingo-heineken"
-          color="neutral"
-          variant="ghost"
-          icon="i-lucide-beer"
-          size="sm"
-        >
-          賓果海尼根
-        </UButton>
-        <UButton
-          to="/admin/health"
-          color="neutral"
-          variant="ghost"
-          icon="i-lucide-activity"
-          size="sm"
-        >
-          系統健康
-        </UButton>
+          <UButton
+            color="neutral"
+            variant="ghost"
+            icon="i-lucide-menu"
+            size="md"
+            aria-label="導覽選單"
+          />
+        </UDropdownMenu>
         <UColorModeButton />
       </template>
     </UHeader>
