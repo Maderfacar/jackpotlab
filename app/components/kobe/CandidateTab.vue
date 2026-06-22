@@ -3,11 +3,10 @@
  * /kobe Tab 0 「候選」
  *
  * 結構：
- *   1. 控制台（最近 N 期截斷下方歷史回顧、不影響 2000 期統計）
+ *   1. 控制台（最近 N 期截斷下方歷史回顧、規則開關、隔期顯示開關、圖例）
  *   2. sticky 候選 section（避開頂部 UHeader）
  *      - 下一期候選（待開獎）：用 finalState、白底
- *   3. 最新一期回顧（獨立卡、不 sticky）：用 preLatestState、4 色標示
- *   4. 歷史候選回顧列表（不 sticky）：每期一張卡、4 色標示
+ *   3. 歷史候選回顧列表（不 sticky）：每期一張卡、4 色標示
  *
  * 候選邏輯（隔期 0..3）：
  *   raw = pre-T 該隔期 prizesBefore（sorted asc）
@@ -46,7 +45,7 @@ interface Props {
 }
 const props = defineProps<Props>()
 
-const TARGET_INTERVALS = [0, 1, 2, 3] as const
+const TARGET_INTERVALS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9] as const
 const DEFAULT_RECENT_N = 50
 const DEVIATION_HIGH_THRESHOLD = 0.05 // > +5% → 扣
 const DEVIATION_LOW_THRESHOLD = -0.05 // < -5% → 「優先納入」(視覺標記)
@@ -67,13 +66,10 @@ const rules = reactive<RuleSwitches>({
   target: true
 })
 
-// 隔期 0-3 各自開關（預設全開）
-const intervalEnabled = reactive<Record<number, boolean>>({
-  0: true,
-  1: true,
-  2: true,
-  3: true
-})
+// 隔期 0-9 各自開關（預設全開）
+const intervalEnabled = reactive<Record<number, boolean>>(
+  Object.fromEntries(TARGET_INTERVALS.map(j => [j, true]))
+)
 const activeIntervals = computed(() => TARGET_INTERVALS.filter(j => intervalEnabled[j]))
 
 const bingoMinTermByDate = computed<Map<string, number>>(() => {
@@ -124,6 +120,9 @@ function targetK(j: number, rawLen: number): number {
     if (rawLen <= 13) return 3
     return 4
   }
+  // j >= 4：使用者尚未拍板 mapping、暫用保守值 1。
+  // 若需要其他值、可以關閉「目標顆數截斷」用 raw 全主推、或回頭給 mapping。
+  if (j >= 4 && j <= 9) return 1
   return 0
 }
 
@@ -314,28 +313,6 @@ const nextRows = computed<CandidateRow[]>(() => {
   })
 })
 
-// ---------- 最新一期回顧 ----------
-const reviewCarryoverSet = computed<Set<number>>(() => {
-  const arr = props.drawsAsc
-  if (arr.length < 3) return new Set()
-  const last = arr.at(-2)!.numbers
-  const sl = new Set(arr.at(-3)!.numbers)
-  return new Set(last.filter(n => sl.has(n)))
-})
-
-const reviewRows = computed<CandidateRow[]>(() => {
-  const state = props.preLatestState
-  if (!state) return []
-  const upToIdx = props.snapshots.length - 2
-  const actualSet = new Set(props.drawsAsc.at(-1)?.numbers ?? [])
-  return activeIntervals.value.map((j) => {
-    const slot = state.periods[j]
-    const raw = slot ? [...slot.prizes].sort((a, b) => a - b) : []
-    const positionYs = findLatestPositionYsForInterval(j, upToIdx)
-    return buildCandidateRow(j, raw, positionYs, reviewCarryoverSet.value, actualSet, numberStatsMap.value, false, rules)
-  })
-})
-
 // ---------- 歷史候選回顧 ----------
 interface HistoricalCard {
   snapshotIndex: number
@@ -438,15 +415,6 @@ interface DrawInfo {
   drawDate: string
   timeLabel: string
 }
-const latestDrawInfo = computed<DrawInfo | null>(() => {
-  const last = props.drawsAsc.at(-1)
-  if (!last) return null
-  return {
-    drawTerm: last.drawTerm,
-    drawDate: last.drawDate,
-    timeLabel: bingoTimeFromMap(bingoMinTermByDate.value, last.drawDate, last.drawTerm)
-  }
-})
 const nextDrawInfo = computed<DrawInfo | null>(() => {
   const last = props.drawsAsc.at(-1)
   if (!last) return null
@@ -587,6 +555,31 @@ const stickyStyle = computed(() => ({
             </span>
           </div>
         </div>
+        <div class="border-t border-default pt-2">
+          <div class="flex flex-wrap items-center gap-2 text-[10px] text-muted">
+            <span class="font-semibold">圖例：</span>
+            <span class="inline-flex items-center gap-1">
+              <span class="inline-block w-3 h-3 rounded bg-emerald-500 border border-emerald-600" />
+              中（主推 + 開出）
+            </span>
+            <span class="inline-flex items-center gap-1">
+              <span class="inline-block w-3 h-3 rounded bg-emerald-500 border-2 border-sky-500" />
+              中 + 優先納入
+            </span>
+            <span class="inline-flex items-center gap-1">
+              <span class="inline-block w-3 h-3 rounded border border-default bg-default" />
+              主推沒開
+            </span>
+            <span class="inline-flex items-center gap-1">
+              <span class="inline-block w-3 h-3 rounded border-2 border-sky-500 bg-default" />
+              主推 + 優先納入（沒開）
+            </span>
+            <span class="inline-flex items-center gap-1">
+              <span class="inline-block w-3 h-3 rounded bg-red-500" />
+              漏（非主推但開了）
+            </span>
+          </div>
+        </div>
       </div>
     </UCard>
 
@@ -646,108 +639,6 @@ const stickyStyle = computed(() => ({
             <span
               v-for="cell in row.cells"
               :key="`next-${row.interval}-${cell.n}`"
-              class="relative inline-flex min-w-7 justify-center font-mono text-[11px] rounded border px-1.5 py-0.5"
-              :class="cellClass(cell)"
-              :title="cellTitle(cell)"
-            >
-              {{ pad(cell.n) }}
-              <span
-                class="absolute bottom-0 right-0.5 text-[8px] leading-none font-normal"
-                :class="cellPositionClass(cell)"
-              >{{ cell.position }}</span>
-            </span>
-          </div>
-        </div>
-      </div>
-    </UCard>
-
-    <!-- 最新一期回顧（獨立卡、不 sticky） -->
-    <UCard :ui="{ body: 'p-3 sm:p-4' }">
-      <div class="space-y-2 text-xs">
-        <div class="flex items-baseline gap-2 flex-wrap">
-          <UBadge
-            color="success"
-            variant="subtle"
-            size="sm"
-          >
-            最新一期回顧
-          </UBadge>
-          <span
-            v-if="latestDrawInfo"
-            class="font-mono text-sm font-semibold"
-          >
-            第 {{ latestDrawInfo.drawTerm }} 期
-          </span>
-          <span
-            v-if="latestDrawInfo"
-            class="text-[10px] text-muted"
-          >
-            {{ latestDrawInfo.drawDate }} {{ latestDrawInfo.timeLabel || '' }}
-          </span>
-        </div>
-        <!-- legend -->
-        <div class="flex flex-wrap items-center gap-2 text-[10px] text-muted">
-          <span class="inline-flex items-center gap-1">
-            <span class="inline-block w-3 h-3 rounded bg-emerald-500 border border-emerald-600" />
-            中（主推 + 開出）
-          </span>
-          <span class="inline-flex items-center gap-1">
-            <span class="inline-block w-3 h-3 rounded bg-emerald-500 border-2 border-sky-500" />
-            中 + 優先納入
-          </span>
-          <span class="inline-flex items-center gap-1">
-            <span class="inline-block w-3 h-3 rounded border border-default bg-default" />
-            主推沒開
-          </span>
-          <span class="inline-flex items-center gap-1">
-            <span class="inline-block w-3 h-3 rounded border-2 border-sky-500 bg-default" />
-            主推 + 優先納入（沒開）
-          </span>
-          <span class="inline-flex items-center gap-1">
-            <span class="inline-block w-3 h-3 rounded bg-red-500" />
-            漏（非主推但開了）
-          </span>
-          <span class="inline-flex items-center gap-1">
-            <span class="inline-block w-3 h-3 rounded bg-elevated/40 line-through" />
-            扣對（非主推且沒開）
-          </span>
-        </div>
-        <div
-          v-for="row in reviewRows"
-          :key="`review-${row.interval}`"
-          class="space-y-1"
-        >
-          <div class="flex items-baseline gap-2 flex-wrap text-[10px]">
-            <span class="font-mono font-semibold">隔期 {{ row.interval }}</span>
-            <span class="text-muted">
-              原 {{ row.rawCount }} 顆 → 候選池 {{ row.poolSize }} · 主推 <span class="font-mono font-semibold">{{ row.recommendedCount }}</span> / 目標 {{ row.targetK }}
-            </span>
-            <span class="text-emerald-600 dark:text-emerald-400">中 {{ row.hitCount }}</span>
-            <span
-              v-if="row.missCount > 0"
-              class="text-red-600 dark:text-red-400 font-semibold"
-            >漏 {{ row.missCount }}</span>
-            <span
-              v-else
-              class="text-muted"
-            >漏 0</span>
-          </div>
-          <div class="text-[9px] text-muted">
-            扣位置 {{ row.removedByPosition }} · 紅框 {{ row.removedByCarryover }} · 偏離高 {{ row.removedByDeviationHigh }} · 截斷 {{ row.truncatedCount }}
-          </div>
-          <div
-            v-if="row.cells.length === 0"
-            class="text-[10px] text-muted"
-          >
-            無剩餘號
-          </div>
-          <div
-            v-else
-            class="flex flex-wrap items-center gap-1"
-          >
-            <span
-              v-for="cell in row.cells"
-              :key="`review-${row.interval}-${cell.n}`"
               class="relative inline-flex min-w-7 justify-center font-mono text-[11px] rounded border px-1.5 py-0.5"
               :class="cellClass(cell)"
               :title="cellTitle(cell)"
