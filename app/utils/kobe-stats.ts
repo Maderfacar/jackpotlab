@@ -1492,3 +1492,68 @@ export function buildPerRegimeAnalysis(
     testDrawCount: snapshots.length - trainEnd
   }
 }
+
+// ---------------- 額外：位置 > 10 來源隔期分布 ----------------
+
+export interface HighPositionDistRow {
+  interval: number
+  /** 該隔期累計開出總顆數 (Σ hitsThisDraw) */
+  totalHits: number
+  /** 該隔期累計開出、位置 > 10 的顆數 */
+  highPositionHits: number
+  /** 該隔期內、位置 > 10 佔該隔期總開出的比例 */
+  ratio: number
+  /** 該隔期歷史最大 pre-T 剩餘顆數（上下文） */
+  maxRemaining: number
+  /** 該隔期 pre-T 剩餘 ≥ 11 顆的期數（= 位置 11+ 才有可能出現） */
+  exposureCount: number
+}
+
+/**
+ * 額外分析：開出號碼中、位置 > 10 的、來自哪些隔期、各隔期內佔比。
+ *
+ * 規則：
+ *   - 位置 > 10 = hitPositions 中 y > 10 的元素（即位置 11 或以上）
+ *   - 對每隔期 j、累計 totalHits 與 highPositionHits（位置 > 10 的命中數）
+ *   - ratio = highPositionHits / totalHits（該隔期內、高位佔比）
+ *   - 只回 highPositionHits > 0 的隔期（過濾沒資料的）
+ *
+ * 第一期 (snapshots[0]) 跳過、與其他 phase 一致。
+ */
+export function buildHighPositionDistribution(snapshots: PerDrawSnapshot[]): HighPositionDistRow[] {
+  if (snapshots.length < 2) return []
+  const intervalCount = snapshots[1]!.slots.length
+
+  const totalHits = new Array<number>(intervalCount).fill(0)
+  const highPositionHits = new Array<number>(intervalCount).fill(0)
+  const maxRemaining = new Array<number>(intervalCount).fill(0)
+  const exposureCount = new Array<number>(intervalCount).fill(0)
+
+  for (let i = 1; i < snapshots.length; i++) {
+    const snap = snapshots[i]!
+    for (let j = 0; j < intervalCount; j++) {
+      const slot = snap.slots[j]
+      if (!slot) continue
+      totalHits[j]! += slot.hitsThisDraw
+      if (slot.remainingBefore > maxRemaining[j]!) maxRemaining[j] = slot.remainingBefore
+      if (slot.remainingBefore >= 11) exposureCount[j]! += 1
+      for (const y of slot.hitPositions) {
+        if (y > 10) highPositionHits[j]! += 1
+      }
+    }
+  }
+
+  const out: HighPositionDistRow[] = []
+  for (let j = 0; j < intervalCount; j++) {
+    if (highPositionHits[j]! === 0) continue
+    out.push({
+      interval: j,
+      totalHits: totalHits[j]!,
+      highPositionHits: highPositionHits[j]!,
+      ratio: totalHits[j]! > 0 ? highPositionHits[j]! / totalHits[j]! : 0,
+      maxRemaining: maxRemaining[j]!,
+      exposureCount: exposureCount[j]!
+    })
+  }
+  return out
+}
