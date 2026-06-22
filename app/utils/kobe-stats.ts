@@ -50,6 +50,12 @@ export interface SlotSnapshot {
    * 索引與 hitNumbers 對齊。歷史資料解析不到 → 退而填 0。
    */
   hitPositions: number[]
+  /**
+   * pre-T 該隔期剩餘號碼完整陣列（sorted ascending）；
+   * 給候選分頁歷史回顧用、可直接套用「位置 → 號」對應。
+   * remainingBefore = prizesBefore.length。
+   */
+  prizesBefore: number[]
 }
 
 export interface PerDrawSnapshot {
@@ -124,7 +130,8 @@ export function buildSnapshotsAndState(drawsAsc: KobeDraw[], n: number): KobeBui
           recordValueBefore: s.recordValueBefore,
           hitsThisDraw: 0,
           hitNumbers: [],
-          hitPositions: []
+          hitPositions: [],
+          prizesBefore: [...s.preParesPrizes].sort((a, b) => a - b)
         })),
         newcomerCount: 0
       })
@@ -172,7 +179,8 @@ export function buildSnapshotsAndState(drawsAsc: KobeDraw[], n: number): KobeBui
         recordValueBefore: s.recordValueBefore,
         hitsThisDraw: sorted.length,
         hitNumbers: sorted.map(h => h.num),
-        hitPositions: sorted.map(h => h.pos)
+        hitPositions: sorted.map(h => h.pos),
+        prizesBefore: [...s.preParesPrizes].sort((a, b) => a - b)
       }
     })
 
