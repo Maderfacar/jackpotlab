@@ -13,8 +13,8 @@
  * 詳細 phase 規格見 docs/KOBE-PHASES.md。
  */
 import type { DrawQueryResponse } from '~~/shared/lotto/types'
-import { defaultN } from '~/utils/analysis'
-import { buildSnapshots, type KobeDraw, type PerDrawSnapshot } from '~/utils/kobe-stats'
+import { defaultN, type AnalysisState } from '~/utils/analysis'
+import { buildSnapshotsAndState, type KobeDraw, type PerDrawSnapshot } from '~/utils/kobe-stats'
 
 definePageMeta({
   title: '柯比'
@@ -54,9 +54,23 @@ async function load() {
 
 let pollTimer: ReturnType<typeof setInterval> | null = null
 
+// 量 UHeader 高度給候選 sticky section 用（仿艾佛森 pendingStickyStyle）
+const headerHeight = ref<number>(0)
+let headerResizeObserver: ResizeObserver | null = null
+
 onMounted(() => {
   load()
   if (typeof window === 'undefined') return
+  const headerEl = document.querySelector('header')
+  if (headerEl instanceof HTMLElement) {
+    headerHeight.value = headerEl.offsetHeight
+    if (typeof ResizeObserver !== 'undefined') {
+      headerResizeObserver = new ResizeObserver(() => {
+        headerHeight.value = headerEl.offsetHeight
+      })
+      headerResizeObserver.observe(headerEl)
+    }
+  }
   pollTimer = setInterval(async () => {
     if (loading.value) return
     try {
@@ -79,14 +93,21 @@ onBeforeUnmount(() => {
     clearInterval(pollTimer)
     pollTimer = null
   }
+  headerResizeObserver?.disconnect()
+  headerResizeObserver = null
 })
 
-// 集中算 snapshots — 所有 tab 共用同一份、避免重複 hydrate。
-// 2000 期 × 60 slot ≈ 120k slot snapshots，hydrate 約 1-2s。
-const snapshots = computed<PerDrawSnapshot[]>(() => {
-  if (allDraws.value.length === 0) return []
-  return buildSnapshots(allDraws.value, KOBE_ANALYSIS_N)
+// 集中算 snapshots + finalState + preLatestState — 所有 tab 共用、避免重複 hydrate。
+// 2000 期 × 60 slot ≈ 120k slot snapshots，hydrate 約 1-2s（一次完成）。
+const buildResult = computed(() => {
+  if (allDraws.value.length === 0) {
+    return { snapshots: [] as PerDrawSnapshot[], finalState: null as AnalysisState | null, preLatestState: null as AnalysisState | null }
+  }
+  return buildSnapshotsAndState(allDraws.value, KOBE_ANALYSIS_N)
 })
+const snapshots = computed<PerDrawSnapshot[]>(() => buildResult.value.snapshots)
+const finalState = computed<AnalysisState | null>(() => buildResult.value.finalState)
+const preLatestState = computed<AnalysisState | null>(() => buildResult.value.preLatestState)
 
 const latestDrawInfo = computed(() => {
   const arr = allDraws.value
@@ -105,6 +126,7 @@ interface TabDef {
   description?: string
 }
 const tabs: TabDef[] = [
+  { value: 'candidate', label: '候選' },
   { value: 'observation', label: '觀察紀錄' },
   { value: 'remaining', label: '隔期剩餘 → 開出' },
   { value: 'cycle', label: '冷熱波段' },
@@ -113,7 +135,7 @@ const tabs: TabDef[] = [
   { value: 'compare', label: '訊號比拚' },
   { value: 'regime', label: '波段儀表板' }
 ]
-const activeTab = ref<string>('observation')
+const activeTab = ref<string>('candidate')
 </script>
 
 <template>
@@ -124,7 +146,7 @@ const activeTab = ref<string>('observation')
           柯比
         </h1>
         <p class="text-sm text-muted">
-          每期獎號的「來源隔期」觀察紀錄 + 多面向分析（共 7 個分頁）。資料源：隔期狀態（N={{ KOBE_ANALYSIS_N }}）+ 獎號關聯，hydrate 自過去 {{ KOBE_FETCH_LIMIT }} 期。
+          每期獎號的「來源隔期」觀察紀錄 + 多面向分析（共 8 個分頁，候選分頁置頂）。資料源：隔期狀態（N={{ KOBE_ANALYSIS_N }}）+ 獎號關聯，hydrate 自過去 {{ KOBE_FETCH_LIMIT }} 期。
         </p>
         <p
           v-if="latestDrawInfo"
@@ -172,8 +194,17 @@ const activeTab = ref<string>('observation')
     >
       <template #content="{ item }">
         <div class="pt-4">
+          <KobeCandidateTab
+            v-if="item.value === 'candidate'"
+            :snapshots="snapshots"
+            :final-state="finalState"
+            :pre-latest-state="preLatestState"
+            :draws-asc="allDraws"
+            :interval-count="KOBE_ANALYSIS_N"
+            :header-height="headerHeight"
+          />
           <KobeObservationTab
-            v-if="item.value === 'observation'"
+            v-else-if="item.value === 'observation'"
             :snapshots="snapshots"
             :interval-count="KOBE_ANALYSIS_N"
           />

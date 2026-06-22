@@ -14,6 +14,8 @@ import { bingoTimeFromMap, buildBingoMinTermByDate } from '~/utils/bingo-time'
 interface Props {
   snapshots: PerDrawSnapshot[]
   intervalCount: number
+  /** 候選分頁傳入時固定顯示前 N 期、隱藏「展開全部」按鈕 */
+  visibleCount?: number
 }
 const props = defineProps<Props>()
 
@@ -108,9 +110,17 @@ const rows = computed<KobeRow[]>(() => {
 })
 
 const visibleRows = computed<KobeRow[]>(() => {
+  // 候選分頁傳入 visibleCount → 固定截斷、不出現「展開全部」按鈕
+  if (props.visibleCount != null && Number.isFinite(props.visibleCount) && props.visibleCount > 0) {
+    return rows.value.slice(0, props.visibleCount)
+  }
   if (showAll.value) return rows.value
   return rows.value.slice(0, DEFAULT_VISIBLE_COUNT)
 })
+
+const showExpandButton = computed(() =>
+  props.visibleCount == null && rows.value.length > DEFAULT_VISIBLE_COUNT
+)
 
 function groupHeaderText(g: KobeGroup): string {
   return `隔期 ${g.interval} — 開出 ${g.hitCount} / ${g.originalCount} 顆`
@@ -122,7 +132,7 @@ function groupHeaderText(g: KobeGroup): string {
     <div class="flex items-center justify-between gap-2 text-xs text-muted">
       <span>共 {{ rows.length }} 期</span>
       <UButton
-        v-if="rows.length > DEFAULT_VISIBLE_COUNT"
+        v-if="showExpandButton"
         color="neutral"
         variant="ghost"
         size="xs"

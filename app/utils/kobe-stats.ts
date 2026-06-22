@@ -19,7 +19,8 @@
 import {
   createInitialState,
   processDraw,
-  type AnalysisDrawInput
+  type AnalysisDrawInput,
+  type AnalysisState
 } from '~/utils/analysis'
 
 export interface KobeDraw {
@@ -70,18 +71,33 @@ function parseFirstRecord(record: string): number {
   return Number.isFinite(v) ? v : 0
 }
 
+export interface KobeBuildResult {
+  snapshots: PerDrawSnapshot[]
+  /** 處理完最新一期 (drawsAsc.at(-1)) 後的 state — 對應下一期 (尚未開出) 的 pre-T。 */
+  finalState: AnalysisState
+  /** 處理完倒數第二期後的 state — 對應最新一期 (latestDraw) 的 pre-T；只有 1 期時為 null。 */
+  preLatestState: AnalysisState | null
+}
+
 /**
- * 漸進式 hydration、每期保留 pre-T slot snapshot。
+ * 漸進式 hydration、每期保留 pre-T slot snapshot、同時記錄最後兩個 state。
  *
  * 為何要 pre-T 而非 post-T：
  *   要回答「(J, X) → 下一期 K 多少」必須以 pre-T 的 X 當條件、再看 T 期的 K。
  *   post-T 的 X 已扣掉 T 期命中、不能當條件。
+ *
+ * 為何同時暴露 finalState / preLatestState：
+ *   候選分頁要拿「最新一期 post-T」（下一期候選）與「上一期 post-T」（最新一期回顧），
+ *   不必為了拿這兩個 state 額外跑兩次 hydrate（2000 期 hydrate 一次約 1-2s）。
  */
-export function buildSnapshots(drawsAsc: KobeDraw[], n: number): PerDrawSnapshot[] {
+export function buildSnapshotsAndState(drawsAsc: KobeDraw[], n: number): KobeBuildResult {
   const out: PerDrawSnapshot[] = []
   let state = createInitialState('bingo_bingo', n)
+  let preLatestState: AnalysisState | null = null
 
-  for (const d of drawsAsc) {
+  for (let i = 0; i < drawsAsc.length; i++) {
+    if (i === drawsAsc.length - 1) preLatestState = state
+    const d = drawsAsc[i]!
     const preSlots = state.periods.map(p => ({
       interval: p.period,
       remainingBefore: p.prizes.length,
@@ -168,7 +184,18 @@ export function buildSnapshots(drawsAsc: KobeDraw[], n: number): PerDrawSnapshot
       newcomerCount: newcomers
     })
   }
-  return out
+  return {
+    snapshots: out,
+    finalState: state,
+    preLatestState
+  }
+}
+
+/**
+ * 舊版 API 包一層；繼續服務不需要 finalState 的調用點（Phase 1-7 既有 tab）。
+ */
+export function buildSnapshots(drawsAsc: KobeDraw[], n: number): PerDrawSnapshot[] {
+  return buildSnapshotsAndState(drawsAsc, n).snapshots
 }
 
 // ---------------- Phase 0: 一致性檢查 ----------------
