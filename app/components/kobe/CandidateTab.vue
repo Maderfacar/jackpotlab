@@ -109,7 +109,7 @@ interface RuleParams {
 }
 const params = reactive<RuleParams>({
   deviationUpperPct: 5,
-  deviationLowerPct: -100,
+  deviationLowerPct: -5,
   recordLatestMax: 1,
   pos12Cap: 2,
   pos39Cap: 1,
@@ -261,8 +261,12 @@ function annotateInterval(
   for (const y of positionYs) {
     if (y >= 1 && y <= raw.length) posSet.add(y)
   }
-  const upper = ruleParams.deviationUpperPct / 100
-  const lower = ruleParams.deviationLowerPct / 100
+  // 防呆：v-model.number 在編輯中間狀態 (例如剛輸入 '-') 可能傳入非 number；
+  // 任一邊變 NaN → 退化成不過濾 (Infinity / -Infinity)、避免外部 computed/template crash。
+  const upperRaw = Number(ruleParams.deviationUpperPct)
+  const lowerRaw = Number(ruleParams.deviationLowerPct)
+  const upper = Number.isFinite(upperRaw) ? upperRaw / 100 : Number.POSITIVE_INFINITY
+  const lower = Number.isFinite(lowerRaw) ? lowerRaw / 100 : Number.NEGATIVE_INFINITY
   const items: ItemAnnotated[] = raw.map((n, idx) => {
     const stat = stats.get(n)
     const deviation = stat?.deviation ?? 0
@@ -714,8 +718,11 @@ function fmtPct(v: number): string {
 function fmtDev(d: number): string {
   return `${d >= 0 ? '+' : ''}${fmtPct(d)}`
 }
-function fmtSignedPct(v: number): string {
-  return `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`
+function fmtSignedPct(v: unknown): string {
+  // 防呆：v-model.number 中間狀態 (空字串 / '-') 可能進來；非 finite → 顯示 '—' 而非 crash
+  const num = typeof v === 'number' && Number.isFinite(v) ? v : Number(v)
+  if (!Number.isFinite(num)) return '—'
+  return `${num >= 0 ? '+' : ''}${num.toFixed(2)}%`
 }
 
 function cellClass(cell: NumberCell): string {
