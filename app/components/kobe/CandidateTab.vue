@@ -54,6 +54,7 @@ const props = defineProps<Props>()
 
 const TARGET_INTERVALS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9] as const
 const DEFAULT_RECENT_N = 50
+const STORAGE_KEY = 'kobe-candidate-config-v1'
 
 const recentN = ref<number>(DEFAULT_RECENT_N)
 
@@ -70,7 +71,7 @@ interface RuleSwitches {
   posQuota: boolean
   globalCap: boolean
 }
-const rules = reactive<RuleSwitches>({
+const DEFAULT_RULES: Readonly<RuleSwitches> = Object.freeze({
   position: true,
   carryover: true,
   deviation: true,
@@ -79,6 +80,7 @@ const rules = reactive<RuleSwitches>({
   posQuota: false,
   globalCap: false
 })
+const rules = reactive<RuleSwitches>({ ...DEFAULT_RULES })
 
 // 規則參數
 interface RuleParams {
@@ -94,9 +96,9 @@ interface RuleParams {
   pos39Cap: number
   /** 位 10+ 各 ≤ */
   pos10PlusCap: number
-  /** 任一尾數 ≤ */
+  /** 任一尾數 ≤（80 個號碼裡每尾數有 8 個、預設 6 = 留些餘地） */
   tailCap: number
-  /** 連跑 ≤ */
+  /** 連跑 ≤（排序後最長連號串、預設 4 = 允許至多 4 連、5 連即拒） */
   consecutiveCap: number
   /** 奇 ≤ */
   oddCap: number
@@ -107,26 +109,95 @@ interface RuleParams {
   /** >40 cap */
   gt40Cap: number
 }
-const params = reactive<RuleParams>({
+const DEFAULT_PARAMS: Readonly<RuleParams> = Object.freeze({
   deviationUpperPct: 5,
   deviationLowerPct: -5,
   recordLatestMax: 1,
   pos12Cap: 2,
   pos39Cap: 1,
   pos10PlusCap: 4,
-  tailCap: 5,
+  tailCap: 6,
   consecutiveCap: 4,
-  oddCap: 12,
-  evenCap: 12,
-  le40Cap: 12,
-  gt40Cap: 12
+  oddCap: 13,
+  evenCap: 13,
+  le40Cap: 13,
+  gt40Cap: 13
 })
+const params = reactive<RuleParams>({ ...DEFAULT_PARAMS })
 
 // 隔期 0-9 各自開關（預設全開）
 const intervalEnabled = reactive<Record<number, boolean>>(
   Object.fromEntries(TARGET_INTERVALS.map(j => [j, true]))
 )
 const activeIntervals = computed(() => TARGET_INTERVALS.filter(j => intervalEnabled[j]))
+
+// ---------- 偏好設定持久化（localStorage） ----------
+interface PersistedShape {
+  recentN: number
+  rules: RuleSwitches
+  params: RuleParams
+  intervalEnabled: Record<number, boolean>
+}
+
+function loadFromStorage(): void {
+  if (typeof window === 'undefined') return
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY)
+    if (!raw) return
+    const parsed = JSON.parse(raw) as Partial<PersistedShape>
+    if (typeof parsed.recentN === 'number' && Number.isFinite(parsed.recentN) && parsed.recentN > 0) {
+      recentN.value = parsed.recentN
+    }
+    if (parsed.rules && typeof parsed.rules === 'object') {
+      for (const k of Object.keys(DEFAULT_RULES) as Array<keyof RuleSwitches>) {
+        const v = (parsed.rules as Record<string, unknown>)[k]
+        if (typeof v === 'boolean') rules[k] = v
+      }
+    }
+    if (parsed.params && typeof parsed.params === 'object') {
+      for (const k of Object.keys(DEFAULT_PARAMS) as Array<keyof RuleParams>) {
+        const v = (parsed.params as Record<string, unknown>)[k]
+        if (typeof v === 'number' && Number.isFinite(v)) params[k] = v
+      }
+    }
+    if (parsed.intervalEnabled && typeof parsed.intervalEnabled === 'object') {
+      for (const j of TARGET_INTERVALS) {
+        const v = (parsed.intervalEnabled as Record<string, unknown>)[String(j)]
+        if (typeof v === 'boolean') intervalEnabled[j] = v
+      }
+    }
+  } catch {
+    // 忽略 storage 故障、走預設
+  }
+}
+
+function saveToStorage(): void {
+  if (typeof window === 'undefined') return
+  try {
+    const payload: PersistedShape = {
+      recentN: recentN.value,
+      rules: { ...rules },
+      params: { ...params },
+      intervalEnabled: { ...intervalEnabled }
+    }
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
+  } catch {
+    // 忽略 storage 故障
+  }
+}
+
+function resetToDefaults(): void {
+  recentN.value = DEFAULT_RECENT_N
+  Object.assign(rules, DEFAULT_RULES)
+  Object.assign(params, DEFAULT_PARAMS)
+  for (const j of TARGET_INTERVALS) intervalEnabled[j] = true
+}
+
+onMounted(() => {
+  loadFromStorage()
+})
+
+watch([recentN, rules, params, intervalEnabled], saveToStorage, { deep: true })
 
 const bingoMinTermByDate = computed<Map<string, number>>(() => {
   return buildBingoMinTermByDate(props.drawsAsc)
@@ -786,23 +857,34 @@ const stickyStyle = computed(() => ({
     <UCard :ui="{ body: 'p-3' }">
       <div class="space-y-2">
         <!-- 顯示期數 -->
-        <div class="flex items-center gap-3 flex-wrap text-xs">
-          <label class="flex items-center gap-2">
-            <span class="text-muted">下方歷史回顧顯示最近</span>
-            <UInput
-              v-model.number="recentN"
-              type="number"
-              :min="1"
-              :max="2000"
-              step="1"
-              size="sm"
-              class="w-24"
-            />
-            <span class="text-muted">期</span>
-          </label>
-          <span class="text-[10px] text-muted">
-            僅截斷顯示、不影響 2000 期統計來源
-          </span>
+        <div class="flex items-center justify-between gap-3 flex-wrap text-xs">
+          <div class="flex items-center gap-3 flex-wrap">
+            <label class="flex items-center gap-2">
+              <span class="text-muted">下方歷史回顧顯示最近</span>
+              <UInput
+                v-model.number="recentN"
+                type="number"
+                :min="1"
+                :max="2000"
+                step="1"
+                size="sm"
+                class="w-24"
+              />
+              <span class="text-muted">期</span>
+            </label>
+            <span class="text-[10px] text-muted">
+              僅截斷顯示、不影響 2000 期統計來源 · 設定已自動記住
+            </span>
+          </div>
+          <UButton
+            color="neutral"
+            variant="outline"
+            size="xs"
+            icon="i-lucide-rotate-ccw"
+            @click="resetToDefaults"
+          >
+            重設為預設
+          </UButton>
         </div>
 
         <!-- 第 1 行：規則開關 -->
