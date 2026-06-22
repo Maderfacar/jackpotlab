@@ -997,3 +997,463 @@ export function combineKeyFns(...fns: HoldoutKeyFn[]): HoldoutKeyFn {
     return parts.join('||')
   }
 }
+
+// ---------------- Phase 6+7: 波段儀表板 ----------------
+
+export type RegimeKey = 'timeSlot' | 'globalColdness' | 'prevShape'
+
+export interface RegimeAssignment {
+  snapshotIndex: number
+  drawTerm: number
+  drawDate: string
+  /** 波段桶名稱（UI 直接顯示用） */
+  bucket: string
+}
+
+/** 各切換開關回傳的 bucket 名稱集合（用於 UI 固定列順序） */
+const TIME_SLOT_BUCKETS: readonly string[] = ['凌晨 (0-6)', '上午 (6-12)', '下午 (12-18)', '晚上 (18-24)']
+const COLDNESS_BUCKETS: readonly string[] = ['低（最熱 33%）', '中', '高（最冷 33%）']
+const PREV_SHAPE_BUCKETS: readonly string[] = ['集中（上期隔期 0 開出 ≥ 6 顆）', '散開（上期隔期 0 開出 < 6 顆）']
+
+/** 給 UI 列順序用：照「業務語意」排（時段照晝夜、冷度照低→高、形態照集中→散開） */
+export function regimeBucketOrder(regimeKey: RegimeKey): readonly string[] {
+  if (regimeKey === 'timeSlot') return TIME_SLOT_BUCKETS
+  if (regimeKey === 'globalColdness') return COLDNESS_BUCKETS
+  return PREV_SHAPE_BUCKETS
+}
+
+function timeSlotBucketForHour(hour: number): string {
+  if (hour >= 0 && hour < 6) return TIME_SLOT_BUCKETS[0]!
+  if (hour < 12) return TIME_SLOT_BUCKETS[1]!
+  if (hour < 18) return TIME_SLOT_BUCKETS[2]!
+  return TIME_SLOT_BUCKETS[3]!
+}
+
+/**
+ * 把每期歸到一個波段 bucket。
+ *
+ * 三個切換開關：
+ *   - timeSlot：用每日最早 drawTerm = 07:05 + 每 5 分鐘一期，推算小時、再切 4 段。
+ *     算不出小時 → 該期不入波段（skip）。
+ *   - globalColdness：每期 Σ slot.recordValueBefore = 整盤冷度；
+ *     用全期 33/66 百分位切「低 / 中 / 高」。
+ *   - prevShape：看上一期 slot[0].hitsThisDraw、≥ 6 = 集中、否則 散開。
+ *     第 1 期無上期可參考 → skip。
+ *
+ * 第一期 (snapshots[0]) 一律 skip（初始狀態無命中資訊）。
+ */
+export function assignRegime(
+  snapshots: PerDrawSnapshot[],
+  regimeKey: RegimeKey
+): RegimeAssignment[] {
+  const out: RegimeAssignment[] = []
+  if (snapshots.length < 2) return out
+
+  if (regimeKey === 'timeSlot') {
+    const minTermByDate = new Map<string, number>()
+    for (const s of snapshots) {
+      const c = minTermByDate.get(s.drawDate)
+      if (c === undefined || s.drawTerm < c) minTermByDate.set(s.drawDate, s.drawTerm)
+    }
+    const BINGO_START_MIN = 7 * 60 + 5
+    const BINGO_INTERVAL_MIN = 5
+    for (let i = 1; i < snapshots.length; i++) {
+      const snap = snapshots[i]!
+      const base = minTermByDate.get(snap.drawDate)
+      if (base === undefined) continue
+      const offset = snap.drawTerm - base
+      if (offset < 0 || offset > 230) continue
+      const totalMin = BINGO_START_MIN + offset * BINGO_INTERVAL_MIN
+      const hour = Math.floor(totalMin / 60) % 24
+      out.push({
+        snapshotIndex: i,
+        drawTerm: snap.drawTerm,
+        drawDate: snap.drawDate,
+        bucket: timeSlotBucketForHour(hour)
+      })
+    }
+    return out
+  }
+
+  if (regimeKey === 'globalColdness') {
+    const coldness: Array<{ idx: number, value: number }> = []
+    for (let i = 1; i < snapshots.length; i++) {
+      let sum = 0
+      for (const s of snapshots[i]!.slots) sum += s.recordValueBefore
+      coldness.push({ idx: i, value: sum })
+    }
+    if (coldness.length === 0) return out
+    const sortedValues = coldness.map(c => c.value).sort((a, b) => a - b)
+    const p33 = sortedValues[Math.floor(sortedValues.length * 0.33)] ?? 0
+    const p66 = sortedValues[Math.floor(sortedValues.length * 0.66)] ?? 0
+    for (const c of coldness) {
+      const snap = snapshots[c.idx]!
+      let bucket: string
+      if (c.value <= p33) bucket = COLDNESS_BUCKETS[0]!
+      else if (c.value <= p66) bucket = COLDNESS_BUCKETS[1]!
+      else bucket = COLDNESS_BUCKETS[2]!
+      out.push({
+        snapshotIndex: c.idx,
+        drawTerm: snap.drawTerm,
+        drawDate: snap.drawDate,
+        bucket
+      })
+    }
+    return out
+  }
+
+  // prevShape
+  for (let i = 2; i < snapshots.length; i++) {
+    const snap = snapshots[i]!
+    const prev = snapshots[i - 1]!
+    const k0 = prev.slots[0]?.hitsThisDraw ?? 0
+    const bucket = k0 >= 6 ? PREV_SHAPE_BUCKETS[0]! : PREV_SHAPE_BUCKETS[1]!
+    out.push({
+      snapshotIndex: i,
+      drawTerm: snap.drawTerm,
+      drawDate: snap.drawDate,
+      bucket
+    })
+  }
+  return out
+}
+
+/**
+ * 取最新一期屬於哪個波段 bucket（用 assignRegime 的最後一筆）。
+ * 找不到 → null（例如 timeSlot 推不出小時）。
+ */
+export function findCurrentBucket(
+  snapshots: PerDrawSnapshot[],
+  regimeKey: RegimeKey
+): { bucket: string, drawTerm: number, drawDate: string } | null {
+  const assignments = assignRegime(snapshots, regimeKey)
+  if (assignments.length === 0) return null
+  const last = assignments[assignments.length - 1]!
+  // 必須是最新一期 (snapshots 最後一筆) 才算「目前這期」；若 assignment 不是最新期 → 仍回傳該筆
+  return { bucket: last.bucket, drawTerm: last.drawTerm, drawDate: last.drawDate }
+}
+
+export interface RegimeBucketResult {
+  bucket: string
+  /** 該波段在全部 snapshots 中的期數 */
+  drawCount: number
+  /** 該波段所有期的對照表（含 train + test）— 給 UI 顯示用 */
+  cells: IntervalRemainingCell[]
+  /** 該波段在「全期 80/20 切點」下、屬於 test 範圍的樣本數（slot 觀察數、剩餘 = 0 不計） */
+  testObs: number
+  /** 該波段內、用該波段 train lookup 預測 → 平均誤差顆數 */
+  meanError: number
+  /** 該波段內、用全期 train lookup 預測 → 平均誤差顆數（同一份 test 集） */
+  baselineError: number
+  /** = baselineError − meanError */
+  improvement: number
+  /** = improvement / baselineError */
+  improvementRatio: number
+}
+
+export interface RegimeTopDifference {
+  interval: number
+  remaining: number
+  /** 波段名稱 → 該波段下該 cell 的平均開出顆數 */
+  bucketMeans: Record<string, number>
+  /** 波段名稱 → 該波段下該 cell 的樣本數 */
+  bucketSamples: Record<string, number>
+  /** max(bucketMeans) − min(bucketMeans)；只用樣本 ≥ trust 的 bucket */
+  spread: number
+}
+
+export interface PerRegimeAnalysis {
+  regimeKey: RegimeKey
+  /** 依 regimeBucketOrder 排序 */
+  buckets: RegimeBucketResult[]
+  /** 各波段該 (J, X) cell 的平均開出顆數差距最大的 Top 10 */
+  topDifferences: RegimeTopDifference[]
+  /** 波段化跨 bucket 加權平均誤差顆數（同一份 test 集） */
+  weightedMAE: number
+  /** 全期單一規則平均誤差顆數（同一份 test 集、用 global lookup） */
+  baselineMAE: number
+  /** = baselineMAE − weightedMAE */
+  improvement: number
+  /** = improvement / baselineMAE */
+  improvementRatio: number
+  /** test 集中、有 bucket 歸屬的總樣本（slot 觀察數） */
+  totalTestObs: number
+  /** 訓練範圍期數 / 測試範圍期數（給 UI 顯示切點資訊） */
+  trainDrawCount: number
+  testDrawCount: number
+}
+
+const REGIME_TRAIN_RATIO = 0.8
+const REGIME_CELL_TRUST = 20
+
+/**
+ * Phase 6+7：對指定切換開關、計算
+ *   (1) 每波段的 (J, X) 對照表（顯示用、用該波段全部期）
+ *   (2) 同一份 test 集上、波段化 vs 全期單一規則的平均誤差比較（嚴格 holdout）
+ *   (3) 波段間 (J, X) 平均差距 Top 10
+ *
+ * 嚴格 holdout 規則：
+ *   - 全期 snapshots[1..] 切 80/20（與 Phase 1 / Phase 5 一致）。
+ *   - train 範圍內：每個 bucket 維護自己的 (J, X) → mean K 表；同時也累計全期 global 表。
+ *   - test 範圍內：對「有 bucket 歸屬」的樣本、分別用 bucket 表與 global 表預測、累計誤差。
+ *   - weighted MAE = Σ bucket 誤差 / 總 obs；baseline MAE = global 誤差 / 總 obs（同一份 obs）。
+ *   - 兩者用同一份 test 觀察集 → 比較才公平。
+ */
+export function buildPerRegimeAnalysis(
+  snapshots: PerDrawSnapshot[],
+  regimeKey: RegimeKey
+): PerRegimeAnalysis {
+  const empty: PerRegimeAnalysis = {
+    regimeKey,
+    buckets: [],
+    topDifferences: [],
+    weightedMAE: 0,
+    baselineMAE: 0,
+    improvement: 0,
+    improvementRatio: 0,
+    totalTestObs: 0,
+    trainDrawCount: 0,
+    testDrawCount: 0
+  }
+  if (snapshots.length < 2) return empty
+
+  const assignments = assignRegime(snapshots, regimeKey)
+  const bucketByIdx = new Map<number, string>()
+  for (const a of assignments) bucketByIdx.set(a.snapshotIndex, a.bucket)
+  if (bucketByIdx.size === 0) return empty
+
+  const startIdx = 1
+  const totalEffective = snapshots.length - startIdx
+  const trainEnd = startIdx + Math.floor(totalEffective * REGIME_TRAIN_RATIO)
+
+  interface MeanAcc { sum: number, n: number }
+  // Per-bucket train lookups + global train lookup
+  const bucketCondAcc = new Map<string, Map<string, MeanAcc>>()
+  const bucketBaseAcc = new Map<string, Map<number, MeanAcc>>()
+  const globalCondAcc = new Map<string, MeanAcc>()
+  const globalBaseAcc = new Map<number, MeanAcc>()
+
+  // 也累計「該波段全部資料」的 cells（給 UI 顯示用）— 不限訓練 / 測試
+  const bucketAllAcc = new Map<string, Map<string, { interval: number, remaining: number, sum: number, n: number, hitCount: number }>>()
+  const bucketDrawCount = new Map<string, number>()
+
+  function getBucketCondMap(bucket: string): Map<string, MeanAcc> {
+    let m = bucketCondAcc.get(bucket)
+    if (!m) {
+      m = new Map()
+      bucketCondAcc.set(bucket, m)
+    }
+    return m
+  }
+  function getBucketBaseMap(bucket: string): Map<number, MeanAcc> {
+    let m = bucketBaseAcc.get(bucket)
+    if (!m) {
+      m = new Map()
+      bucketBaseAcc.set(bucket, m)
+    }
+    return m
+  }
+  function getBucketAllMap(bucket: string): Map<string, { interval: number, remaining: number, sum: number, n: number, hitCount: number }> {
+    let m = bucketAllAcc.get(bucket)
+    if (!m) {
+      m = new Map()
+      bucketAllAcc.set(bucket, m)
+    }
+    return m
+  }
+
+  // Pass 1: 累計所有期 (train+test) 的 bucket cells（顯示用） + 訓練 lookups
+  for (let i = startIdx; i < snapshots.length; i++) {
+    const snap = snapshots[i]!
+    const bucket = bucketByIdx.get(i)
+    if (bucket === undefined) continue
+    bucketDrawCount.set(bucket, (bucketDrawCount.get(bucket) ?? 0) + 1)
+
+    const allMap = getBucketAllMap(bucket)
+    for (const s of snap.slots) {
+      if (s.remainingBefore <= 0) continue
+      const key = `${s.interval}|${s.remainingBefore}`
+      const a = allMap.get(key) ?? { interval: s.interval, remaining: s.remainingBefore, sum: 0, n: 0, hitCount: 0 }
+      a.sum += s.hitsThisDraw
+      a.n += 1
+      if (s.hitsThisDraw > 0) a.hitCount += 1
+      allMap.set(key, a)
+    }
+
+    if (i < trainEnd) {
+      const condMap = getBucketCondMap(bucket)
+      const baseMap = getBucketBaseMap(bucket)
+      for (const s of snap.slots) {
+        if (s.remainingBefore <= 0) continue
+        const key = `${s.interval}|${s.remainingBefore}`
+        const bc = condMap.get(key) ?? { sum: 0, n: 0 }
+        bc.sum += s.hitsThisDraw
+        bc.n += 1
+        condMap.set(key, bc)
+        const bb = baseMap.get(s.interval) ?? { sum: 0, n: 0 }
+        bb.sum += s.hitsThisDraw
+        bb.n += 1
+        baseMap.set(s.interval, bb)
+        const gc = globalCondAcc.get(key) ?? { sum: 0, n: 0 }
+        gc.sum += s.hitsThisDraw
+        gc.n += 1
+        globalCondAcc.set(key, gc)
+        const gb = globalBaseAcc.get(s.interval) ?? { sum: 0, n: 0 }
+        gb.sum += s.hitsThisDraw
+        gb.n += 1
+        globalBaseAcc.set(s.interval, gb)
+      }
+    }
+  }
+
+  // Pass 2: 對 test 範圍內、有 bucket 歸屬的樣本、累計 bucket 誤差與 global 誤差
+  interface BucketTestAcc { condErr: number, baseErr: number, obs: number }
+  const bucketTestAcc = new Map<string, BucketTestAcc>()
+  let totalCondErr = 0
+  let totalBaseErr = 0
+  let totalObs = 0
+
+  for (let i = trainEnd; i < snapshots.length; i++) {
+    const bucket = bucketByIdx.get(i)
+    if (bucket === undefined) continue
+    const snap = snapshots[i]!
+    let acc = bucketTestAcc.get(bucket)
+    if (!acc) {
+      acc = { condErr: 0, baseErr: 0, obs: 0 }
+      bucketTestAcc.set(bucket, acc)
+    }
+    const condMap = bucketCondAcc.get(bucket)
+    const baseMap = bucketBaseAcc.get(bucket)
+    for (const s of snap.slots) {
+      if (s.remainingBefore <= 0) continue
+      const key = `${s.interval}|${s.remainingBefore}`
+
+      // Bucket-specific lookup（找不到 → 退回該 bucket 的 J 基準、再找不到 → 退回 global 基準）
+      let condPred = 0
+      const bc = condMap?.get(key)
+      if (bc && bc.n > 0) {
+        condPred = bc.sum / bc.n
+      } else {
+        const bb = baseMap?.get(s.interval)
+        if (bb && bb.n > 0) condPred = bb.sum / bb.n
+        else {
+          const gb = globalBaseAcc.get(s.interval)
+          if (gb && gb.n > 0) condPred = gb.sum / gb.n
+        }
+      }
+      // Global lookup（找不到 → 退回 global 基準）
+      let basePred = 0
+      const gc = globalCondAcc.get(key)
+      if (gc && gc.n > 0) {
+        basePred = gc.sum / gc.n
+      } else {
+        const gb = globalBaseAcc.get(s.interval)
+        if (gb && gb.n > 0) basePred = gb.sum / gb.n
+      }
+      const k = s.hitsThisDraw
+      const condErr = Math.abs(k - condPred)
+      const baseErr = Math.abs(k - basePred)
+      acc.condErr += condErr
+      acc.baseErr += baseErr
+      acc.obs += 1
+      totalCondErr += condErr
+      totalBaseErr += baseErr
+      totalObs += 1
+    }
+  }
+
+  // 組 buckets 結果（依 regimeBucketOrder 順序、跳過完全沒資料的 bucket）
+  const order = regimeBucketOrder(regimeKey)
+  const buckets: RegimeBucketResult[] = []
+  for (const bname of order) {
+    const drawCount = bucketDrawCount.get(bname) ?? 0
+    if (drawCount === 0) continue
+    const allMap = bucketAllAcc.get(bname) ?? new Map()
+    const cells: IntervalRemainingCell[] = []
+    for (const a of allMap.values()) {
+      const mean = a.n > 0 ? a.sum / a.n : 0
+      cells.push({
+        interval: a.interval,
+        remaining: a.remaining,
+        sampleCount: a.n,
+        meanHits: mean,
+        stdHits: 0,
+        hitProbability: a.n > 0 ? a.hitCount / a.n : 0
+      })
+    }
+    cells.sort((a, b) => {
+      if (a.interval !== b.interval) return a.interval - b.interval
+      return a.remaining - b.remaining
+    })
+    const test = bucketTestAcc.get(bname)
+    const meanError = test && test.obs > 0 ? test.condErr / test.obs : 0
+    const baselineError = test && test.obs > 0 ? test.baseErr / test.obs : 0
+    const improvement = baselineError - meanError
+    const improvementRatio = baselineError > 0 ? improvement / baselineError : 0
+    buckets.push({
+      bucket: bname,
+      drawCount,
+      cells,
+      testObs: test?.obs ?? 0,
+      meanError,
+      baselineError,
+      improvement,
+      improvementRatio
+    })
+  }
+
+  // Top differences：找 (J, X) cell 在不同 bucket 下的平均差距最大者
+  const allKeys = new Set<string>()
+  for (const b of buckets) {
+    for (const c of b.cells) allKeys.add(`${c.interval}|${c.remaining}`)
+  }
+  const diffs: RegimeTopDifference[] = []
+  for (const key of allKeys) {
+    const [jStr, xStr] = key.split('|')
+    const j = Number.parseInt(jStr ?? '', 10)
+    const x = Number.parseInt(xStr ?? '', 10)
+    if (!Number.isFinite(j) || !Number.isFinite(x)) continue
+    const bucketMeans: Record<string, number> = {}
+    const bucketSamples: Record<string, number> = {}
+    let max = -Infinity
+    let min = Infinity
+    let valid = 0
+    for (const b of buckets) {
+      const c = b.cells.find(x2 => x2.interval === j && x2.remaining === x)
+      if (!c || c.sampleCount < REGIME_CELL_TRUST) continue
+      bucketMeans[b.bucket] = c.meanHits
+      bucketSamples[b.bucket] = c.sampleCount
+      if (c.meanHits > max) max = c.meanHits
+      if (c.meanHits < min) min = c.meanHits
+      valid++
+    }
+    if (valid < 2) continue
+    diffs.push({
+      interval: j,
+      remaining: x,
+      bucketMeans,
+      bucketSamples,
+      spread: max - min
+    })
+  }
+  diffs.sort((a, b) => b.spread - a.spread)
+  const topDifferences = diffs.slice(0, 10)
+
+  const weightedMAE = totalObs > 0 ? totalCondErr / totalObs : 0
+  const baselineMAE = totalObs > 0 ? totalBaseErr / totalObs : 0
+  const improvement = baselineMAE - weightedMAE
+  const improvementRatio = baselineMAE > 0 ? improvement / baselineMAE : 0
+
+  return {
+    regimeKey,
+    buckets,
+    topDifferences,
+    weightedMAE,
+    baselineMAE,
+    improvement,
+    improvementRatio,
+    totalTestObs: totalObs,
+    trainDrawCount: trainEnd - startIdx,
+    testDrawCount: snapshots.length - trainEnd
+  }
+}

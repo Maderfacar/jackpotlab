@@ -197,15 +197,9 @@ const activeTab = ref<string>('observation')
             v-else-if="item.value === 'compare'"
             :snapshots="snapshots"
           />
-          <KobePendingTab
+          <KobeRegimeDashboardTab
             v-else-if="item.value === 'regime'"
-            title="波段儀表板"
-            description="先用 2-3 個切換開關（時段、整盤冷度、上一期形態）把全部期數分成幾堆，看不同堆的『隔期剩餘 → 開出』平均值是否真的不同。若是 → 代表有波段切換、規則會分時段啟用。儀表板會標出『現在這期屬於哪個波段』、並列出該波段下其他分頁的條件結果。"
-            :questions="[
-              '是不是真的存在多套規則、每個時段用不同套？',
-              '目前這一期屬於哪個波段？該波段下隔期剩餘 → 開出的規律是什麼？',
-              '若波段確實存在、它的切換頻率是多少（每幾期換一次）？'
-            ]"
+            :snapshots="snapshots"
           />
         </div>
       </template>
