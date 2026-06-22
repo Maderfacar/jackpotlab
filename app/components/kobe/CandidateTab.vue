@@ -346,6 +346,10 @@ interface HistoricalCard {
   totalHit: number
   totalMiss: number
   totalRecommended: number
+  /** 該期實際開出總顆數（賓果固定 20） */
+  totalActual: number
+  /** 該期實際開出且來自啟用隔期 raw 內的顆數 */
+  totalActualFromEnabled: number
 }
 
 const historicalCards = computed<HistoricalCard[]>(() => {
@@ -371,10 +375,17 @@ const historicalCards = computed<HistoricalCard[]>(() => {
     let totalHit = 0
     let totalMiss = 0
     let totalRecommended = 0
+    // 啟用隔期 raw union：判斷實際開出有幾顆在啟用隔期內
+    const enabledRawUnion = new Set<number>()
     for (const r of rows) {
       totalHit += r.hitCount
       totalMiss += r.missCount
       totalRecommended += r.recommendedCount
+      for (const cell of r.cells) enabledRawUnion.add(cell.n)
+    }
+    let totalActualFromEnabled = 0
+    for (const n of actualSet) {
+      if (enabledRawUnion.has(n)) totalActualFromEnabled++
     }
     out.push({
       snapshotIndex: i,
@@ -384,7 +395,9 @@ const historicalCards = computed<HistoricalCard[]>(() => {
       rows,
       totalHit,
       totalMiss,
-      totalRecommended
+      totalRecommended,
+      totalActual: actualSet.size,
+      totalActualFromEnabled
     })
   }
   out.reverse()
@@ -392,16 +405,32 @@ const historicalCards = computed<HistoricalCard[]>(() => {
 })
 
 // 累計命中統計（橫跨歷史回顧的最近 N 期）
+//   precision = 中 / 主推（你推的有多少中）
+//   recallOverall = 中 / 實際開出總數（實際開的有多少被抓到 ← 一般人講「命中率」要的）
+//   recallFromEnabled = 中 / 啟用隔期內實際開出（啟用隔期 raw 涵蓋了多少被推到）
 const aggregateStats = computed(() => {
   let hit = 0
   let miss = 0
   let rec = 0
+  let totalActual = 0
+  let totalActualFromEnabled = 0
   for (const c of historicalCards.value) {
     hit += c.totalHit
     miss += c.totalMiss
     rec += c.totalRecommended
+    totalActual += c.totalActual
+    totalActualFromEnabled += c.totalActualFromEnabled
   }
-  return { hit, miss, rec, hitRate: rec > 0 ? hit / rec : 0 }
+  return {
+    hit,
+    miss,
+    rec,
+    totalActual,
+    totalActualFromEnabled,
+    precision: rec > 0 ? hit / rec : 0,
+    recallOverall: totalActual > 0 ? hit / totalActual : 0,
+    recallFromEnabled: totalActualFromEnabled > 0 ? hit / totalActualFromEnabled : 0
+  }
 })
 
 interface DrawInfo {
@@ -740,19 +769,64 @@ const stickyStyle = computed(() => ({
         <h3 class="text-base font-semibold">
           歷史候選回顧
         </h3>
-        <div class="flex items-baseline gap-3 text-xs text-muted">
-          <span>最近 {{ historicalCards.length }} 期</span>
-          <span>
-            累計主推 {{ aggregateStats.rec }} 顆 ·
-            <span class="text-emerald-600 dark:text-emerald-400">中 {{ aggregateStats.hit }}</span> ·
-            <span :class="aggregateStats.miss > 0 ? 'text-red-600 dark:text-red-400' : ''">漏 {{ aggregateStats.miss }}</span> ·
-            命中率 {{ fmtPct(aggregateStats.hitRate) }}
-          </span>
-        </div>
+        <span class="text-xs text-muted">最近 {{ historicalCards.length }} 期</span>
       </header>
-      <div class="text-[10px] text-muted">
-        ※ 偏離過濾用「全期 stats」、回看時有輕微 lookahead bias、但對相對排序影響很小。
-      </div>
+      <UCard :ui="{ body: 'p-3' }">
+        <div class="space-y-2 text-xs">
+          <div class="flex items-baseline gap-3 flex-wrap">
+            <span class="text-muted">累計主推 <span class="font-mono font-semibold">{{ aggregateStats.rec }}</span> 顆</span>
+            <span class="text-emerald-600 dark:text-emerald-400">中 {{ aggregateStats.hit }}</span>
+            <span :class="aggregateStats.miss > 0 ? 'text-red-600 dark:text-red-400' : 'text-muted'">漏 {{ aggregateStats.miss }}</span>
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11px]">
+            <div class="rounded border border-default p-2 space-y-0.5">
+              <div class="text-muted">
+                精準率 (precision)
+              </div>
+              <div class="font-mono text-sm tabular-nums">
+                {{ fmtPct(aggregateStats.precision) }}
+              </div>
+              <div class="text-[10px] text-muted">
+                = 中 / 主推 = {{ aggregateStats.hit }} / {{ aggregateStats.rec }}
+              </div>
+              <div class="text-[10px] text-muted">
+                推的 N 顆裡有幾顆中（主推太多 → 低）
+              </div>
+            </div>
+            <div class="rounded border border-emerald-500/40 p-2 space-y-0.5 bg-emerald-500/5">
+              <div class="text-muted font-semibold">
+                涵蓋率 (recall) — 整體
+              </div>
+              <div class="font-mono text-sm tabular-nums text-emerald-600 dark:text-emerald-400 font-semibold">
+                {{ fmtPct(aggregateStats.recallOverall) }}
+              </div>
+              <div class="text-[10px] text-muted">
+                = 中 / 實際開出 = {{ aggregateStats.hit }} / {{ aggregateStats.totalActual }}
+              </div>
+              <div class="text-[10px] text-muted">
+                實際開的 20×{{ historicalCards.length }} 顆有幾顆被抓到
+              </div>
+            </div>
+            <div class="rounded border border-default p-2 space-y-0.5">
+              <div class="text-muted">
+                涵蓋率 — 啟用隔期內
+              </div>
+              <div class="font-mono text-sm tabular-nums">
+                {{ fmtPct(aggregateStats.recallFromEnabled) }}
+              </div>
+              <div class="text-[10px] text-muted">
+                = 中 / 啟用隔期實際開 = {{ aggregateStats.hit }} / {{ aggregateStats.totalActualFromEnabled }}
+              </div>
+              <div class="text-[10px] text-muted">
+                啟用隔期 raw 涵蓋的實際開出、被主推抓到的比例
+              </div>
+            </div>
+          </div>
+          <div class="text-[10px] text-muted">
+            ※ 偏離過濾用「全期 stats」、回看時有輕微 lookahead bias、但對相對排序影響很小。
+          </div>
+        </div>
+      </UCard>
 
       <div
         v-if="historicalCards.length === 0"
