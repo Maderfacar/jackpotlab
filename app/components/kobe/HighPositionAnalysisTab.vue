@@ -2,185 +2,148 @@
 /**
  * /kobe Tab 8 「高位來源」
  *
- * 統計：開出的號碼中、位置 > 10 (位置 11+) 的、來自哪些隔期、各隔期內佔比。
+ * 規格（使用者拍板 v2）：
+ *   - 按每期開獎為區塊
+ *   - 每個區塊內、只列「該期 pre-T 剩餘 ≥ 10 顆的隔期」
+ *     （位置 10 才可能存在 → 排除 remainingBefore < 10 的隔期）
+ *   - 每個隔期一行：
+ *       「隔期 J，位置 10 11 12 ... (raw 位置 ≥ 10 的清單)  開出 X Y Z (命中位置 ≥ 10 的清單)」
+ *   - 只列位置數字、不列獎號
+ *   - 觀察結果：理應最多從隔期 0-5（隔期 6+ 通常 remainingBefore < 10）
  *
- * 規格（使用者拍板）：
- *   Q1：放 kobe 內 tab
- *   Q2：每個隔期縱向佔比（位置 > 10 / 該隔期總開出）
- *   Q3：全 2000 期統計範圍
- *   Q4：只列「位置 > 10 出現過的隔期」(highPositionHits > 0)
+ * 顯示量控制：加「最近 N 期」輸入欄、預設 50；避免 2000 期區塊太多。
  */
-import type { PerDrawSnapshot, HighPositionDistRow } from '~/utils/kobe-stats'
-import { buildHighPositionDistribution } from '~/utils/kobe-stats'
+import type { PerDrawSnapshot } from '~/utils/kobe-stats'
+import { bingoTimeFromMap, buildBingoMinTermByDate } from '~/utils/bingo-time'
 
 interface Props { snapshots: PerDrawSnapshot[] }
 const props = defineProps<Props>()
 
-const rows = computed<HighPositionDistRow[]>(() =>
-  [...buildHighPositionDistribution(props.snapshots)].sort((a, b) => b.ratio - a.ratio)
-)
+const HIGH_POSITION_THRESHOLD = 10 // 位置 ≥ 10 才列
+const DEFAULT_RECENT_N = 50
+const MAX_INTERVAL_SHOWN = 9 // 隔期 6+ 通常沒料、cap 一下避免無聊 row
 
-const maxRatio = computed(() => {
-  let m = 0
-  for (const r of rows.value) if (r.ratio > m) m = r.ratio
-  return m
+const recentN = ref<number>(DEFAULT_RECENT_N)
+
+const bingoMinTermByDate = computed<Map<string, number>>(() => {
+  const drawsLike = props.snapshots.map(s => ({ drawTerm: s.drawTerm, drawDate: s.drawDate }))
+  return buildBingoMinTermByDate(drawsLike)
+})
+
+interface IntervalRow {
+  interval: number
+  /** raw 位置中 ≥ 10 的清單 (升序)、長度 = max(0, remainingBefore - 9) */
+  rawPositions: number[]
+  /** 該期該隔期命中位置中 ≥ 10 的清單 (升序) */
+  hitPositions: number[]
+}
+
+interface DrawCard {
+  snapshotIndex: number
+  drawTerm: number
+  drawDate: string
+  timeLabel: string
+  rows: IntervalRow[]
+}
+
+const cards = computed<DrawCard[]>(() => {
+  const out: DrawCard[] = []
+  const snaps = props.snapshots
+  // 第 0 期跳過（初始狀態）
+  const start = Math.max(1, snaps.length - recentN.value)
+  for (let i = start; i < snaps.length; i++) {
+    const snap = snaps[i]!
+    const rows: IntervalRow[] = []
+    for (let j = 0; j <= Math.min(MAX_INTERVAL_SHOWN, snap.slots.length - 1); j++) {
+      const slot = snap.slots[j]
+      if (!slot) continue
+      if (slot.remainingBefore < HIGH_POSITION_THRESHOLD) continue
+      const rawPositions: number[] = []
+      for (let p = HIGH_POSITION_THRESHOLD; p <= slot.remainingBefore; p++) rawPositions.push(p)
+      const hitPositions = [...slot.hitPositions]
+        .filter(y => y >= HIGH_POSITION_THRESHOLD)
+        .sort((a, b) => a - b)
+      rows.push({ interval: j, rawPositions, hitPositions })
+    }
+    if (rows.length === 0) continue
+    out.push({
+      snapshotIndex: i,
+      drawTerm: snap.drawTerm,
+      drawDate: snap.drawDate,
+      timeLabel: bingoTimeFromMap(bingoMinTermByDate.value, snap.drawDate, snap.drawTerm),
+      rows
+    })
+  }
+  out.reverse() // 最新在上
+  return out
 })
 
 const totalDraws = computed(() => Math.max(0, props.snapshots.length - 1))
-
-const overallStats = computed(() => {
-  let totalH = 0
-  let highH = 0
-  for (const r of rows.value) {
-    totalH += r.totalHits
-    highH += r.highPositionHits
-  }
-  return { totalH, highH, ratio: totalH > 0 ? highH / totalH : 0 }
-})
-
-function fmtPct(v: number): string {
-  const pct = v * 100
-  if (Math.abs(pct) >= 10) return `${pct.toFixed(1)}%`
-  return `${pct.toFixed(2)}%`
-}
-
-function barWidth(ratio: number): string {
-  if (maxRatio.value <= 0) return '0%'
-  return `${(ratio / maxRatio.value) * 100}%`
-}
-
-function rowColor(r: HighPositionDistRow): string {
-  if (r.ratio >= 0.4) return 'bg-emerald-500/70'
-  if (r.ratio >= 0.3) return 'bg-emerald-500/55'
-  if (r.ratio >= 0.2) return 'bg-emerald-500/35'
-  if (r.ratio >= 0.1) return 'bg-emerald-500/20'
-  return 'bg-emerald-500/10'
-}
 </script>
 
 <template>
   <div class="space-y-4">
-    <UAlert
-      color="neutral"
-      variant="subtle"
-      icon="i-lucide-info"
-      title="位置 > 10 來源隔期分布"
-      :description="`統計範圍：全 ${totalDraws} 期。位置 > 10 = 在該隔期 pre-T sorted 序列中、位置 11 或以上。只列「曾經有位置 > 10 命中」的隔期、依該隔期內位置 > 10 佔比 (ratio) 由高到低排序。`"
-    />
-
-    <!-- 整體統計卡 -->
-    <UCard :ui="{ body: 'p-4' }">
-      <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
-        <div class="space-y-1">
-          <div class="text-xs text-muted">
-            全期累計開出顆數
-          </div>
-          <div class="font-mono text-lg tabular-nums">
-            {{ overallStats.totalH }}
-          </div>
-        </div>
-        <div class="space-y-1">
-          <div class="text-xs text-muted">
-            位置 &gt; 10 累計開出
-          </div>
-          <div class="font-mono text-lg tabular-nums text-emerald-600 dark:text-emerald-400">
-            {{ overallStats.highH }}
-          </div>
-        </div>
-        <div class="space-y-1">
-          <div class="text-xs text-muted">
-            整體佔比
-          </div>
-          <div class="font-mono text-lg tabular-nums">
-            {{ fmtPct(overallStats.ratio) }}
-          </div>
-        </div>
+    <UCard :ui="{ body: 'p-3' }">
+      <div class="flex items-center gap-3 flex-wrap text-xs">
+        <label class="flex items-center gap-2">
+          <span class="text-muted">顯示最近</span>
+          <UInput
+            v-model.number="recentN"
+            type="number"
+            :min="1"
+            :max="2000"
+            step="1"
+            size="sm"
+            class="w-24"
+          />
+          <span class="text-muted">期</span>
+        </label>
+        <span class="text-[10px] text-muted">
+          全期共 {{ totalDraws }} 期 · 位置 ≥ {{ HIGH_POSITION_THRESHOLD }} 才列 · 隔期 0-{{ MAX_INTERVAL_SHOWN }} 範圍內
+        </span>
       </div>
     </UCard>
 
-    <!-- 分布表 -->
-    <section class="space-y-2">
-      <header>
-        <h3 class="text-base font-semibold">
-          各隔期 · 位置 &gt; 10 佔比
-        </h3>
-        <p class="text-xs text-muted">
-          佔比 = 該隔期位置 &gt; 10 開出顆數 / 該隔期總開出顆數。曝光期數 = 該隔期 pre-T 剩餘 ≥ 11 顆的期數
-          （位置 11+ 才有機會出現）。共 {{ rows.length }} 個有資料的隔期。
-        </p>
-      </header>
+    <div
+      v-if="cards.length === 0"
+      class="rounded-md border border-dashed border-default p-6 text-center text-sm text-muted"
+    >
+      尚無資料
+    </div>
 
-      <div class="overflow-x-auto rounded-md border border-default">
-        <table class="min-w-max w-full text-[11px]">
-          <thead>
-            <tr class="border-b border-default text-muted">
-              <th class="px-2 py-1.5 text-left font-medium whitespace-nowrap">
-                隔期
-              </th>
-              <th class="px-2 py-1.5 text-right font-medium whitespace-nowrap">
-                歷史最大剩餘
-              </th>
-              <th class="px-2 py-1.5 text-right font-medium whitespace-nowrap">
-                曝光期數
-              </th>
-              <th class="px-2 py-1.5 text-right font-medium whitespace-nowrap">
-                該隔期總開出
-              </th>
-              <th class="px-2 py-1.5 text-right font-medium whitespace-nowrap">
-                位置 &gt; 10 開出
-              </th>
-              <th class="px-2 py-1.5 text-left font-medium whitespace-nowrap min-w-[200px]">
-                佔比
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr
-              v-for="r in rows"
-              :key="`hpos-${r.interval}`"
-              class="border-b border-default/60"
-            >
-              <td class="px-2 py-1 font-mono whitespace-nowrap font-semibold">
-                隔期 {{ r.interval }}
-              </td>
-              <td class="px-2 py-1 text-right font-mono tabular-nums text-muted">
-                {{ r.maxRemaining }}
-              </td>
-              <td class="px-2 py-1 text-right font-mono tabular-nums text-muted">
-                {{ r.exposureCount }}
-              </td>
-              <td class="px-2 py-1 text-right font-mono tabular-nums">
-                {{ r.totalHits }}
-              </td>
-              <td class="px-2 py-1 text-right font-mono tabular-nums text-emerald-600 dark:text-emerald-400">
-                {{ r.highPositionHits }}
-              </td>
-              <td class="px-2 py-1">
-                <div class="flex items-center gap-2">
-                  <div class="relative flex-1 h-3 bg-elevated rounded overflow-hidden min-w-[80px]">
-                    <div
-                      class="absolute inset-y-0 left-0 rounded"
-                      :class="rowColor(r)"
-                      :style="{ width: barWidth(r.ratio) }"
-                    />
-                  </div>
-                  <span class="font-mono tabular-nums w-14 text-right">
-                    {{ fmtPct(r.ratio) }}
-                  </span>
-                </div>
-              </td>
-            </tr>
-            <tr v-if="rows.length === 0">
-              <td
-                colspan="6"
-                class="px-3 py-3 text-center text-muted"
-              >
-                尚無位置 &gt; 10 命中紀錄
-              </td>
-            </tr>
-          </tbody>
-        </table>
+    <UCard
+      v-for="card in cards"
+      :key="`hpos-card-${card.drawTerm}`"
+      :ui="{ body: 'p-3 sm:p-4' }"
+    >
+      <div class="space-y-2 text-xs">
+        <div class="flex items-baseline gap-2 flex-wrap">
+          <span class="font-mono text-sm font-semibold">第 {{ card.drawTerm }} 期</span>
+          <span class="text-[10px] text-muted">
+            {{ card.drawDate }} {{ card.timeLabel }}
+          </span>
+        </div>
+        <div
+          v-for="row in card.rows"
+          :key="`hpos-${card.drawTerm}-${row.interval}`"
+          class="flex items-baseline gap-2 flex-wrap font-mono"
+        >
+          <span class="font-semibold whitespace-nowrap">隔期 {{ row.interval }}</span>
+          <span class="text-muted">位置</span>
+          <span class="tabular-nums">{{ row.rawPositions.join(' ') }}</span>
+          <span class="text-muted">開出</span>
+          <span
+            v-if="row.hitPositions.length === 0"
+            class="text-muted"
+          >—</span>
+          <span
+            v-else
+            class="tabular-nums text-emerald-600 dark:text-emerald-400 font-semibold"
+          >
+            {{ row.hitPositions.join(' ') }}
+          </span>
+        </div>
       </div>
-    </section>
+    </UCard>
   </div>
 </template>

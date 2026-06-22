@@ -52,6 +52,9 @@ const DEVIATION_LOW_THRESHOLD = -0.05 // < -5% → 「優先納入」(視覺標�
 
 const recentN = ref<number>(DEFAULT_RECENT_N)
 
+// sticky「候選 · 待開獎」卡的收合狀態
+const stickyCollapsed = ref<boolean>(false)
+
 // 規則開關：預設全開、使用者可單獨關閉測試該規則的效果
 interface RuleSwitches {
   position: boolean
@@ -590,30 +593,43 @@ const stickyStyle = computed(() => ({
       :ui="{ body: 'p-3 sm:p-4' }"
     >
       <div class="space-y-3 text-xs">
-        <div class="flex items-baseline gap-2 flex-wrap">
-          <UBadge
-            color="primary"
-            variant="subtle"
-            size="sm"
+        <div class="flex items-baseline justify-between gap-2 flex-wrap">
+          <div class="flex items-baseline gap-2 flex-wrap">
+            <UBadge
+              color="primary"
+              variant="subtle"
+              size="sm"
+            >
+              候選 · 待開獎
+            </UBadge>
+            <span
+              v-if="nextDrawInfo"
+              class="font-mono text-sm font-semibold"
+            >
+              第 {{ nextDrawInfo.drawTerm }} 期
+            </span>
+            <span
+              v-if="nextDrawInfo"
+              class="text-[10px] text-muted"
+            >
+              {{ nextDrawInfo.drawDate }} {{ nextDrawInfo.timeLabel || '時間待算' }}
+            </span>
+            <span class="text-[10px] text-muted">尚未開出</span>
+          </div>
+          <UButton
+            color="neutral"
+            variant="ghost"
+            size="xs"
+            :icon="stickyCollapsed ? 'i-lucide-chevron-down' : 'i-lucide-chevron-up'"
+            :aria-label="stickyCollapsed ? '展開' : '收合'"
+            @click="stickyCollapsed = !stickyCollapsed"
           >
-            候選 · 待開獎
-          </UBadge>
-          <span
-            v-if="nextDrawInfo"
-            class="font-mono text-sm font-semibold"
-          >
-            第 {{ nextDrawInfo.drawTerm }} 期
-          </span>
-          <span
-            v-if="nextDrawInfo"
-            class="text-[10px] text-muted"
-          >
-            {{ nextDrawInfo.drawDate }} {{ nextDrawInfo.timeLabel || '時間待算' }}
-          </span>
-          <span class="text-[10px] text-muted">尚未開出</span>
+            {{ stickyCollapsed ? '展開' : '收合' }}
+          </UButton>
         </div>
         <div
           v-for="row in nextRows"
+          v-show="!stickyCollapsed"
           :key="`next-${row.interval}`"
           class="space-y-1"
         >
