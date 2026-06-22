@@ -420,15 +420,18 @@ function fmtDev(d: number): string {
 function cellClass(cell: NumberCell): string {
   switch (cell.status) {
     case 'hit':
-      return 'bg-emerald-500 text-white border-emerald-600 font-semibold'
+      // 「優先納入」中號 → 綠底 + 藍邊雙框（區別普通主推命中）
+      return cell.isPriority
+        ? 'bg-emerald-500 text-white border-2 border-sky-500 font-semibold'
+        : 'bg-emerald-500 text-white border border-emerald-600 font-semibold'
     case 'candidateMiss':
       return cell.isPriority
-        ? 'bg-default text-default border-sky-500 border-2'
-        : 'bg-default text-default border-default'
+        ? 'bg-default text-default border-2 border-sky-500'
+        : 'bg-default text-default border border-default'
     case 'miss':
-      return 'bg-red-500 text-white border-red-600 font-semibold'
+      return 'bg-red-500 text-white border border-red-600 font-semibold'
     case 'excludedCorrect':
-      return 'bg-elevated/40 text-muted border-default line-through opacity-55'
+      return 'bg-elevated/40 text-muted border border-default line-through opacity-55'
   }
 }
 
@@ -528,7 +531,7 @@ const stickyStyle = computed(() => ({
           <div class="flex items-baseline gap-2 flex-wrap text-[10px]">
             <span class="font-mono font-semibold">隔期 {{ row.interval }}</span>
             <span class="text-muted">
-              原 {{ row.rawCount }} 顆 → 主推 <span class="font-mono font-semibold text-emerald-600 dark:text-emerald-400">{{ row.recommendedCount }}</span> / 目標 {{ row.targetK }} · 候選池 {{ row.poolSize }}
+              原 {{ row.rawCount }} 顆 → 候選池 {{ row.poolSize }} · 主推 <span class="font-mono font-semibold text-emerald-600 dark:text-emerald-400">{{ row.recommendedCount }}</span> / 目標 {{ row.targetK }}
             </span>
           </div>
           <div class="text-[9px] text-muted">
@@ -589,8 +592,12 @@ const stickyStyle = computed(() => ({
         <!-- legend -->
         <div class="flex flex-wrap items-center gap-2 text-[10px] text-muted">
           <span class="inline-flex items-center gap-1">
-            <span class="inline-block w-3 h-3 rounded bg-emerald-500" />
+            <span class="inline-block w-3 h-3 rounded bg-emerald-500 border border-emerald-600" />
             中（主推 + 開出）
+          </span>
+          <span class="inline-flex items-center gap-1">
+            <span class="inline-block w-3 h-3 rounded bg-emerald-500 border-2 border-sky-500" />
+            中 + 優先納入
           </span>
           <span class="inline-flex items-center gap-1">
             <span class="inline-block w-3 h-3 rounded border border-default bg-default" />
@@ -598,7 +605,7 @@ const stickyStyle = computed(() => ({
           </span>
           <span class="inline-flex items-center gap-1">
             <span class="inline-block w-3 h-3 rounded border-2 border-sky-500 bg-default" />
-            主推 + 優先納入
+            主推 + 優先納入（沒開）
           </span>
           <span class="inline-flex items-center gap-1">
             <span class="inline-block w-3 h-3 rounded bg-red-500" />
@@ -617,7 +624,7 @@ const stickyStyle = computed(() => ({
           <div class="flex items-baseline gap-2 flex-wrap text-[10px]">
             <span class="font-mono font-semibold">隔期 {{ row.interval }}</span>
             <span class="text-muted">
-              原 {{ row.rawCount }} 顆 → 主推 <span class="font-mono font-semibold">{{ row.recommendedCount }}</span> / 目標 {{ row.targetK }} · 候選池 {{ row.poolSize }}
+              原 {{ row.rawCount }} 顆 → 候選池 {{ row.poolSize }} · 主推 <span class="font-mono font-semibold">{{ row.recommendedCount }}</span> / 目標 {{ row.targetK }}
             </span>
             <span class="text-emerald-600 dark:text-emerald-400">中 {{ row.hitCount }}</span>
             <span
@@ -712,7 +719,7 @@ const stickyStyle = computed(() => ({
             <div class="flex items-baseline gap-2 flex-wrap text-[10px]">
               <span class="font-mono">隔期 {{ row.interval }}</span>
               <span class="text-muted">
-                原 {{ row.rawCount }} → 主推 <span class="font-mono">{{ row.recommendedCount }}</span> / 目標 {{ row.targetK }} · 池 {{ row.poolSize }}
+                原 {{ row.rawCount }} → 池 {{ row.poolSize }} · 主推 <span class="font-mono">{{ row.recommendedCount }}</span> / 目標 {{ row.targetK }}
               </span>
               <span
                 v-if="row.hitCount > 0"
