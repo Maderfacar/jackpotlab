@@ -375,92 +375,94 @@ const stickyStyle = computed(() => ({
             </div>
           </div>
         </div>
+      </div>
+    </UCard>
 
-        <!-- 最新一期回顧 -->
-        <div class="mt-3 border-t border-default pt-2 space-y-2">
-          <div class="flex items-baseline gap-2 flex-wrap">
-            <UBadge
-              color="success"
-              variant="subtle"
-              size="sm"
-            >
-              最新一期回顧
-            </UBadge>
+    <!-- 最新一期回顧（獨立卡、不 sticky） -->
+    <UCard :ui="{ body: 'p-3 sm:p-4' }">
+      <div class="space-y-2 text-xs">
+        <div class="flex items-baseline gap-2 flex-wrap">
+          <UBadge
+            color="success"
+            variant="subtle"
+            size="sm"
+          >
+            最新一期回顧
+          </UBadge>
+          <span
+            v-if="latestDrawInfo"
+            class="font-mono text-sm font-semibold"
+          >
+            第 {{ latestDrawInfo.drawTerm }} 期
+          </span>
+          <span
+            v-if="latestDrawInfo"
+            class="text-[10px] text-muted"
+          >
+            {{ latestDrawInfo.drawDate }} {{ latestDrawInfo.timeLabel || '' }}
+          </span>
+        </div>
+        <!-- legend -->
+        <div class="flex flex-wrap items-center gap-2 text-[10px] text-muted">
+          <span class="inline-flex items-center gap-1">
+            <span class="inline-block w-3 h-3 rounded bg-emerald-500" />
+            中（候選且開出）
+          </span>
+          <span class="inline-flex items-center gap-1">
+            <span class="inline-block w-3 h-3 rounded border border-default bg-default" />
+            候選沒開
+          </span>
+          <span class="inline-flex items-center gap-1">
+            <span class="inline-block w-3 h-3 rounded bg-red-500" />
+            漏（被扣但開了）
+          </span>
+          <span class="inline-flex items-center gap-1">
+            <span class="inline-block w-3 h-3 rounded bg-elevated/40 line-through" />
+            扣對（被扣且沒開）
+          </span>
+        </div>
+        <div
+          v-for="row in reviewRows"
+          :key="`review-${row.interval}`"
+          class="space-y-1"
+        >
+          <div class="flex items-baseline gap-2 flex-wrap text-[10px]">
+            <span class="font-mono">隔期 {{ row.interval }}</span>
+            <span class="text-muted">
+              候選 {{ row.candidateCount }} / 原 {{ row.rawCount }}
+            </span>
+            <span class="text-emerald-600 dark:text-emerald-400">中 {{ row.hitCount }}</span>
             <span
-              v-if="latestDrawInfo"
-              class="font-mono text-sm font-semibold"
-            >
-              第 {{ latestDrawInfo.drawTerm }} 期
-            </span>
+              v-if="row.missCount > 0"
+              class="text-red-600 dark:text-red-400 font-semibold"
+            >漏 {{ row.missCount }}</span>
             <span
-              v-if="latestDrawInfo"
-              class="text-[10px] text-muted"
-            >
-              {{ latestDrawInfo.drawDate }} {{ latestDrawInfo.timeLabel || '' }}
-            </span>
-          </div>
-          <!-- legend -->
-          <div class="flex flex-wrap items-center gap-2 text-[10px] text-muted">
-            <span class="inline-flex items-center gap-1">
-              <span class="inline-block w-3 h-3 rounded bg-emerald-500" />
-              中（候選且開出）
-            </span>
-            <span class="inline-flex items-center gap-1">
-              <span class="inline-block w-3 h-3 rounded border border-default bg-default" />
-              候選沒開
-            </span>
-            <span class="inline-flex items-center gap-1">
-              <span class="inline-block w-3 h-3 rounded bg-red-500" />
-              漏（被扣但開了）
-            </span>
-            <span class="inline-flex items-center gap-1">
-              <span class="inline-block w-3 h-3 rounded bg-elevated/40 line-through" />
-              扣對（被扣且沒開）
-            </span>
+              v-else
+              class="text-muted"
+            >漏 0</span>
           </div>
           <div
-            v-for="row in reviewRows"
-            :key="`review-${row.interval}`"
-            class="space-y-1"
+            v-if="row.cells.length === 0"
+            class="text-[10px] text-muted"
           >
-            <div class="flex items-baseline gap-2 flex-wrap text-[10px]">
-              <span class="font-mono">隔期 {{ row.interval }}</span>
-              <span class="text-muted">
-                候選 {{ row.candidateCount }} / 原 {{ row.rawCount }}
-              </span>
-              <span class="text-emerald-600 dark:text-emerald-400">中 {{ row.hitCount }}</span>
-              <span
-                v-if="row.missCount > 0"
-                class="text-red-600 dark:text-red-400 font-semibold"
-              >漏 {{ row.missCount }}</span>
-              <span
-                v-else
-                class="text-muted"
-              >漏 0</span>
-            </div>
-            <div
-              v-if="row.cells.length === 0"
-              class="text-[10px] text-muted"
+            無剩餘號
+          </div>
+          <div
+            v-else
+            class="flex flex-wrap items-center gap-1"
+          >
+            <span
+              v-for="cell in row.cells"
+              :key="`review-${row.interval}-${cell.n}`"
+              class="relative inline-flex min-w-7 justify-center font-mono text-[11px] rounded border px-1.5 py-0.5"
+              :class="cellClass(cell)"
             >
-              無剩餘號
-            </div>
-            <div
-              v-else
-              class="flex flex-wrap items-center gap-1"
-            >
+              {{ pad(cell.n) }}
               <span
-                v-for="cell in row.cells"
-                :key="`review-${row.interval}-${cell.n}`"
-                class="relative inline-flex min-w-7 justify-center font-mono text-[11px] rounded border px-1.5 py-0.5"
-                :class="cellClass(cell)"
-              >
-                {{ pad(cell.n) }}
-                <span
-                  class="absolute bottom-0 right-0.5 text-[8px] leading-none font-normal"
-                  :class="cellPositionClass(cell)"
-                >{{ cell.position }}</span>
-              </span>
-            </div>
+                class="absolute bottom-0 right-0.5 text-[8px] leading-none font-normal"
+                :class="cellPositionClass(cell)"
+              >{{ cell.position }}</span>
+            </span>
           </div>
         </div>
       </div>
