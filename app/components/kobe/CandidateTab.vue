@@ -67,6 +67,15 @@ const rules = reactive<RuleSwitches>({
   target: true
 })
 
+// 隔期 0-3 各自開關（預設全開）
+const intervalEnabled = reactive<Record<number, boolean>>({
+  0: true,
+  1: true,
+  2: true,
+  3: true
+})
+const activeIntervals = computed(() => TARGET_INTERVALS.filter(j => intervalEnabled[j]))
+
 const bingoMinTermByDate = computed<Map<string, number>>(() => {
   return buildBingoMinTermByDate(props.drawsAsc)
 })
@@ -297,7 +306,7 @@ const nextRows = computed<CandidateRow[]>(() => {
   if (!state) return []
   const upToIdx = props.snapshots.length - 1
   const emptyActual = new Set<number>()
-  return TARGET_INTERVALS.map((j) => {
+  return activeIntervals.value.map((j) => {
     const slot = state.periods[j]
     const raw = slot ? [...slot.prizes].sort((a, b) => a - b) : []
     const positionYs = findLatestPositionYsForInterval(j, upToIdx)
@@ -319,7 +328,7 @@ const reviewRows = computed<CandidateRow[]>(() => {
   if (!state) return []
   const upToIdx = props.snapshots.length - 2
   const actualSet = new Set(props.drawsAsc.at(-1)?.numbers ?? [])
-  return TARGET_INTERVALS.map((j) => {
+  return activeIntervals.value.map((j) => {
     const slot = state.periods[j]
     const raw = slot ? [...slot.prizes].sort((a, b) => a - b) : []
     const positionYs = findLatestPositionYsForInterval(j, upToIdx)
@@ -353,7 +362,7 @@ const historicalCards = computed<HistoricalCard[]>(() => {
       const sl = new Set(prev2.numbers)
       carryoverSet = new Set(prev.numbers.filter(n => sl.has(n)))
     }
-    const rows = TARGET_INTERVALS.map((j) => {
+    const rows = activeIntervals.value.map((j) => {
       const slot = snap.slots[j]
       const raw = slot ? [...slot.prizesBefore].sort((a, b) => a - b) : []
       const positionYs = findLatestPositionYsForInterval(j, i - 1)
@@ -530,6 +539,22 @@ const stickyStyle = computed(() => ({
             </label>
             <span class="text-[10px] text-muted">
               · 關閉 = 不套用該規則、用來單獨測試
+            </span>
+          </div>
+        </div>
+        <div class="border-t border-default pt-2">
+          <div class="flex items-baseline gap-2 flex-wrap text-xs">
+            <span class="text-muted font-semibold">隔期顯示：</span>
+            <label
+              v-for="j in TARGET_INTERVALS"
+              :key="`int-toggle-${j}`"
+              class="flex items-center gap-1.5 cursor-pointer"
+            >
+              <UCheckbox v-model="intervalEnabled[j]" />
+              <span class="font-mono">隔期 {{ j }}</span>
+            </label>
+            <span class="text-[10px] text-muted">
+              · 關閉 = 不顯示該隔期 row
             </span>
           </div>
         </div>
