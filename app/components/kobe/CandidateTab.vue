@@ -53,6 +53,20 @@ const DEVIATION_LOW_THRESHOLD = -0.05 // < -5% → 「優先納入」(視覺標�
 
 const recentN = ref<number>(DEFAULT_RECENT_N)
 
+// 規則開關：預設全開、使用者可單獨關閉測試該規則的效果
+interface RuleSwitches {
+  position: boolean
+  carryover: boolean
+  deviation: boolean
+  target: boolean
+}
+const rules = reactive<RuleSwitches>({
+  position: true,
+  carryover: true,
+  deviation: true,
+  target: true
+})
+
 const bingoMinTermByDate = computed<Map<string, number>>(() => {
   return buildBingoMinTermByDate(props.drawsAsc)
 })
@@ -160,14 +174,15 @@ function buildCandidateRow(
   carryoverSet: ReadonlySet<number>,
   actualSet: ReadonlySet<number>,
   stats: ReadonlyMap<number, NumberStat>,
-  isPending: boolean
+  isPending: boolean,
+  ruleSwitches: RuleSwitches
 ): CandidateRow {
   const posSet = new Set<number>()
   for (const y of positionYs) {
     if (y >= 1 && y <= raw.length) posSet.add(y)
   }
 
-  // Pass 1: 對每個號分類
+  // Pass 1: 對每個號分類；規則關閉 → 該扣分一律 false
   interface Item {
     n: number
     position: number
@@ -182,9 +197,9 @@ function buildCandidateRow(
     return {
       n,
       position: idx + 1,
-      excludedByPos: posSet.has(idx + 1),
-      excludedByCarry: j === 0 && carryoverSet.has(n),
-      excludedByDev: (stat?.deviation ?? 0) > DEVIATION_HIGH_THRESHOLD,
+      excludedByPos: ruleSwitches.position && posSet.has(idx + 1),
+      excludedByCarry: ruleSwitches.carryover && j === 0 && carryoverSet.has(n),
+      excludedByDev: ruleSwitches.deviation && (stat?.deviation ?? 0) > DEVIATION_HIGH_THRESHOLD,
       deviation: stat?.deviation ?? 0,
       appearances: stat?.appearances ?? 0
     }
@@ -193,8 +208,8 @@ function buildCandidateRow(
   // Pass 2: 過濾後候選池
   const pool = items.filter(x => !x.excludedByPos && !x.excludedByCarry && !x.excludedByDev)
 
-  // Pass 3: 按 deviation ASC 排序、取前 T 顆 = 主推
-  const target = targetK(j, raw.length)
+  // Pass 3: 按 deviation ASC 排序、取前 T 顆 = 主推（rules.target 關閉 → 不截斷、主推 = 全池）
+  const target = ruleSwitches.target ? targetK(j, raw.length) : pool.length
   const sortedPool = [...pool].sort((a, b) => a.deviation - b.deviation)
   const recommendedCount = Math.min(target, sortedPool.length)
   const recommendedSet = new Set<number>(sortedPool.slice(0, recommendedCount).map(x => x.n))
@@ -286,7 +301,7 @@ const nextRows = computed<CandidateRow[]>(() => {
     const slot = state.periods[j]
     const raw = slot ? [...slot.prizes].sort((a, b) => a - b) : []
     const positionYs = findLatestPositionYsForInterval(j, upToIdx)
-    return buildCandidateRow(j, raw, positionYs, nextCarryoverSet.value, emptyActual, numberStatsMap.value, true)
+    return buildCandidateRow(j, raw, positionYs, nextCarryoverSet.value, emptyActual, numberStatsMap.value, true, rules)
   })
 })
 
@@ -308,7 +323,7 @@ const reviewRows = computed<CandidateRow[]>(() => {
     const slot = state.periods[j]
     const raw = slot ? [...slot.prizes].sort((a, b) => a - b) : []
     const positionYs = findLatestPositionYsForInterval(j, upToIdx)
-    return buildCandidateRow(j, raw, positionYs, reviewCarryoverSet.value, actualSet, numberStatsMap.value, false)
+    return buildCandidateRow(j, raw, positionYs, reviewCarryoverSet.value, actualSet, numberStatsMap.value, false, rules)
   })
 })
 
@@ -342,7 +357,7 @@ const historicalCards = computed<HistoricalCard[]>(() => {
       const slot = snap.slots[j]
       const raw = slot ? [...slot.prizesBefore].sort((a, b) => a - b) : []
       const positionYs = findLatestPositionYsForInterval(j, i - 1)
-      return buildCandidateRow(j, raw, positionYs, carryoverSet, actualSet, numberStatsMap.value, false)
+      return buildCandidateRow(j, raw, positionYs, carryoverSet, actualSet, numberStatsMap.value, false, rules)
     })
     let totalHit = 0
     let totalMiss = 0
@@ -471,26 +486,53 @@ const stickyStyle = computed(() => ({
   <div class="space-y-4">
     <!-- 控制台 -->
     <UCard :ui="{ body: 'p-3' }">
-      <div class="flex items-center gap-3 flex-wrap text-xs">
-        <label class="flex items-center gap-2">
-          <span class="text-muted">下方歷史回顧顯示最近</span>
-          <UInput
-            v-model.number="recentN"
-            type="number"
-            :min="1"
-            :max="2000"
-            step="1"
-            size="sm"
-            class="w-24"
-          />
-          <span class="text-muted">期</span>
-        </label>
-        <span class="text-[10px] text-muted">
-          僅截斷顯示、不影響 2000 期統計來源
-        </span>
-        <span class="text-[10px] text-muted">
-          · 規則：扣位置 + 扣紅框(j=0) + 扣偏離高(&gt;+5%) → 候選池按偏離 ASC 排 → 取前 T 顆主推
-        </span>
+      <div class="space-y-2">
+        <div class="flex items-center gap-3 flex-wrap text-xs">
+          <label class="flex items-center gap-2">
+            <span class="text-muted">下方歷史回顧顯示最近</span>
+            <UInput
+              v-model.number="recentN"
+              type="number"
+              :min="1"
+              :max="2000"
+              step="1"
+              size="sm"
+              class="w-24"
+            />
+            <span class="text-muted">期</span>
+          </label>
+          <span class="text-[10px] text-muted">
+            僅截斷顯示、不影響 2000 期統計來源
+          </span>
+        </div>
+        <div class="border-t border-default pt-2">
+          <div class="flex items-baseline gap-2 flex-wrap text-xs">
+            <span class="text-muted font-semibold">規則開關：</span>
+            <label class="flex items-center gap-1.5 cursor-pointer">
+              <UCheckbox v-model="rules.position" />
+              <span>扣位置</span>
+              <span class="text-[10px] text-muted">（上次該隔期被中位置）</span>
+            </label>
+            <label class="flex items-center gap-1.5 cursor-pointer">
+              <UCheckbox v-model="rules.carryover" />
+              <span>扣紅框</span>
+              <span class="text-[10px] text-muted">（隔期 0 連莊）</span>
+            </label>
+            <label class="flex items-center gap-1.5 cursor-pointer">
+              <UCheckbox v-model="rules.deviation" />
+              <span>扣偏離高</span>
+              <span class="text-[10px] text-muted">（出現 &gt; +5%）</span>
+            </label>
+            <label class="flex items-center gap-1.5 cursor-pointer">
+              <UCheckbox v-model="rules.target" />
+              <span>目標顆數截斷</span>
+              <span class="text-[10px] text-muted">（主推取前 T 顆）</span>
+            </label>
+            <span class="text-[10px] text-muted">
+              · 關閉 = 不套用該規則、用來單獨測試
+            </span>
+          </div>
+        </div>
       </div>
     </UCard>
 
