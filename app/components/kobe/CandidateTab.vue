@@ -90,12 +90,6 @@ interface RuleParams {
   deviationLowerPct: number
   /** 記錄最新數據首碼上限（0-9）— recordValueBefore ≤ n 才入池 */
   recordLatestMax: number
-  /** 位 1、2 各 ≤ */
-  pos12Cap: number
-  /** 位 3-9 各 ≤ */
-  pos39Cap: number
-  /** 位 10+ 各 ≤ */
-  pos10PlusCap: number
   /** 任一尾數 ≤（80 個號碼裡每尾數有 8 個、預設 6 = 留些餘地） */
   tailCap: number
   /** 連跑 ≤（排序後最長連號串、預設 4 = 允許至多 4 連、5 連即拒） */
@@ -113,9 +107,6 @@ const DEFAULT_PARAMS: Readonly<RuleParams> = Object.freeze({
   deviationUpperPct: 5,
   deviationLowerPct: -5,
   recordLatestMax: 1,
-  pos12Cap: 2,
-  pos39Cap: 1,
-  pos10PlusCap: 4,
   tailCap: 6,
   consecutiveCap: 4,
   oddCap: 13,
@@ -123,6 +114,17 @@ const DEFAULT_PARAMS: Readonly<RuleParams> = Object.freeze({
   le40Cap: 13,
   gt40Cap: 13
 })
+
+// 位置基準佔比（使用者拍板、來自位置規律分頁觀察）— 位置 1-20
+// 過去 200 期實際開出佔比 < 基準 → 該位置候選號優先納入
+const POSITION_BENCHMARK_PCT: ReadonlyArray<number> = [
+  0, // index 0 不使用
+  15.80, 12.10, 10.50, 8.02, 7.50,
+  6.39, 5.32, 4.55, 4.65, 4.13,
+  3.84, 2.90, 2.72, 2.15, 2.30,
+  1.71, 1.46, 1.26, 1.11, 1.61
+]
+const POSITION_BENCHMARK_RECENT_N = 200
 const params = reactive<RuleParams>({ ...DEFAULT_PARAMS })
 
 // 隔期 0-9 各自開關（預設全開）
@@ -227,31 +229,87 @@ const numberStatsMap = computed<Map<number, NumberStat>>(() => {
 })
 
 function targetK(j: number, rawLen: number): number {
+  // 使用者拍板 mapping（依各隔期歷史平均開出顆數調整）
   if (j === 0) return 5
   if (j === 1) {
-    if (rawLen < 11) return 1
-    if (rawLen <= 12) return 2
-    if (rawLen <= 15) return 3
-    return 4
+    if (rawLen < 13) return 3
+    if (rawLen <= 16) return 4
+    return 5
   }
   if (j === 2) {
-    if (rawLen < 9) return 1
-    if (rawLen <= 11) return 2
-    if (rawLen <= 15) return 3
+    if (rawLen < 9) return 2
+    if (rawLen <= 12) return 3
     return 4
   }
   if (j === 3) {
-    if (rawLen < 8) return 1
-    if (rawLen <= 11) return 2
-    if (rawLen <= 13) return 3
-    return 4
+    if (rawLen < 3) return 0
+    if (rawLen <= 6) return 1
+    if (rawLen <= 9) return 2
+    return 3
   }
-  if (j >= 4 && j <= 9) return 1
+  if (j === 4) {
+    if (rawLen < 5) return 1
+    if (rawLen <= 9) return 2
+    return 3
+  }
+  if (j === 5) {
+    if (rawLen < 6) return 1
+    return 2
+  }
+  if (j === 6) {
+    if (rawLen < 7) return 1
+    return 2
+  }
+  if (j === 7) {
+    if (rawLen < 8) return 1
+    return 2
+  }
+  if (j === 8 || j === 9) return 1
   return 0
 }
 
+// 過去 N 期實際各位置開出佔比（%）
+function computePositionActualPct(
+  snapshots: ReadonlyArray<PerDrawSnapshot>,
+  recentN: number
+): number[] {
+  const counts = new Array<number>(21).fill(0)
+  let total = 0
+  const start = Math.max(1, snapshots.length - recentN)
+  for (let i = start; i < snapshots.length; i++) {
+    const snap = snapshots[i]!
+    for (const slot of snap.slots) {
+      for (const y of slot.hitPositions) {
+        if (y >= 1 && y <= 20) {
+          counts[y]! += 1
+          total += 1
+        }
+      }
+    }
+  }
+  const out = new Array<number>(21).fill(0)
+  if (total > 0) {
+    for (let p = 1; p <= 20; p++) out[p] = (counts[p]! / total) * 100
+  }
+  return out
+}
+
+// 位置優先權：實際佔比 < 基準佔比 → 權重為正（缺額比例）；否則 0
+function positionPriorityWeight(position: number, actualPct: ReadonlyArray<number>): number {
+  if (position < 1 || position > 20) return 0
+  const bench = POSITION_BENCHMARK_PCT[position]!
+  if (bench <= 0) return 0
+  const act = actualPct[position] ?? 0
+  const diff = (bench - act) / bench
+  return diff > 0 ? diff : 0
+}
+
+const positionActualPct = computed<number[]>(() =>
+  computePositionActualPct(props.snapshots, POSITION_BENCHMARK_RECENT_N)
+)
+
 type CandidateStatus = 'hit' | 'candidateMiss' | 'miss' | 'excludedCorrect'
-type ExcludedReason = 'position' | 'carryover' | 'deviation' | 'recordLatest' | 'truncated' | 'capPos' | 'capGlobal'
+type ExcludedReason = 'position' | 'carryover' | 'deviation' | 'recordLatest' | 'truncated' | 'capGlobal'
 
 interface NumberCell {
   n: number
@@ -344,7 +402,8 @@ function annotateInterval(
     const appearances = stat?.appearances ?? 0
     const position = idx + 1
     const excludedByPos = ruleSwitches.position && posSet.has(position)
-    const excludedByCarry = ruleSwitches.carryover && j === 0 && carryoverSet.has(n)
+    // 紅框 = 上期 ∩ 上上期（連莊號）；對齊 draws.vue 的紅框邏輯、套用到所有隔期、不再只限隔期 0
+    const excludedByCarry = ruleSwitches.carryover && carryoverSet.has(n)
     const excludedByDev = ruleSwitches.deviation
       && (deviation > upper || deviation < lower)
     return {
@@ -367,30 +426,11 @@ function annotateInterval(
  *   - 輸入：全部隔期的 ItemAnnotated（已含通過/未通過 per-interval 過濾的標註）
  *   - 通過 per-interval 過濾的 = pool；按 deviation ASC + interval ASC + position ASC 排序
  *   - 逐顆嘗試：先 per-interval targetK cap、再位置 cap、再全域 cap
- *   - 全部通過 → 加入 picks；任一不通過 → 標 truncated/capPos/capGlobal
+ *   - 全部通過 → 加入 picks；任一不通過 → 標 truncated/capGlobal
  */
 interface SelectionResult {
   pickedNumbers: Set<number>
   rejectReason: Map<number, ExcludedReason>
-}
-
-function violatesPosCap(
-  picks: PoolItem[],
-  cand: PoolItem,
-  ruleSwitches: RuleSwitches,
-  ruleParams: RuleParams
-): boolean {
-  if (!ruleSwitches.posQuota) return false
-  const p = cand.position
-  let count = 0
-  for (const x of picks) {
-    if (x.position === p) count++
-  }
-  const next = count + 1
-  if (p === 1 || p === 2) return next > ruleParams.pos12Cap
-  if (p >= 3 && p <= 9) return next > ruleParams.pos39Cap
-  if (p >= 10) return next > ruleParams.pos10PlusCap
-  return false
 }
 
 function violatesGlobalCap(
@@ -442,7 +482,8 @@ function selectGlobally(
   pools: ReadonlyMap<number, ItemAnnotated[]>,
   rawLengthByInterval: ReadonlyMap<number, number>,
   ruleSwitches: RuleSwitches,
-  ruleParams: RuleParams
+  ruleParams: RuleParams,
+  positionActual: ReadonlyArray<number>
 ): SelectionResult {
   // 收集所有「通過 per-interval 過濾」的候選
   const candidates: PoolItem[] = []
@@ -458,8 +499,16 @@ function selectGlobally(
       })
     }
   }
-  // 排序：deviation ASC、interval ASC、position ASC
+  // 排序順位（對齊使用者 8 步流程之 step 6 = 位置數量 sort）：
+  //   1. 位置優先權（過去 200 期實際佔比 < 基準 → 權重高）— 僅在 posQuota toggle 開啟時生效
+  //   2. deviation ASC（最冷的優先）
+  //   3. interval ASC、position ASC（穩定排序、避免抖動）
   candidates.sort((a, b) => {
+    if (ruleSwitches.posQuota) {
+      const wa = positionPriorityWeight(a.position, positionActual)
+      const wb = positionPriorityWeight(b.position, positionActual)
+      if (wa !== wb) return wb - wa
+    }
     if (a.deviation !== b.deviation) return a.deviation - b.deviation
     if (a.interval !== b.interval) return a.interval - b.interval
     return a.position - b.position
@@ -471,7 +520,7 @@ function selectGlobally(
   const reject = new Map<number, ExcludedReason>()
 
   for (const cand of candidates) {
-    // 1. per-interval targetK cap
+    // step 5: per-interval 目標顆數截斷
     if (ruleSwitches.target) {
       const rawLen = rawLengthByInterval.get(cand.interval) ?? 0
       const cap = targetK(cand.interval, rawLen)
@@ -481,12 +530,7 @@ function selectGlobally(
         continue
       }
     }
-    // 2. 位置數量 cap
-    if (violatesPosCap(picks, cand, ruleSwitches, ruleParams)) {
-      reject.set(cand.n, 'capPos')
-      continue
-    }
-    // 3. 全域 cap
+    // step 8: 全域上限
     if (ruleSwitches.globalCap && violatesGlobalCap(picks, cand, ruleParams)) {
       reject.set(cand.n, 'capGlobal')
       continue
@@ -530,18 +574,21 @@ function buildRowsFromSelection(
     const cells: NumberCell[] = []
     for (const item of items) {
       let excludedBy: ExcludedReason | undefined
+      // 使用者拍板過濾順位（步驟 2 → 3 → 4 → 7）：
+      //   2 recordLatest → 3 紅框 (carryover) → 4 deviation → 7 position
+      // 同一個號被多條規則同時排除時、只算第一條 = 不會重覆扣
       if (item.excludedByRecord) {
         excludedBy = 'recordLatest'
         removedByRecord++
-      } else if (item.excludedByPos) {
-        excludedBy = 'position'
-        removedByPosition++
       } else if (item.excludedByCarry) {
         excludedBy = 'carryover'
         removedByCarryover++
       } else if (item.excludedByDev) {
         excludedBy = 'deviation'
         removedByDeviation++
+      } else if (item.excludedByPos) {
+        excludedBy = 'position'
+        removedByPosition++
       } else {
         poolSize++
         const rej = selection.rejectReason.get(item.n)
@@ -666,7 +713,7 @@ function buildDrawRows(
     }
   }
 
-  const selection = selectGlobally(perIntervalItems, rawLengthByInterval, rules, params)
+  const selection = selectGlobally(perIntervalItems, rawLengthByInterval, rules, params, positionActualPct.value)
   return buildRowsFromSelection(
     perIntervalItems,
     perIntervalRecordExcluded,
@@ -836,8 +883,6 @@ function cellTitle(cell: NumberCell): string {
     parts.push('扣記錄最新數據（首碼超過上限）')
   } else if (cell.excludedBy === 'truncated') {
     parts.push('候選池但超過目標被截斷')
-  } else if (cell.excludedBy === 'capPos') {
-    parts.push('被位置數量 cap 擋下')
   } else if (cell.excludedBy === 'capGlobal') {
     parts.push('被全域上限 cap 擋下')
   }
@@ -899,7 +944,7 @@ const stickyStyle = computed(() => ({
             <label class="flex items-center gap-1.5 cursor-pointer">
               <UCheckbox v-model="rules.carryover" />
               <span>扣紅框</span>
-              <span class="text-[10px] text-muted">（隔期 0 連莊）</span>
+              <span class="text-[10px] text-muted">（連莊：上期 ∩ 上上期、套用全隔期）</span>
             </label>
             <label class="flex items-center gap-1.5 cursor-pointer">
               <UCheckbox v-model="rules.deviation" />
@@ -919,7 +964,7 @@ const stickyStyle = computed(() => ({
             <label class="flex items-center gap-1.5 cursor-pointer">
               <UCheckbox v-model="rules.posQuota" />
               <span>位置數量</span>
-              <span class="text-[10px] text-muted">（位 1/2、3-9、10+ 各位置 cap）</span>
+              <span class="text-[10px] text-muted">（過去 {{ POSITION_BENCHMARK_RECENT_N }} 期實際 &lt; 基準 → 該位置候選優先納入）</span>
             </label>
             <label class="flex items-center gap-1.5 cursor-pointer">
               <UCheckbox v-model="rules.globalCap" />
@@ -1002,45 +1047,30 @@ const stickyStyle = computed(() => ({
                 · 該隔期 pre-T 數值 ≤ 上限才入池、超過則整支隔期排除
               </span>
             </div>
-            <!-- 位置數量 -->
-            <div class="flex items-baseline gap-2 flex-wrap">
-              <span class="text-muted">位置數量</span>
-              <label class="flex items-center gap-1">
-                <span class="text-[10px] text-muted">位 1、2 各 ≤</span>
-                <UInput
-                  v-model.number="params.pos12Cap"
-                  type="number"
-                  :min="0"
-                  :max="20"
-                  step="1"
-                  size="sm"
-                  class="w-20"
-                />
-              </label>
-              <label class="flex items-center gap-1">
-                <span class="text-[10px] text-muted">位 3-9 各 ≤</span>
-                <UInput
-                  v-model.number="params.pos39Cap"
-                  type="number"
-                  :min="0"
-                  :max="20"
-                  step="1"
-                  size="sm"
-                  class="w-20"
-                />
-              </label>
-              <label class="flex items-center gap-1">
-                <span class="text-[10px] text-muted">位 10+ 各 ≤</span>
-                <UInput
-                  v-model.number="params.pos10PlusCap"
-                  type="number"
-                  :min="0"
-                  :max="20"
-                  step="1"
-                  size="sm"
-                  class="w-20"
-                />
-              </label>
+            <!-- 位置數量基準對照（過去 N 期實際 vs 基準佔比） -->
+            <div class="space-y-1">
+              <div class="flex items-baseline gap-2 flex-wrap">
+                <span class="text-muted">位置數量基準</span>
+                <span class="text-[10px] text-muted">
+                  · 過去 {{ POSITION_BENCHMARK_RECENT_N }} 期實際佔比 vs 基準（缺額越大、優先權越高）
+                </span>
+              </div>
+              <div class="grid grid-cols-5 sm:grid-cols-10 gap-1 text-[10px]">
+                <div
+                  v-for="p in 20"
+                  :key="`pos-bench-${p}`"
+                  class="rounded border border-default px-1 py-1 flex flex-col items-center gap-0.5"
+                  :class="(positionActualPct[p] ?? 0) < (POSITION_BENCHMARK_PCT[p] ?? 0) ? 'border-emerald-500/60 bg-emerald-500/5' : ''"
+                >
+                  <span class="font-mono text-muted">位 {{ p }}</span>
+                  <span class="font-mono tabular-nums">
+                    {{ (positionActualPct[p] ?? 0).toFixed(2) }}%
+                  </span>
+                  <span class="font-mono tabular-nums text-muted">
+                    / {{ (POSITION_BENCHMARK_PCT[p] ?? 0).toFixed(2) }}%
+                  </span>
+                </div>
+              </div>
             </div>
             <!-- 全域上限 -->
             <div class="flex items-baseline gap-2 flex-wrap">
