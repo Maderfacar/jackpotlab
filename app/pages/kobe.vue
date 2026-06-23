@@ -107,7 +107,6 @@ const buildResult = computed(() => {
 })
 const snapshots = computed<PerDrawSnapshot[]>(() => buildResult.value.snapshots)
 const finalState = computed<AnalysisState | null>(() => buildResult.value.finalState)
-const preLatestState = computed<AnalysisState | null>(() => buildResult.value.preLatestState)
 
 const latestDrawInfo = computed(() => {
   const arr = allDraws.value
@@ -133,8 +132,7 @@ const tabs: TabDef[] = [
   { value: 'position', label: '位置規律' },
   { value: 'journey', label: '號碼軌跡' },
   { value: 'compare', label: '訊號比拚' },
-  { value: 'regime', label: '波段儀表板' },
-  { value: 'highPosition', label: '高位來源' }
+  { value: 'regime', label: '波段儀表板' }
 ]
 const activeTab = ref<string>('candidate')
 </script>
@@ -147,7 +145,7 @@ const activeTab = ref<string>('candidate')
           柯比
         </h1>
         <p class="text-sm text-muted">
-          每期獎號的「來源隔期」觀察紀錄 + 多面向分析（共 9 個分頁，候選分頁置頂）。資料源：隔期狀態（N={{ KOBE_ANALYSIS_N }}）+ 獎號關聯，hydrate 自過去 {{ KOBE_FETCH_LIMIT }} 期。
+          每期獎號的「來源隔期」觀察紀錄 + 多面向分析（共 8 個分頁，候選分頁置頂）。資料源：隔期狀態（N={{ KOBE_ANALYSIS_N }}）+ 獎號關聯，hydrate 自過去 {{ KOBE_FETCH_LIMIT }} 期。
         </p>
         <p
           v-if="latestDrawInfo"
@@ -199,7 +197,6 @@ const activeTab = ref<string>('candidate')
             v-if="item.value === 'candidate'"
             :snapshots="snapshots"
             :final-state="finalState"
-            :pre-latest-state="preLatestState"
             :draws-asc="allDraws"
             :interval-count="KOBE_ANALYSIS_N"
             :header-height="headerHeight"
@@ -231,10 +228,6 @@ const activeTab = ref<string>('candidate')
           />
           <KobeRegimeDashboardTab
             v-else-if="item.value === 'regime'"
-            :snapshots="snapshots"
-          />
-          <KobeHighPositionAnalysisTab
-            v-else-if="item.value === 'highPosition'"
             :snapshots="snapshots"
           />
         </div>
