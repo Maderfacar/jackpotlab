@@ -16,19 +16,35 @@
  *   raw = pre-T 該隔期 prizesBefore（sorted asc）
  *   positionYs = 從歷史往前掃、最近一個 slot[j].hits > 0 的 hitPositions
  *
- *   控制台規則 = 互相獨立的開關、勾哪個就刷哪個、沒有順位關係：
- *     扣位置：raw 中 1-indexed 位置 ∈ positionYs 的號碼移除
+ *   控制台 7 條規則 = 互相獨立的開關、按作用點分四類：
+ *
+ *   [pool definer] 定義「該隔期有哪些號可選」：
+ *     扣位置：raw 中 1-indexed 位置 ∈ positionYs 的號碼移除（剛中過短期不再中）
  *     扣紅框：上兩期共同號（連莊）移除（套用所有隔期、不只 j=0）
- *     選偏離：保留 deviation ∈ [lower%, upper%]、超出範圍移除
+ *     選偏離：保留 deviation ∈ [lower%, upper%]、超出範圍移除（過熱過冷剔除）
  *     記錄最新數據：slot.recordValueBefore > n → 整支隔期排除
- *     目標顆數截斷：每隔期該推幾顆 T、見下方
- *     位置數量 (posQuota)：sort 公式的 Layer 2 訊號開關、不是過濾
- *     全域上限 (globalCap)：尾數/連跑/奇偶/40 分區的結構 cap、選號末端再檢查
+ *
+ *   [count decider] 決定「該選幾顆」：
+ *     目標顆數截斷：算每隔期 T、見下方公式段
+ *
+ *   [picking rules] 決定「要選哪幾顆」(T 顆從 pool 怎麼挑)：
+ *     選偏離：除了當 pool 過濾、其 deviation 值也是 sort tiebreaker（同分時偏冷的優先）
+ *     位置數量 (posQuota)：是 sort 公式 Layer 2 lift 訊號的總開關（不過濾）
+ *     ─ 主訊號 cellHitRate (Layer 1) 永遠開、不是規則開關、是排隊主力
+ *
+ *   [end-check] 選完後的全域結構檢查：
+ *     全域上限 (globalCap)：尾數/連跑/奇偶/40 分區結構 cap、所有 picks 蒐齊後按 score 末端 walk
+ *
  *   多條規則同時排除同一個號 → UI 取第一條當顯示原因、不會重覆扣
  *
- *   每隔期內、過濾後 pool 按 score（Layer 1+2）排序、選 top-T → 該隔期主推
- *   超過 T 的 → 標 truncated（仍顯示）
- *   全部隔期 picks 蒐齊後、若 globalCap 開 → 按 score 高到低 walk、超過結構 cap 的標 capGlobal
+ *   時間軸：
+ *     階段 1｜該隔期 pool 過濾（扣位置 / 扣紅框 / 選偏離 / 記錄最新數據、4 條獨立）
+ *     階段 2｜算 T（目標顆數截斷）
+ *     階段 3｜該隔期 pool 用 score sort 排隊
+ *             score = cellHitRate × (1 + lift × strength)
+ *             位置數量開 → lift 進公式；選偏離 → deviation 當 tiebreaker
+ *     階段 4｜從分數高的取 T 顆、剩下標 truncated
+ *     階段 5｜globalCap 末端 walk（可選）
  *
  * 4 色狀態：
  *   命中（主推 + 開出）→ 綠底 solid
