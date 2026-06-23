@@ -31,14 +31,22 @@
  *   漏（非主推 + 開出 = 規則殺錯）→ 紅底 solid
  *   過濾正確（非主推 + 沒開）→ 灰底劃線 dimmed
  *
- * 目標顆數 mapping（j=4-9 暫用保守值 1、待使用者拍板）：
- *   j=0：5 / j=1：raw≤12→2、13-15→3、≥16→4、<11→1
- *   j=2：raw≤11→2、12-15→3、≥16→4、<9→1
- *   j=3：raw≤11→2、12-13→3、≥14→4、<8→1
+ * 目標顆數截斷（C 方案、使用者拍板）：
+ *   T(j, raw) 直接讀 buildIntervalRemainingTable 的 mean、按 bias 取整：
+ *     - ceil   = 重涵蓋率（預設、減少漏紅、推薦給多抓 hit 的場景）
+ *     - round  = 標準
+ *     - floor  = 重精準率
+ *   樣本 < SAMPLE_TRUST_THRESHOLD 的 cell → 退回該隔期整體均值
+ *   兩者皆無 → T = 0（不推）
  */
-import type { PerDrawSnapshot, KobeDraw, NumberHistoryRow } from '~/utils/kobe-stats'
+import type {
+  PerDrawSnapshot,
+  KobeDraw,
+  NumberHistoryRow,
+  IntervalRemainingCell
+} from '~/utils/kobe-stats'
 import type { AnalysisState } from '~/utils/analysis'
-import { buildNumberHistory } from '~/utils/kobe-stats'
+import { buildNumberHistory, buildIntervalRemainingTable } from '~/utils/kobe-stats'
 import { bingoTimeFromMap, buildBingoMinTermByDate } from '~/utils/bingo-time'
 
 interface Props {
@@ -90,6 +98,8 @@ interface RuleParams {
   deviationLowerPct: number
   /** 記錄最新數據首碼上限（0-9）— recordValueBefore ≤ n 才入池 */
   recordLatestMax: number
+  /** 目標顆數偏向 — 從 lookup table 算 T 後的取整方式 */
+  targetBias: TargetBias
   /** 任一尾數 ≤（80 個號碼裡每尾數有 8 個、預設 6 = 留些餘地） */
   tailCap: number
   /** 連跑 ≤（排序後最長連號串、預設 4 = 允許至多 4 連、5 連即拒） */
@@ -103,10 +113,13 @@ interface RuleParams {
   /** >40 cap */
   gt40Cap: number
 }
+type TargetBias = 'round' | 'ceil' | 'floor'
+
 const DEFAULT_PARAMS: Readonly<RuleParams> = Object.freeze({
   deviationUpperPct: 5,
   deviationLowerPct: -5,
   recordLatestMax: 1,
+  targetBias: 'ceil',
   tailCap: 6,
   consecutiveCap: 4,
   oddCap: 13,
@@ -114,6 +127,9 @@ const DEFAULT_PARAMS: Readonly<RuleParams> = Object.freeze({
   le40Cap: 13,
   gt40Cap: 13
 })
+
+// 樣本量低於此值的 lookup cell → 退回該隔期整體均值（避免雜訊放大）
+const TARGET_SAMPLE_TRUST = 20
 
 // 位置基準佔比（使用者拍板、來自位置規律分頁觀察）— 位置 1-20
 // 過去 200 期實際開出佔比 < 基準 → 該位置候選號優先納入
@@ -157,9 +173,17 @@ function loadFromStorage(): void {
       }
     }
     if (parsed.params && typeof parsed.params === 'object') {
+      const parsedParams = parsed.params as Record<string, unknown>
+      const target = params as Record<string, unknown>
       for (const k of Object.keys(DEFAULT_PARAMS) as Array<keyof RuleParams>) {
-        const v = (parsed.params as Record<string, unknown>)[k]
-        if (typeof v === 'number' && Number.isFinite(v)) params[k] = v
+        const v = parsedParams[k]
+        const defaultV = DEFAULT_PARAMS[k]
+        if (typeof defaultV === 'number') {
+          if (typeof v === 'number' && Number.isFinite(v)) target[k] = v
+        } else if (typeof defaultV === 'string') {
+          // targetBias：只接受 'round' | 'ceil' | 'floor'
+          if (v === 'round' || v === 'ceil' || v === 'floor') target[k] = v
+        }
       }
     }
     if (parsed.intervalEnabled && typeof parsed.intervalEnabled === 'object') {
@@ -228,44 +252,68 @@ const numberStatsMap = computed<Map<number, NumberStat>>(() => {
   return m
 })
 
-function targetK(j: number, rawLen: number): number {
-  // 使用者拍板 mapping（依各隔期歷史平均開出顆數調整）
-  if (j === 0) return 5
-  if (j === 1) {
-    if (rawLen < 13) return 3
-    if (rawLen <= 16) return 4
-    return 5
+// C 方案：lookup table 驅動的 targetK
+//   - lookup cell 樣本 ≥ TARGET_SAMPLE_TRUST → 用該 cell 的 meanHits
+//   - 樣本不足 → 退回該隔期整體均值（所有 X 的 sample-weighted mean）
+//   - 兩者皆無 → mean = 0、T = 0
+const intervalRemainingTable = computed<IntervalRemainingCell[]>(() =>
+  buildIntervalRemainingTable(props.snapshots)
+)
+
+const intervalLookupMap = computed<Map<string, IntervalRemainingCell>>(() => {
+  const m = new Map<string, IntervalRemainingCell>()
+  for (const cell of intervalRemainingTable.value) {
+    m.set(`${cell.interval}|${cell.remaining}`, cell)
   }
-  if (j === 2) {
-    if (rawLen < 9) return 2
-    if (rawLen <= 12) return 3
-    return 4
+  return m
+})
+
+const intervalFallbackMean = computed<Map<number, number>>(() => {
+  const sums = new Map<number, { sum: number, n: number }>()
+  for (const cell of intervalRemainingTable.value) {
+    const cur = sums.get(cell.interval) ?? { sum: 0, n: 0 }
+    cur.sum += cell.meanHits * cell.sampleCount
+    cur.n += cell.sampleCount
+    sums.set(cell.interval, cur)
   }
-  if (j === 3) {
-    if (rawLen < 3) return 0
-    if (rawLen <= 6) return 1
-    if (rawLen <= 9) return 2
-    return 3
+  const m = new Map<number, number>()
+  for (const [j, agg] of sums) {
+    m.set(j, agg.n > 0 ? agg.sum / agg.n : 0)
   }
-  if (j === 4) {
-    if (rawLen < 5) return 1
-    if (rawLen <= 9) return 2
-    return 3
+  return m
+})
+
+interface TargetInfo {
+  target: number
+  sourceMean: number
+  source: 'cell' | 'fallback' | 'none'
+}
+
+function applyBias(mean: number, bias: TargetBias): number {
+  let t: number
+  if (bias === 'round') t = Math.round(mean)
+  else if (bias === 'ceil') t = Math.ceil(mean)
+  else t = Math.floor(mean)
+  return Math.max(0, t)
+}
+
+function computeTargetInfo(
+  j: number,
+  rawLen: number,
+  bias: TargetBias,
+  lookup: ReadonlyMap<string, IntervalRemainingCell>,
+  fallback: ReadonlyMap<number, number>
+): TargetInfo {
+  if (rawLen <= 0) return { target: 0, sourceMean: 0, source: 'none' }
+  const cell = lookup.get(`${j}|${rawLen}`)
+  if (cell && cell.sampleCount >= TARGET_SAMPLE_TRUST) {
+    return { target: applyBias(cell.meanHits, bias), sourceMean: cell.meanHits, source: 'cell' }
   }
-  if (j === 5) {
-    if (rawLen < 6) return 1
-    return 2
+  const fb = fallback.get(j)
+  if (fb !== undefined) {
+    return { target: applyBias(fb, bias), sourceMean: fb, source: 'fallback' }
   }
-  if (j === 6) {
-    if (rawLen < 7) return 1
-    return 2
-  }
-  if (j === 7) {
-    if (rawLen < 8) return 1
-    return 2
-  }
-  if (j === 8 || j === 9) return 1
-  return 0
+  return { target: 0, sourceMean: 0, source: 'none' }
 }
 
 // 過去 N 期實際各位置開出佔比（%）
@@ -326,8 +374,12 @@ interface CandidateRow {
   interval: number
   rawCount: number
   cells: NumberCell[]
-  /** 目標主推顆數 T（依 mapping 算出、無論 rules.target 是否開） */
+  /** 目標主推顆數 T（從 lookup table 算、無論 rules.target 是否開） */
   targetK: number
+  /** T 來源 mean（lookup cell 或退回該隔期均值） */
+  targetMean: number
+  /** T 來源：'cell' = 該 (J,X) cell；'fallback' = 該隔期均值；'none' = 無資料 */
+  targetSource: 'cell' | 'fallback' | 'none'
   /** 過濾後候選池大小（per-interval filter 後） */
   poolSize: number
   /** 實際主推顆數 = 通過 greedy 選號的數量 */
@@ -480,7 +532,7 @@ function violatesGlobalCap(
 
 function selectGlobally(
   pools: ReadonlyMap<number, ItemAnnotated[]>,
-  rawLengthByInterval: ReadonlyMap<number, number>,
+  targetInfoByInterval: ReadonlyMap<number, TargetInfo>,
   ruleSwitches: RuleSwitches,
   ruleParams: RuleParams,
   positionActual: ReadonlyArray<number>
@@ -520,10 +572,10 @@ function selectGlobally(
   const reject = new Map<number, ExcludedReason>()
 
   for (const cand of candidates) {
-    // step 5: per-interval 目標顆數截斷
+    // step 5: per-interval 目標顆數截斷（T 來自 lookup table、由 bias 取整）
     if (ruleSwitches.target) {
-      const rawLen = rawLengthByInterval.get(cand.interval) ?? 0
-      const cap = targetK(cand.interval, rawLen)
+      const info = targetInfoByInterval.get(cand.interval)
+      const cap = info?.target ?? 0
       const cur = intervalCount.get(cand.interval) ?? 0
       if (cur + 1 > cap) {
         reject.set(cand.n, 'truncated')
@@ -553,6 +605,7 @@ function buildRowsFromSelection(
   perIntervalRecordExcluded: ReadonlyMap<number, boolean>,
   perIntervalRecordValue: ReadonlyMap<number, number>,
   rawLengthByInterval: ReadonlyMap<number, number>,
+  targetInfoByInterval: ReadonlyMap<number, TargetInfo>,
   selection: SelectionResult,
   actualSet: ReadonlySet<number>,
   isPending: boolean
@@ -628,7 +681,9 @@ function buildRowsFromSelection(
       interval: j,
       rawCount: rawLen,
       cells,
-      targetK: targetK(j, rawLen),
+      targetK: targetInfoByInterval.get(j)?.target ?? 0,
+      targetMean: targetInfoByInterval.get(j)?.sourceMean ?? 0,
+      targetSource: targetInfoByInterval.get(j)?.source ?? 'none',
       poolSize,
       recommendedCount,
       hitCount,
@@ -713,12 +768,22 @@ function buildDrawRows(
     }
   }
 
-  const selection = selectGlobally(perIntervalItems, rawLengthByInterval, rules, params, positionActualPct.value)
+  // 算出每個啟用隔期當下的 targetInfo（T、來源 mean、來源類型）
+  const targetInfoByInterval = new Map<number, TargetInfo>()
+  const lookup = intervalLookupMap.value
+  const fallback = intervalFallbackMean.value
+  for (const j of activeIntervals.value) {
+    const rawLen = rawLengthByInterval.get(j) ?? 0
+    targetInfoByInterval.set(j, computeTargetInfo(j, rawLen, params.targetBias, lookup, fallback))
+  }
+
+  const selection = selectGlobally(perIntervalItems, targetInfoByInterval, rules, params, positionActualPct.value)
   return buildRowsFromSelection(
     perIntervalItems,
     perIntervalRecordExcluded,
     perIntervalRecordValue,
     rawLengthByInterval,
+    targetInfoByInterval,
     selection,
     actualSet,
     isPending
@@ -954,7 +1019,7 @@ const stickyStyle = computed(() => ({
             <label class="flex items-center gap-1.5 cursor-pointer">
               <UCheckbox v-model="rules.target" />
               <span>目標顆數截斷</span>
-              <span class="text-[10px] text-muted">（每隔期主推取前 T 顆）</span>
+              <span class="text-[10px] text-muted">（T 來自 lookup table、bias 控制取整）</span>
             </label>
             <label class="flex items-center gap-1.5 cursor-pointer">
               <UCheckbox v-model="rules.recordLatest" />
@@ -1045,6 +1110,27 @@ const stickyStyle = computed(() => ({
               </label>
               <span class="text-[10px] text-muted">
                 · 該隔期 pre-T 數值 ≤ 上限才入池、超過則整支隔期排除
+              </span>
+            </div>
+            <!-- 目標顆數偏向（C 方案） -->
+            <div class="flex items-baseline gap-2 flex-wrap">
+              <span class="text-muted">目標顆數偏向</span>
+              <div class="inline-flex rounded border border-default overflow-hidden text-[11px]">
+                <button
+                  v-for="bias in (['ceil', 'round', 'floor'] as const)"
+                  :key="`bias-${bias}`"
+                  type="button"
+                  class="px-3 py-1 transition-colors"
+                  :class="params.targetBias === bias
+                    ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 font-semibold'
+                    : 'bg-default text-muted hover:bg-elevated/50'"
+                  @click="params.targetBias = bias"
+                >
+                  {{ bias === 'ceil' ? '重涵蓋率 (ceil)' : bias === 'round' ? '標準 (round)' : '重精準率 (floor)' }}
+                </button>
+              </div>
+              <span class="text-[10px] text-muted">
+                · T = bias(lookup mean) · 樣本 &lt; {{ TARGET_SAMPLE_TRUST }} 退回該隔期均值
               </span>
             </div>
             <!-- 位置數量基準對照（過去 N 期實際 vs 基準佔比） -->
@@ -1231,6 +1317,12 @@ const stickyStyle = computed(() => ({
             <span class="font-mono font-semibold">隔期 {{ row.interval }}</span>
             <span class="text-muted">
               原 {{ row.rawCount }} 顆 · 數值 {{ row.recordValue }} → 候選池 {{ row.poolSize }} · 主推 <span class="font-mono font-semibold text-emerald-600 dark:text-emerald-400">{{ row.recommendedCount }}</span> / 目標 {{ row.targetK }}
+              <span
+                v-if="row.targetSource !== 'none'"
+                class="text-[9px]"
+              >
+                ({{ row.targetSource === 'cell' ? 'lookup' : '退回均值' }} {{ row.targetMean.toFixed(2) }} · {{ params.targetBias }})
+              </span>
             </span>
             <span
               v-if="row.recordExcluded"
@@ -1368,6 +1460,12 @@ const stickyStyle = computed(() => ({
               <span class="font-mono">隔期 {{ row.interval }}</span>
               <span class="text-muted">
                 原 {{ row.rawCount }} · 數值 {{ row.recordValue }} → 池 {{ row.poolSize }} · 主推 <span class="font-mono">{{ row.recommendedCount }}</span> / 目標 {{ row.targetK }}
+                <span
+                  v-if="row.targetSource !== 'none'"
+                  class="text-[9px]"
+                >
+                  ({{ row.targetMean.toFixed(2) }})
+                </span>
               </span>
               <span
                 v-if="row.recordExcluded"
