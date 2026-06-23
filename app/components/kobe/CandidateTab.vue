@@ -38,6 +38,13 @@
  *     - floor  = 重精準率
  *   樣本 < SAMPLE_TRUST_THRESHOLD 的 cell → 退回該隔期整體均值
  *   兩者皆無 → T = 0（不推）
+ *
+ * 排序機制（Layer 1+2、取代 deviation 升冪）：
+ *   score(J, Y) = cellHitRate(J, Y) × (1 + 位置補位 lift × strength)
+ *     cellHitRate: 全期 1999 期該 (J, Y) 格的歷史中獎率（主訊號、變異 10x）
+ *     位置補位 lift: (基準 - 200 期實際) / 基準（次訊號、posQuota 開啟才生效）
+ *     strength: clamp(recentN / 200, 0, 1)（recentN 小 → 補位 lift 自動讓位避免噪音）
+ *   tiebreaker: deviation ASC、interval ASC、position ASC
  */
 import type {
   PerDrawSnapshot,
@@ -46,7 +53,11 @@ import type {
   IntervalRemainingCell
 } from '~/utils/kobe-stats'
 import type { AnalysisState } from '~/utils/analysis'
-import { buildNumberHistory, buildIntervalRemainingTable } from '~/utils/kobe-stats'
+import {
+  buildNumberHistory,
+  buildIntervalRemainingTable,
+  buildPositionDistribution
+} from '~/utils/kobe-stats'
 import { bingoTimeFromMap, buildBingoMinTermByDate } from '~/utils/bingo-time'
 
 interface Props {
@@ -342,8 +353,8 @@ function computePositionActualPct(
   return out
 }
 
-// 位置優先權：實際佔比 < 基準佔比 → 權重為正（缺額比例）；否則 0
-function positionPriorityWeight(position: number, actualPct: ReadonlyArray<number>): number {
+// 位置補位 lift：實際佔比 < 基準佔比 → 缺額比例為正；否則 0（gambler regress-to-mean）
+function positionRegressionLift(position: number, actualPct: ReadonlyArray<number>): number {
   if (position < 1 || position > 20) return 0
   const bench = POSITION_BENCHMARK_PCT[position]!
   if (bench <= 0) return 0
@@ -355,6 +366,28 @@ function positionPriorityWeight(position: number, actualPct: ReadonlyArray<numbe
 const positionActualPct = computed<number[]>(() =>
   computePositionActualPct(props.snapshots, POSITION_BENCHMARK_RECENT_N)
 )
+
+// Layer 2 強度：UI 顯示用百分比（recentN/200、clamped 0-100）
+const regressStrengthPct = computed<number>(() => {
+  const v = recentN.value / POSITION_BENCHMARK_RECENT_N
+  return Math.round(Math.min(1, Math.max(0, v)) * 100)
+})
+
+// Layer 1：cellHitRate(J, Y) = 該 (隔期, 位置) cell 的歷史中獎率
+//   來源：buildPositionDistribution 的 positionCounts / positionExposure
+//   全期 1999 期計算、樣本量穩定、是 sort 的主訊號
+const cellHitRateMap = computed<Map<string, number>>(() => {
+  const m = new Map<string, number>()
+  for (const row of buildPositionDistribution(props.snapshots)) {
+    for (let y = 1; y <= row.maxPosition; y++) {
+      const exp = row.positionExposure[y] ?? 0
+      if (exp <= 0) continue
+      const cnt = row.positionCounts[y] ?? 0
+      m.set(`${row.interval}|${y}`, cnt / exp)
+    }
+  }
+  return m
+})
 
 type CandidateStatus = 'hit' | 'candidateMiss' | 'miss' | 'excludedCorrect'
 type ExcludedReason = 'position' | 'carryover' | 'deviation' | 'recordLatest' | 'truncated' | 'capGlobal'
@@ -535,7 +568,9 @@ function selectGlobally(
   targetInfoByInterval: ReadonlyMap<number, TargetInfo>,
   ruleSwitches: RuleSwitches,
   ruleParams: RuleParams,
-  positionActual: ReadonlyArray<number>
+  positionActual: ReadonlyArray<number>,
+  cellHitRate: ReadonlyMap<string, number>,
+  regressStrength: number
 ): SelectionResult {
   // 收集所有「通過 per-interval 過濾」的候選
   const candidates: PoolItem[] = []
@@ -551,16 +586,25 @@ function selectGlobally(
       })
     }
   }
-  // 排序順位（對齊使用者 8 步流程之 step 6 = 位置數量 sort）：
-  //   1. 位置優先權（過去 200 期實際佔比 < 基準 → 權重高）— 僅在 posQuota toggle 開啟時生效
-  //   2. deviation ASC（最冷的優先）
-  //   3. interval ASC、position ASC（穩定排序、避免抖動）
+  // 排序順位（Layer 1+2）：
+  //   1. score = cellHitRate(J,Y) × (1 + 位置補位 lift × strength)
+  //      cellHitRate = 全期 1999 期該 (J, Y) 格歷史中獎率（主訊號、~5%-80% 變異 10x）
+  //      位置補位 lift = (基準 - 200 期實際) / 基準（次訊號、posQuota 開啟才生效）
+  //      strength = clamp(recentN / 200, 0, 1)（recentN 小 → 補位 lift 自動讓位、避免噪音）
+  //   2. deviation ASC（穩定 tiebreaker）
+  //   3. interval ASC、position ASC（防抖）
   candidates.sort((a, b) => {
-    if (ruleSwitches.posQuota) {
-      const wa = positionPriorityWeight(a.position, positionActual)
-      const wb = positionPriorityWeight(b.position, positionActual)
-      if (wa !== wb) return wb - wa
+    const hra = cellHitRate.get(`${a.interval}|${a.position}`) ?? 0
+    const hrb = cellHitRate.get(`${b.interval}|${b.position}`) ?? 0
+    let scoreA = hra
+    let scoreB = hrb
+    if (ruleSwitches.posQuota && regressStrength > 0) {
+      const liftA = positionRegressionLift(a.position, positionActual)
+      const liftB = positionRegressionLift(b.position, positionActual)
+      scoreA = hra * (1 + liftA * regressStrength)
+      scoreB = hrb * (1 + liftB * regressStrength)
     }
+    if (scoreA !== scoreB) return scoreB - scoreA
     if (a.deviation !== b.deviation) return a.deviation - b.deviation
     if (a.interval !== b.interval) return a.interval - b.interval
     return a.position - b.position
@@ -777,7 +821,17 @@ function buildDrawRows(
     targetInfoByInterval.set(j, computeTargetInfo(j, rawLen, params.targetBias, lookup, fallback))
   }
 
-  const selection = selectGlobally(perIntervalItems, targetInfoByInterval, rules, params, positionActualPct.value)
+  // Layer 2 強度：recentN 小 → 位置補位 lift 自動讓位
+  const regressStrength = Math.min(1, Math.max(0, recentN.value / POSITION_BENCHMARK_RECENT_N))
+  const selection = selectGlobally(
+    perIntervalItems,
+    targetInfoByInterval,
+    rules,
+    params,
+    positionActualPct.value,
+    cellHitRateMap.value,
+    regressStrength
+  )
   return buildRowsFromSelection(
     perIntervalItems,
     perIntervalRecordExcluded,
@@ -1029,7 +1083,9 @@ const stickyStyle = computed(() => ({
             <label class="flex items-center gap-1.5 cursor-pointer">
               <UCheckbox v-model="rules.posQuota" />
               <span>位置數量</span>
-              <span class="text-[10px] text-muted">（過去 {{ POSITION_BENCHMARK_RECENT_N }} 期實際 &lt; 基準 → 該位置候選優先納入）</span>
+              <span class="text-[10px] text-muted">
+                （補位 lift × 強度 {{ regressStrengthPct }}%、recentN/{{ POSITION_BENCHMARK_RECENT_N }} 自動調節）
+              </span>
             </label>
             <label class="flex items-center gap-1.5 cursor-pointer">
               <UCheckbox v-model="rules.globalCap" />
