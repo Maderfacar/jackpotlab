@@ -14,7 +14,7 @@ definePageMeta({
 
 const gameId = ref<GameId>('lotto539')
 const showAll = ref(false)
-const subTab = ref<'list' | 'periods' | 'relations' | 'tails'>('list')
+const subTab = ref<'list' | 'periods' | 'relations' | 'tails' | 'periods-v2' | 'relations-v2'>('list')
 
 const LEGACY_STORAGE_KEY = 'jackpotlab-show-legacy-analysis'
 
@@ -43,7 +43,7 @@ const tabs = GAME_IDS.map(id => ({
   description: GAMES[id].cadenceLabel
 }))
 
-type SubTabValue = 'list' | 'periods' | 'relations' | 'tails'
+type SubTabValue = 'list' | 'periods' | 'relations' | 'tails' | 'periods-v2' | 'relations-v2'
 const subTabItems = computed((): Array<{ label: string, value: SubTabValue }> => {
   const base: Array<{ label: string, value: SubTabValue }> = [
     { label: '各期獎號列表', value: 'list' }
@@ -52,7 +52,9 @@ const subTabItems = computed((): Array<{ label: string, value: SubTabValue }> =>
     base.push(
       { label: '隔期狀態', value: 'periods' },
       { label: '獎號關聯', value: 'relations' },
-      { label: '尾數', value: 'tails' }
+      { label: '尾數', value: 'tails' },
+      { label: '隔期狀態（新版）', value: 'periods-v2' },
+      { label: '獎號關聯（新版）', value: 'relations-v2' }
     )
   }
   return base
@@ -916,6 +918,148 @@ function tailCellClass(count: number): string {
         class="rounded-lg border border-dashed border-default p-8 text-center text-sm text-muted"
       >
         <p>分析資料載入中或資料不足</p>
+      </div>
+    </template>
+
+    <!-- ============ 隔期狀態（新版） ============ -->
+    <template v-else-if="subTab === 'periods-v2'">
+      <div
+        v-if="periodsRows.length === 0"
+        class="rounded-lg border border-dashed border-default p-8 text-center text-sm text-muted"
+      >
+        <p>分析資料載入中或資料不足</p>
+      </div>
+      <div
+        v-else
+        class="space-y-2"
+      >
+        <p class="text-xs text-muted px-1">
+          每期一張卡 · 首位數為紅字 = 該期記錄首位 ≥ 平均（{{ periodsAverage.toFixed(2) }}）· 日期紅字 = 該期歷史上曾命中過
+        </p>
+        <UCard
+          v-for="row in periodsRows"
+          :key="`pv2-${row.period}-${row.issue}`"
+          :ui="{ body: 'p-3 sm:p-4' }"
+        >
+          <div class="space-y-3">
+            <!-- header -->
+            <div class="flex items-baseline justify-between gap-2 flex-wrap">
+              <div class="flex items-baseline gap-2 flex-wrap">
+                <UBadge
+                  color="primary"
+                  variant="subtle"
+                  size="sm"
+                  class="font-mono"
+                >
+                  隔期 {{ row.period }}
+                </UBadge>
+                <span class="font-mono text-sm font-semibold">
+                  第 {{ row.issue || '—' }} 期
+                </span>
+                <span
+                  class="font-mono text-xs"
+                  :class="showDateRed && row.hasEverMatched ? 'text-rose-600 font-semibold' : 'text-muted'"
+                >
+                  {{ row.date || '—' }}
+                </span>
+              </div>
+              <span
+                v-if="row.record !== ''"
+                class="text-[10px] text-muted"
+              >
+                首位數
+                <span
+                  class="ml-1 font-mono text-base align-baseline"
+                  :class="Number.parseInt(row.record.split(',')[0] || '0', 10) >= periodsAverage ? 'text-rose-600 font-bold' : 'text-default font-semibold'"
+                >
+                  {{ row.record.split(',')[0] }}
+                </span>
+              </span>
+            </div>
+            <!-- 獎號 chips -->
+            <div class="flex flex-wrap items-center gap-1">
+              <span class="text-[10px] text-muted mr-1">獎號</span>
+              <template v-if="row.prizes.length === 0">
+                <span class="text-xs text-muted">—</span>
+              </template>
+              <span
+                v-for="n in row.prizes"
+                v-else
+                :key="`pv2-${row.period}-${row.issue}-p${n}`"
+                class="inline-flex min-w-7 justify-center font-mono text-xs rounded border border-default bg-elevated/30 px-1.5 py-0.5"
+              >
+                {{ String(n).padStart(2, '0') }}
+              </span>
+            </div>
+          </div>
+        </UCard>
+      </div>
+    </template>
+
+    <!-- ============ 獎號關聯（新版） ============ -->
+    <template v-else-if="subTab === 'relations-v2'">
+      <div
+        v-if="relationsRows.length === 0"
+        class="rounded-lg border border-dashed border-default p-8 text-center text-sm text-muted"
+      >
+        <p>分析資料載入中或資料不足（需至少 2 期）</p>
+      </div>
+      <div
+        v-else
+        class="space-y-2"
+      >
+        <p class="text-xs text-muted px-1">
+          每期一張卡 · 每顆獎號一格、格內顯示「隔期 / 數值 / 位置」三項對齊資訊
+        </p>
+        <UCard
+          v-for="row in relationsRows"
+          :key="`rv2-${row.issue}`"
+          :ui="{ body: 'p-3 sm:p-4' }"
+        >
+          <div class="space-y-3">
+            <!-- header -->
+            <div class="flex items-baseline justify-between gap-2 flex-wrap">
+              <div class="flex items-baseline gap-2 flex-wrap">
+                <span class="font-mono text-sm font-semibold">
+                  第 {{ row.issue }} 期
+                </span>
+                <span class="font-mono text-xs text-muted">
+                  {{ row.date || '—' }}
+                </span>
+              </div>
+              <UBadge
+                v-if="row.sum !== '' && row.sum !== undefined"
+                color="neutral"
+                variant="subtle"
+                size="sm"
+                class="font-mono"
+              >
+                總和 {{ row.sum }}
+              </UBadge>
+            </div>
+            <!-- per-prize cells -->
+            <div class="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 gap-1.5">
+              <div
+                v-for="(prize, idx) in row.prizes.split(',')"
+                :key="`rv2-${row.issue}-c${idx}`"
+                class="rounded border border-default bg-elevated/20 px-1.5 py-1.5 flex flex-col items-center gap-0.5 text-[11px]"
+              >
+                <span class="font-mono text-sm font-semibold">
+                  {{ prize.padStart(2, '0') }}
+                </span>
+                <div class="w-full border-t border-default/60" />
+                <div class="grid grid-cols-[auto_1fr] gap-x-1 gap-y-0 w-full">
+                  <span class="text-muted">隔</span>
+                  <span class="font-mono text-right">{{ (row.periods?.split(',')[idx] ?? '').trim() || '—' }}</span>
+                  <span class="text-muted">值</span>
+                  <span class="font-mono text-right">{{ (row.values?.split(',')[idx] ?? '').trim() || '—' }}</span>
+                  <span class="text-muted">位</span>
+                  <span class="font-mono text-right">{{ (row.positions?.split(',')[idx] ?? '').trim() || '—' }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </UCard>
       </div>
     </template>
   </UContainer>
