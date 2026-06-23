@@ -386,6 +386,46 @@ function tailCellClass(count: number): string {
   if (count === 2) return 'bg-fuchsia-500 text-white'
   return 'bg-red-600 text-white'
 }
+
+// ---------- 新版分頁的純 UI 輔助（不修改任何分析邏輯） ----------
+
+function sumOfPrizes(prizes: ReadonlyArray<number>): number {
+  let s = 0
+  for (const n of prizes) s += n
+  return s
+}
+
+/**
+ * 跟「前一期」(陣列索引 i+1) 比較總和：
+ *   - 比前一期大 → 紅
+ *   - 比前一期小 → 綠
+ *   - 相等或無前期可比 → 預設色
+ */
+function sumCompareClass(current: number | '' | undefined, prev: number | '' | undefined): string {
+  if (current === '' || current == null || prev === '' || prev == null) return 'text-default'
+  if (current > prev) return 'text-rose-600 font-semibold'
+  if (current < prev) return 'text-emerald-600 font-semibold'
+  return 'text-default'
+}
+
+// 新版隔期狀態：每張卡的「展開記錄」狀態（key = period|issue）
+const expandedRecords = ref<Set<string>>(new Set())
+
+function recordKey(period: number, issue: string): string {
+  return `${period}|${issue}`
+}
+
+function isRecordExpanded(period: number, issue: string): boolean {
+  return expandedRecords.value.has(recordKey(period, issue))
+}
+
+function toggleRecord(period: number, issue: string): void {
+  const k = recordKey(period, issue)
+  const next = new Set(expandedRecords.value)
+  if (next.has(k)) next.delete(k)
+  else next.add(k)
+  expandedRecords.value = next
+}
 </script>
 
 <template>
@@ -495,16 +535,19 @@ function tailCellClass(count: number): string {
 
         <USeparator />
 
-        <div class="flex items-center gap-3">
-          <UTabs
-            v-model="subTab"
-            :items="subTabItems"
-            :unmount-on-hide="false"
-            variant="pill"
-            color="neutral"
-            size="sm"
-          />
-          <div class="ml-auto">
+        <div class="flex flex-wrap items-center gap-3">
+          <div class="min-w-0 max-w-full flex-1 sm:flex-initial">
+            <UTabs
+              v-model="subTab"
+              :items="subTabItems"
+              :unmount-on-hide="false"
+              variant="pill"
+              color="neutral"
+              size="sm"
+              :ui="{ list: 'overflow-x-auto max-w-full' }"
+            />
+          </div>
+          <div class="ml-auto shrink-0">
             <USwitch
               v-model="showLegacyAnalysis"
               label="顯示原始分析"
@@ -934,10 +977,10 @@ function tailCellClass(count: number): string {
         class="space-y-2"
       >
         <p class="text-xs text-muted px-1">
-          每期一張卡 · 首位數為紅字 = 該期記錄首位 ≥ 平均（{{ periodsAverage.toFixed(2) }}）· 日期紅字 = 該期歷史上曾命中過
+          每期一張卡 · 首位數紅字 = 該期記錄首位 ≥ 平均（{{ periodsAverage.toFixed(2) }}）· 點首位數可展開完整記錄序列 · 總和顏色：比前一期大→紅、小→綠
         </p>
         <UCard
-          v-for="row in periodsRows"
+          v-for="(row, idx) in periodsRows"
           :key="`pv2-${row.period}-${row.issue}`"
           :ui="{ body: 'p-3 sm:p-4' }"
         >
@@ -963,18 +1006,42 @@ function tailCellClass(count: number): string {
                   {{ row.date || '—' }}
                 </span>
               </div>
-              <span
-                v-if="row.record !== ''"
-                class="text-[10px] text-muted"
-              >
-                首位數
+              <div class="flex items-baseline gap-3 flex-wrap">
                 <span
-                  class="ml-1 font-mono text-base align-baseline"
-                  :class="Number.parseInt(row.record.split(',')[0] || '0', 10) >= periodsAverage ? 'text-rose-600 font-bold' : 'text-default font-semibold'"
+                  v-if="row.prizes.length > 0"
+                  class="text-[10px] text-muted"
                 >
-                  {{ row.record.split(',')[0] }}
+                  總和
+                  <span
+                    class="ml-1 font-mono text-base align-baseline"
+                    :class="sumCompareClass(
+                      sumOfPrizes(row.prizes),
+                      periodsRows[idx + 1] ? sumOfPrizes(periodsRows[idx + 1]!.prizes) : undefined
+                    )"
+                  >
+                    {{ sumOfPrizes(row.prizes) }}
+                  </span>
                 </span>
-              </span>
+                <button
+                  v-if="row.record !== ''"
+                  type="button"
+                  class="text-[10px] text-muted hover:text-default transition-colors cursor-pointer inline-flex items-baseline gap-1"
+                  :aria-expanded="isRecordExpanded(row.period, row.issue)"
+                  @click="toggleRecord(row.period, row.issue)"
+                >
+                  首位數
+                  <span
+                    class="font-mono text-base align-baseline"
+                    :class="Number.parseInt(row.record.split(',')[0] || '0', 10) >= periodsAverage ? 'text-rose-600 font-bold' : 'text-default font-semibold'"
+                  >
+                    {{ row.record.split(',')[0] }}
+                  </span>
+                  <UIcon
+                    :name="isRecordExpanded(row.period, row.issue) ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
+                    class="size-3"
+                  />
+                </button>
+              </div>
             </div>
             <!-- 獎號 chips -->
             <div class="flex flex-wrap items-center gap-1">
@@ -990,6 +1057,32 @@ function tailCellClass(count: number): string {
               >
                 {{ String(n).padStart(2, '0') }}
               </span>
+            </div>
+            <!-- 展開後的完整記錄序列 -->
+            <div
+              v-if="isRecordExpanded(row.period, row.issue) && row.record !== ''"
+              class="border-t border-default pt-2 space-y-1"
+            >
+              <p class="text-[10px] text-muted">
+                完整記錄序列（左為最新、右為較早）
+              </p>
+              <div class="flex flex-wrap gap-x-1.5 gap-y-0.5 font-mono text-[11px]">
+                <span
+                  v-for="(part, partIdx) in row.record.split(',')"
+                  :key="`pv2-${row.period}-${row.issue}-r${partIdx}`"
+                  class="inline-block min-w-5 text-center tabular-nums"
+                  :class="[
+                    partIdx === 0 && Number.parseInt(part || '0', 10) >= periodsAverage
+                      ? 'text-rose-600 font-bold'
+                      : 'text-muted',
+                    Number.parseInt(part || '0', 10) >= periodsAverage && partIdx !== 0
+                      ? 'text-default'
+                      : ''
+                  ]"
+                >
+                  {{ part }}
+                </span>
+              </div>
             </div>
           </div>
         </UCard>
@@ -1009,10 +1102,10 @@ function tailCellClass(count: number): string {
         class="space-y-2"
       >
         <p class="text-xs text-muted px-1">
-          每期一張卡 · 每顆獎號一格、格內顯示「隔期 / 數值 / 位置」三項對齊資訊
+          每期一張卡 · 每顆獎號一格、格內顯示「隔期 / 數值 / 位置」三項對齊資訊 · 隔期總和顏色：比前一期大→紅、小→綠
         </p>
         <UCard
-          v-for="row in relationsRows"
+          v-for="(row, idx) in relationsRows"
           :key="`rv2-${row.issue}`"
           :ui="{ body: 'p-3 sm:p-4' }"
         >
@@ -1027,21 +1120,24 @@ function tailCellClass(count: number): string {
                   {{ row.date || '—' }}
                 </span>
               </div>
-              <UBadge
+              <span
                 v-if="row.sum !== '' && row.sum !== undefined"
-                color="neutral"
-                variant="subtle"
-                size="sm"
-                class="font-mono"
+                class="text-[10px] text-muted"
               >
-                總和 {{ row.sum }}
-              </UBadge>
+                隔期總和
+                <span
+                  class="ml-1 font-mono text-base align-baseline"
+                  :class="sumCompareClass(row.sum, relationsRows[idx + 1]?.sum)"
+                >
+                  {{ row.sum }}
+                </span>
+              </span>
             </div>
             <!-- per-prize cells -->
             <div class="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 gap-1.5">
               <div
-                v-for="(prize, idx) in row.prizes.split(',')"
-                :key="`rv2-${row.issue}-c${idx}`"
+                v-for="(prize, cellIdx) in row.prizes.split(',')"
+                :key="`rv2-${row.issue}-c${cellIdx}`"
                 class="rounded border border-default bg-elevated/20 px-1.5 py-1.5 flex flex-col items-center gap-0.5 text-[11px]"
               >
                 <span class="font-mono text-sm font-semibold">
@@ -1050,11 +1146,11 @@ function tailCellClass(count: number): string {
                 <div class="w-full border-t border-default/60" />
                 <div class="grid grid-cols-[auto_1fr] gap-x-1 gap-y-0 w-full">
                   <span class="text-muted">隔</span>
-                  <span class="font-mono text-right">{{ (row.periods?.split(',')[idx] ?? '').trim() || '—' }}</span>
+                  <span class="font-mono text-right">{{ (row.periods?.split(',')[cellIdx] ?? '').trim() || '—' }}</span>
                   <span class="text-muted">值</span>
-                  <span class="font-mono text-right">{{ (row.values?.split(',')[idx] ?? '').trim() || '—' }}</span>
+                  <span class="font-mono text-right">{{ (row.values?.split(',')[cellIdx] ?? '').trim() || '—' }}</span>
                   <span class="text-muted">位</span>
-                  <span class="font-mono text-right">{{ (row.positions?.split(',')[idx] ?? '').trim() || '—' }}</span>
+                  <span class="font-mono text-right">{{ (row.positions?.split(',')[cellIdx] ?? '').trim() || '—' }}</span>
                 </div>
               </div>
             </div>
