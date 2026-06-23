@@ -12,18 +12,23 @@
  *      - 下一期候選（待開獎）：用 finalState、白底
  *   3. 歷史候選回顧列表（不 sticky）：每期一張卡、4 色標示
  *
- * 候選邏輯（隔期 0..9）：
+ * 候選機制（按隔期分類處理、全程不合併）：
  *   raw = pre-T 該隔期 prizesBefore（sorted asc）
  *   positionYs = 從歷史往前掃、最近一個 slot[j].hits > 0 的 hitPositions
- *   每隔期內過濾：
- *     1) 記錄最新數據 ≤ n（toggle）：slot.recordValueBefore > n → 整支隔期排除
- *     2) 扣位置：raw 中 1-indexed 位置 ∈ positionYs 的號碼移除
- *     3) 扣紅框（僅 j=0）：上兩期共同號（連莊）移除
- *     4) 選偏離（範圍）：保留 deviation ∈ [lower%, upper%]，超出範圍移除
- *   全域選號（greedy）：
- *     - 各隔期過濾後 pool，按 deviation ASC 全域排序
- *     - 逐顆嘗試加入：必須通過「目標顆數截斷」(per-J targetK) 與「位置數量」「全域上限」三類 cap
- *     - 通過 → 加入主推；不通過 → 標 truncated（仍顯示）
+ *
+ *   控制台規則 = 互相獨立的開關、勾哪個就刷哪個、沒有順位關係：
+ *     扣位置：raw 中 1-indexed 位置 ∈ positionYs 的號碼移除
+ *     扣紅框：上兩期共同號（連莊）移除（套用所有隔期、不只 j=0）
+ *     選偏離：保留 deviation ∈ [lower%, upper%]、超出範圍移除
+ *     記錄最新數據：slot.recordValueBefore > n → 整支隔期排除
+ *     目標顆數截斷：每隔期該推幾顆 T、見下方
+ *     位置數量 (posQuota)：sort 公式的 Layer 2 訊號開關、不是過濾
+ *     全域上限 (globalCap)：尾數/連跑/奇偶/40 分區的結構 cap、選號末端再檢查
+ *   多條規則同時排除同一個號 → UI 取第一條當顯示原因、不會重覆扣
+ *
+ *   每隔期內、過濾後 pool 按 score（Layer 1+2）排序、選 top-T → 該隔期主推
+ *   超過 T 的 → 標 truncated（仍顯示）
+ *   全部隔期 picks 蒐齊後、若 globalCap 開 → 按 score 高到低 walk、超過結構 cap 的標 capGlobal
  *
  * 4 色狀態：
  *   命中（主推 + 開出）→ 綠底 solid
@@ -38,7 +43,7 @@
  *   樣本 < SAMPLE_TRUST_THRESHOLD 的 cell → 退回該隔期整體均值
  *   兩者皆無 → T = 0（不推）
  *
- * 排序機制（Layer 1+2、取代 deviation 升冪）：
+ * Sort 機制（Layer 1+2、取代 deviation 升冪）：
  *   score(J, Y) = cellHitRate(J, Y) × (1 + 位置補位 lift × strength)
  *     cellHitRate: 全期 1999 期該 (J, Y) 格的歷史中獎率（主訊號、變異 10x）
  *     位置補位 lift: (基準 - 200 期實際) / 基準（次訊號、posQuota 開啟才生效）
@@ -474,7 +479,7 @@ interface ItemAnnotated extends PoolItem {
 }
 
 /**
- * Phase A：對單一隔期、計算 per-interval 過濾後的標註結果。
+ * 對單一隔期、跑控制台規則（互相獨立、沒有順位）、回傳每顆號碼的過濾標註。
  * 各規則開關控制是否套用該過濾；關閉 → 該扣分一律 false。
  */
 function annotateInterval(
@@ -525,11 +530,11 @@ function annotateInterval(
 }
 
 /**
- * Phase B：全域 greedy 選號。
- *   - 輸入：全部隔期的 ItemAnnotated（已含通過/未通過 per-interval 過濾的標註）
- *   - 通過 per-interval 過濾的 = pool；按 deviation ASC + interval ASC + position ASC 排序
- *   - 逐顆嘗試：先 per-interval targetK cap、再位置 cap、再全域 cap
- *   - 全部通過 → 加入 picks；任一不通過 → 標 truncated/capGlobal
+ * 選號階段：每個啟用的隔期內、各自 sort、各自選 top-T；globalCap 末端再檢查。
+ *   - 輸入：全部啟用隔期的 ItemAnnotated（含過濾標註）
+ *   - 每隔期內、通過控制台規則過濾的號碼按 score 排序（Layer 1+2）、選 top-T
+ *   - 超過 T 的號碼 → 標 truncated（仍會顯示在 UI 上）
+ *   - 全部隔期 top-T 蒐齊後、若 globalCap 開、按 score 高到低走一次、超過結構 cap 的 → 標 capGlobal
  */
 interface SelectionResult {
   pickedNumbers: Set<number>
@@ -581,7 +586,42 @@ function violatesGlobalCap(
   return false
 }
 
-function selectGlobally(
+// score 公式（Layer 1 + Layer 2）：
+//   score(J, Y) = cellHitRate(J, Y) × (1 + 位置補位 lift × strength)
+//     cellHitRate = 全期 1999 期該 (J, Y) 格歷史中獎率（主訊號、~5%-80% 變異 10x）
+//     位置補位 lift = (基準 - 200 期實際) / 基準（次訊號、posQuota 開啟才生效）
+//     strength = clamp(recentN / 200, 0, 1)（recentN 小 → 補位 lift 自動讓位、避免噪音）
+function scoreOf(
+  item: PoolItem,
+  cellHitRate: ReadonlyMap<string, number>,
+  positionActual: ReadonlyArray<number>,
+  posQuotaOn: boolean,
+  regressStrength: number
+): number {
+  const hr = cellHitRate.get(`${item.interval}|${item.position}`) ?? 0
+  if (!posQuotaOn || regressStrength <= 0) return hr
+  const lift = positionRegressionLift(item.position, positionActual)
+  return hr * (1 + lift * regressStrength)
+}
+
+// 同一份排序比較器：score DESC → deviation ASC → interval ASC → position ASC
+function compareByScore(
+  a: PoolItem,
+  b: PoolItem,
+  cellHitRate: ReadonlyMap<string, number>,
+  positionActual: ReadonlyArray<number>,
+  posQuotaOn: boolean,
+  regressStrength: number
+): number {
+  const sa = scoreOf(a, cellHitRate, positionActual, posQuotaOn, regressStrength)
+  const sb = scoreOf(b, cellHitRate, positionActual, posQuotaOn, regressStrength)
+  if (sa !== sb) return sb - sa
+  if (a.deviation !== b.deviation) return a.deviation - b.deviation
+  if (a.interval !== b.interval) return a.interval - b.interval
+  return a.position - b.position
+}
+
+function selectByInterval(
   pools: ReadonlyMap<number, ItemAnnotated[]>,
   targetInfoByInterval: ReadonlyMap<number, TargetInfo>,
   ruleSwitches: RuleSwitches,
@@ -590,12 +630,15 @@ function selectGlobally(
   cellHitRate: ReadonlyMap<string, number>,
   regressStrength: number
 ): SelectionResult {
-  // 收集所有「通過 per-interval 過濾」的候選
-  const candidates: PoolItem[] = []
-  for (const [, items] of pools) {
+  const reject = new Map<number, ExcludedReason>()
+  // step 1: 每個隔期內、收集通過控制台規則的號碼、按 score 排序、選 top-T
+  //         超過 T 的 → 標 truncated
+  const intendedPicks: PoolItem[] = []
+  for (const [j, items] of pools) {
+    const passing: PoolItem[] = []
     for (const it of items) {
       if (it.excludedByPos || it.excludedByCarry || it.excludedByDev || it.excludedByRecord) continue
-      candidates.push({
+      passing.push({
         interval: it.interval,
         n: it.n,
         position: it.position,
@@ -603,64 +646,48 @@ function selectGlobally(
         appearances: it.appearances
       })
     }
-  }
-  // 排序順位（Layer 1+2）：
-  //   1. score = cellHitRate(J,Y) × (1 + 位置補位 lift × strength)
-  //      cellHitRate = 全期 1999 期該 (J, Y) 格歷史中獎率（主訊號、~5%-80% 變異 10x）
-  //      位置補位 lift = (基準 - 200 期實際) / 基準（次訊號、posQuota 開啟才生效）
-  //      strength = clamp(recentN / 200, 0, 1)（recentN 小 → 補位 lift 自動讓位、避免噪音）
-  //   2. deviation ASC（穩定 tiebreaker）
-  //   3. interval ASC、position ASC（防抖）
-  candidates.sort((a, b) => {
-    const hra = cellHitRate.get(`${a.interval}|${a.position}`) ?? 0
-    const hrb = cellHitRate.get(`${b.interval}|${b.position}`) ?? 0
-    let scoreA = hra
-    let scoreB = hrb
-    if (ruleSwitches.posQuota && regressStrength > 0) {
-      const liftA = positionRegressionLift(a.position, positionActual)
-      const liftB = positionRegressionLift(b.position, positionActual)
-      scoreA = hra * (1 + liftA * regressStrength)
-      scoreB = hrb * (1 + liftB * regressStrength)
-    }
-    if (scoreA !== scoreB) return scoreB - scoreA
-    if (a.deviation !== b.deviation) return a.deviation - b.deviation
-    if (a.interval !== b.interval) return a.interval - b.interval
-    return a.position - b.position
-  })
-
-  const picks: PoolItem[] = []
-  const pickedSet = new Set<number>()
-  const intervalCount = new Map<number, number>()
-  const reject = new Map<number, ExcludedReason>()
-
-  for (const cand of candidates) {
-    // step 5: per-interval 目標顆數截斷（T 來自 lookup table、由 bias 取整）
-    if (ruleSwitches.target) {
-      const info = targetInfoByInterval.get(cand.interval)
-      const cap = info?.target ?? 0
-      const cur = intervalCount.get(cand.interval) ?? 0
-      if (cur + 1 > cap) {
-        reject.set(cand.n, 'truncated')
-        continue
+    passing.sort((a, b) => compareByScore(
+      a, b, cellHitRate, positionActual, ruleSwitches.posQuota, regressStrength
+    ))
+    // 目標顆數截斷：rules.target 開 → 取 lookup table 算出的 T；關 → 不截、全收
+    const T = ruleSwitches.target
+      ? (targetInfoByInterval.get(j)?.target ?? 0)
+      : passing.length
+    for (let i = 0; i < passing.length; i++) {
+      const item = passing[i]!
+      if (i < T) {
+        intendedPicks.push(item)
+      } else {
+        reject.set(item.n, 'truncated')
       }
     }
-    // step 8: 全域上限
-    if (ruleSwitches.globalCap && violatesGlobalCap(picks, cand, ruleParams)) {
+  }
+
+  // step 2: 末端結構檢查 — globalCap 關 → 直接全收；開 → 按 score 高到低 walk、超過 cap 的標 capGlobal
+  const pickedSet = new Set<number>()
+  if (!ruleSwitches.globalCap) {
+    for (const p of intendedPicks) pickedSet.add(p.n)
+    return { pickedNumbers: pickedSet, rejectReason: reject }
+  }
+  intendedPicks.sort((a, b) => compareByScore(
+    a, b, cellHitRate, positionActual, ruleSwitches.posQuota, regressStrength
+  ))
+  const accepted: PoolItem[] = []
+  for (const cand of intendedPicks) {
+    if (violatesGlobalCap(accepted, cand, ruleParams)) {
       reject.set(cand.n, 'capGlobal')
       continue
     }
-    picks.push(cand)
+    accepted.push(cand)
     pickedSet.add(cand.n)
-    intervalCount.set(cand.interval, (intervalCount.get(cand.interval) ?? 0) + 1)
   }
-
   return { pickedNumbers: pickedSet, rejectReason: reject }
 }
 
 const DEVIATION_LOW_THRESHOLD = -0.05
 
 /**
- * Phase C：把 annotated items + 選號結果包成 CandidateRow（給 UI 顯示）。
+ * 把 annotated items + 選號結果包成 CandidateRow（給 UI 顯示）。
  */
 function buildRowsFromSelection(
   perIntervalItems: ReadonlyMap<number, ItemAnnotated[]>,
@@ -689,9 +716,9 @@ function buildRowsFromSelection(
     const cells: NumberCell[] = []
     for (const item of items) {
       let excludedBy: ExcludedReason | undefined
-      // 使用者拍板過濾順位（步驟 2 → 3 → 4 → 7）：
-      //   2 recordLatest → 3 紅框 (carryover) → 4 deviation → 7 position
-      // 同一個號被多條規則同時排除時、只算第一條 = 不會重覆扣
+      // 控制台規則互相獨立、沒有順位；同一個號被多條規則同時排除時、
+      // UI 顯示原因只取第一個成立的（avoid double-count）。
+      // 展示順序：recordLatest → carryover → deviation → position（純顯示順、非規則順位）
       if (item.excludedByRecord) {
         excludedBy = 'recordLatest'
         removedByRecord++
@@ -841,7 +868,7 @@ function buildDrawRows(
 
   // Layer 2 強度：recentN 小 → 位置補位 lift 自動讓位
   const regressStrength = Math.min(1, Math.max(0, recentN.value / POSITION_BENCHMARK_RECENT_N))
-  const selection = selectGlobally(
+  const selection = selectByInterval(
     perIntervalItems,
     targetInfoByInterval,
     rules,
