@@ -31,11 +31,10 @@
  *   漏（非主推 + 開出 = 規則殺錯）→ 紅底 solid
  *   過濾正確（非主推 + 沒開）→ 灰底劃線 dimmed
  *
- * 目標顆數截斷（C 方案、使用者拍板）：
- *   T(j, raw) 直接讀 buildIntervalRemainingTable 的 mean、按 bias 取整：
- *     - ceil   = 重涵蓋率（預設、減少漏紅、推薦給多抓 hit 的場景）
- *     - round  = 標準
- *     - floor  = 重精準率
+ * 目標顆數截斷（C 方案 + A 方案 offset）：
+ *   T(j, raw) = applyBias(lookup mean, bias) + offset、上限 = raw
+ *     bias: ceil(重涵蓋率) / round(標準) / floor(重精準率)
+ *     offset: 0-10、加在 bias 結果上、解 T cap 砍掉的池內漏
  *   樣本 < SAMPLE_TRUST_THRESHOLD 的 cell → 退回該隔期整體均值
  *   兩者皆無 → T = 0（不推）
  *
@@ -111,6 +110,8 @@ interface RuleParams {
   recordLatestMax: number
   /** 目標顆數偏向 — 從 lookup table 算 T 後的取整方式 */
   targetBias: TargetBias
+  /** 目標顆數偏移 — 在 bias 取整後再加 N、用來解 T cap 砍掉的池內漏 */
+  targetOffset: number
   /** 任一尾數 ≤（80 個號碼裡每尾數有 8 個、預設 6 = 留些餘地） */
   tailCap: number
   /** 連跑 ≤（排序後最長連號串、預設 4 = 允許至多 4 連、5 連即拒） */
@@ -131,6 +132,7 @@ const DEFAULT_PARAMS: Readonly<RuleParams> = Object.freeze({
   deviationLowerPct: -5,
   recordLatestMax: 1,
   targetBias: 'ceil',
+  targetOffset: 0,
   tailCap: 6,
   consecutiveCap: 4,
   oddCap: 13,
@@ -308,21 +310,37 @@ function applyBias(mean: number, bias: TargetBias): number {
   return Math.max(0, t)
 }
 
+// T = applyBias(mean, bias) + offset，clamp to rawLen (不能超過 raw 池本身)
+function applyTargetFormula(mean: number, bias: TargetBias, offset: number, rawLen: number): number {
+  const base = applyBias(mean, bias)
+  const safeOffset = Number.isFinite(offset) ? Math.max(0, Math.floor(offset)) : 0
+  return Math.min(rawLen, base + safeOffset)
+}
+
 function computeTargetInfo(
   j: number,
   rawLen: number,
   bias: TargetBias,
+  offset: number,
   lookup: ReadonlyMap<string, IntervalRemainingCell>,
   fallback: ReadonlyMap<number, number>
 ): TargetInfo {
   if (rawLen <= 0) return { target: 0, sourceMean: 0, source: 'none' }
   const cell = lookup.get(`${j}|${rawLen}`)
   if (cell && cell.sampleCount >= TARGET_SAMPLE_TRUST) {
-    return { target: applyBias(cell.meanHits, bias), sourceMean: cell.meanHits, source: 'cell' }
+    return {
+      target: applyTargetFormula(cell.meanHits, bias, offset, rawLen),
+      sourceMean: cell.meanHits,
+      source: 'cell'
+    }
   }
   const fb = fallback.get(j)
   if (fb !== undefined) {
-    return { target: applyBias(fb, bias), sourceMean: fb, source: 'fallback' }
+    return {
+      target: applyTargetFormula(fb, bias, offset, rawLen),
+      sourceMean: fb,
+      source: 'fallback'
+    }
   }
   return { target: 0, sourceMean: 0, source: 'none' }
 }
@@ -818,7 +836,7 @@ function buildDrawRows(
   const fallback = intervalFallbackMean.value
   for (const j of activeIntervals.value) {
     const rawLen = rawLengthByInterval.get(j) ?? 0
-    targetInfoByInterval.set(j, computeTargetInfo(j, rawLen, params.targetBias, lookup, fallback))
+    targetInfoByInterval.set(j, computeTargetInfo(j, rawLen, params.targetBias, params.targetOffset, lookup, fallback))
   }
 
   // Layer 2 強度：recentN 小 → 位置補位 lift 自動讓位
@@ -1168,7 +1186,7 @@ const stickyStyle = computed(() => ({
                 · 該隔期 pre-T 數值 ≤ 上限才入池、超過則整支隔期排除
               </span>
             </div>
-            <!-- 目標顆數偏向（C 方案） -->
+            <!-- 目標顆數偏向（C 方案）+ offset（A 方案、解 T cap 池內漏） -->
             <div class="flex items-baseline gap-2 flex-wrap">
               <span class="text-muted">目標顆數偏向</span>
               <div class="inline-flex rounded border border-default overflow-hidden text-[11px]">
@@ -1185,8 +1203,20 @@ const stickyStyle = computed(() => ({
                   {{ bias === 'ceil' ? '重涵蓋率 (ceil)' : bias === 'round' ? '標準 (round)' : '重精準率 (floor)' }}
                 </button>
               </div>
+              <label class="flex items-center gap-1">
+                <span class="text-[10px] text-muted">offset +</span>
+                <UInput
+                  v-model.number="params.targetOffset"
+                  type="number"
+                  :min="0"
+                  :max="10"
+                  step="1"
+                  size="sm"
+                  class="w-16"
+                />
+              </label>
               <span class="text-[10px] text-muted">
-                · T = bias(lookup mean) · 樣本 &lt; {{ TARGET_SAMPLE_TRUST }} 退回該隔期均值
+                · T = bias(mean) + offset、上限 = raw 池大小
               </span>
             </div>
             <!-- 位置數量基準對照（過去 N 期實際 vs 基準佔比） -->
