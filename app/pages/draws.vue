@@ -389,10 +389,29 @@ function tailCellClass(count: number): string {
 
 // ---------- 新版分頁的純 UI 輔助（不修改任何分析邏輯） ----------
 
-function sumOfPrizes(prizes: ReadonlyArray<number>): number {
-  let s = 0
-  for (const n of prizes) s += n
-  return s
+/**
+ * 從 history 建一個 issue → 該期實際開出獎號加總 的查表。
+ * periodsRows[i].prizes 對 隔期 1+ 是「扣掉被後續期數中過的號之後的剩餘」、
+ * 不是該期實際開出的全部號，因此「總和」要回頭從 history 拿原始開出號才正確。
+ */
+const drawnSumByIssue = computed<Map<string, number>>(() => {
+  const m = new Map<string, number>()
+  const h = analysisState.value?.history ?? []
+  for (const entry of h) {
+    if (!entry.issue) continue
+    let sum = 0
+    for (const part of entry.prizes.split(',')) {
+      const n = Number.parseInt(part.trim(), 10)
+      if (Number.isFinite(n)) sum += n
+    }
+    m.set(entry.issue, sum)
+  }
+  return m
+})
+
+function drawnSumOf(issue: string | undefined | null): number | undefined {
+  if (!issue) return undefined
+  return drawnSumByIssue.value.get(issue)
 }
 
 /**
@@ -1008,18 +1027,15 @@ function toggleRecord(period: number, issue: string): void {
               </div>
               <div class="flex items-baseline gap-3 flex-wrap">
                 <span
-                  v-if="row.prizes.length > 0"
+                  v-if="drawnSumOf(row.issue) !== undefined"
                   class="text-[10px] text-muted"
                 >
                   總和
                   <span
                     class="ml-1 font-mono text-base align-baseline"
-                    :class="sumCompareClass(
-                      sumOfPrizes(row.prizes),
-                      periodsRows[idx + 1] ? sumOfPrizes(periodsRows[idx + 1]!.prizes) : undefined
-                    )"
+                    :class="sumCompareClass(drawnSumOf(row.issue), drawnSumOf(periodsRows[idx + 1]?.issue))"
                   >
-                    {{ sumOfPrizes(row.prizes) }}
+                    {{ drawnSumOf(row.issue) }}
                   </span>
                 </span>
                 <button
