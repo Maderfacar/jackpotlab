@@ -14,17 +14,18 @@ setGlobalOptions({
 })
 
 /**
- * 賓果賓果 — 每 1 分鐘 poll。
- * 官方 5 分鐘一期，我們 1 分鐘 poll 保證 lag < 90s。
+ * 賓果賓果 — 已停用（2026-07-19），省 Firestore 用量。
+ * 恢復方式：取消下面註解後 `firebase deploy --only functions:scrapeBingoBingo`。
+ * 原規格：每 1 分鐘 poll；官方 5 分鐘一期，1 分鐘 poll 保證 lag < 90s。
  * 同期重複寫不會出問題（doc id 是 drawTerm，set 是 upsert）。
  */
-export const scrapeBingoBingo = onSchedule({
-  schedule: 'every 1 minutes',
-  timeZone: 'Asia/Taipei'
-}, async () => {
-  const outcome = await scrapeAndStore('bingo_bingo')
-  logger.info('scrapeBingoBingo done', outcome)
-})
+// export const scrapeBingoBingo = onSchedule({
+//   schedule: 'every 1 minutes',
+//   timeZone: 'Asia/Taipei'
+// }, async () => {
+//   const outcome = await scrapeAndStore('bingo_bingo')
+//   logger.info('scrapeBingoBingo done', outcome)
+// })
 
 /**
  * 今彩 539 — 每日 20:30 開獎，20:00 - 23:55 每 5 分鐘 retry。
