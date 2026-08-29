@@ -352,6 +352,11 @@ function pad2(n: number): string {
       </UCard>
     </div>
 
+    <SignalsObservationCards
+      v-if="rows.length > 0"
+      :rows="rows"
+    />
+
     <p class="text-xs text-muted">
       誠實註記：B1／B2／C1／C2 屬「極端值往中間帶回歸」型規則 — 數字是真的、穩定度是真的，但它們描述的是欄位行為、不直接指向特定號碼。命中率隨載入視窗即時重算，失手照登不藏。
     </p>
