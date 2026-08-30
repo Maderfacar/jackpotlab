@@ -67,14 +67,14 @@ function dirWord(dir: 1 | -1 | 0 | null): string {
           ① 這五顆從哪來（slot／位置／數值／尾數）
         </h3>
         <div class="overflow-x-auto">
-          <table class="w-full min-w-md text-sm">
+          <table class="w-full text-sm">
             <thead>
               <tr class="border-b border-default text-left text-xs text-muted">
                 <th class="py-1.5 pr-3 font-medium">
                   獎號
                 </th>
                 <th class="py-1.5 pr-3 font-medium">
-                  來自 slot（隔幾期）
+                  來自 slot
                 </th>
                 <th class="py-1.5 pr-3 font-medium">
                   位置 x-y
@@ -232,20 +232,20 @@ function dirWord(dir: 1 | -1 | 0 | null): string {
           「記錄值」= 這個 slot 位置距上次開出獎號幾期（跟 /draws 表的「記錄」第一個數字同一個東西）。全部 slot 的平均是 {{ slotAlerts.avg.toFixed(1) }}，下面列出超過平均的、值大的排前面。注意：越深的 slot 本來就越難開（號碼多半早被撈走），所以深處的值天生偏大 — 比較有感的是「歷史新高」標記：這個位置現在的值比它自己過去每一輪都大。
         </p>
         <div class="overflow-x-auto">
-          <table class="w-full min-w-md text-sm">
+          <table class="w-full text-sm">
             <thead>
               <tr class="border-b border-default text-left text-xs text-muted">
                 <th class="py-1.5 pr-3 font-medium">
                   slot
                 </th>
                 <th class="py-1.5 pr-3 font-medium">
-                  期別（日期）
+                  期別
                 </th>
                 <th class="py-1.5 pr-3 font-medium">
-                  已 N 期沒開
+                  沒開期數
                 </th>
                 <th class="py-1.5 pr-3 font-medium">
-                  自己過去最高
+                  過去最高
                 </th>
                 <th class="py-1.5 font-medium">
                   剩餘號碼
@@ -262,7 +262,8 @@ function dirWord(dir: 1 | -1 | 0 | null): string {
                   {{ a.slot }}
                 </td>
                 <td class="py-1.5 pr-3 text-xs">
-                  {{ a.issue }}（{{ a.date }}）
+                  <span class="font-mono">{{ a.issue }}</span>
+                  <span class="block text-muted">{{ a.date }}</span>
                 </td>
                 <td class="py-1.5 pr-3">
                   <span class="font-mono font-semibold">{{ a.current }}</span>
@@ -414,6 +415,9 @@ function dirWord(dir: 1 | -1 | 0 | null): string {
         </h3>
         <p class="text-xs text-muted">
           每顆獎號（由小到大）歷史上的 y 值分布、來源 slot 遠近分布（近 = 隔 0-5 期、中 = 6-10、遠 = 11 期以上），加上本期實際落點。
+        </p>
+        <p class="text-[10px] text-muted sm:hidden">
+          ← 表格可左右滑動 →
         </p>
         <div class="overflow-x-auto">
           <table class="w-full min-w-lg text-sm">

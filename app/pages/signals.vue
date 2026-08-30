@@ -468,7 +468,7 @@ function pad2(n: number): string {
                 這期湊成條件的五顆獎號（含 /draws 表的完整身份）：
               </p>
               <div class="overflow-x-auto">
-                <table class="w-full min-w-md text-xs">
+                <table class="w-full text-xs">
                   <thead>
                     <tr class="border-b border-default text-left text-muted">
                       <th class="py-1 pr-3 font-medium">
