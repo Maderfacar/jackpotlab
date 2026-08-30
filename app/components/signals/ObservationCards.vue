@@ -2,6 +2,9 @@
 /**
  * 觀察卡區塊（六張走勢／頻率卡）。
  * 計算全部在 app/signals/observations.ts；本元件只負責渲染。
+ *
+ * 2026-08-30 改版：預設收合 — 每張卡平時只露「白話標題 + 一行關鍵數字」，
+ * 點開才看完整分布與走勢帶。文案白話化，術語不上頁面。
  */
 
 import type { SignalRow } from '~/signals/types'
@@ -22,8 +25,21 @@ const valueZero = computed(() => buildValueZero(props.rows))
 
 const recentPairEvents = computed(() => [...tails.value.pairEvents].slice(-8).reverse())
 
+const expanded = ref<Set<string>>(new Set())
+
+function toggle(id: string): void {
+  const next = new Set(expanded.value)
+  if (next.has(id)) next.delete(id)
+  else next.add(id)
+  expanded.value = next
+}
+
 function pct(v: number | null | undefined): string {
   return v == null ? '—' : `${(v * 100).toFixed(1)}%`
+}
+
+function ratio(part: number, total: number): string {
+  return total > 0 ? pct(part / total) : '—'
 }
 
 function num1(v: number | null): string {
@@ -34,12 +50,16 @@ function mmdd(date: string): string {
   return date.length >= 10 ? date.slice(5) : date
 }
 
+function pad2(n: number): string {
+  return String(n).padStart(2, '0')
+}
+
 const PAIR_NEXT_LABEL: Record<TailPairNext, string> = {
-  'pair-carry': '同尾成對・連莊',
-  'pair-fresh': '同尾成對・全新兩顆',
+  'pair-carry': '又成對・帶到原本的號',
+  'pair-fresh': '又成對・換了兩顆新號',
   'single': '該尾只出 1 顆',
   'none': '該尾沒出',
-  'pending': '下期未開'
+  'pending': '下期還沒開'
 }
 
 const PAIR_NEXT_COLOR: Record<TailPairNext, 'success' | 'info' | 'neutral' | 'warning'> = {
@@ -50,29 +70,84 @@ const PAIR_NEXT_COLOR: Record<TailPairNext, 'success' | 'info' | 'neutral' | 'wa
   'pending': 'warning'
 }
 
-function pad2(n: number): string {
-  return String(n).padStart(2, '0')
+/** 各卡標題 + 一行摘要（即時計算） */
+const cardSummaries = computed(() => {
+  const oe = [...oddEven.value.dist].sort((a, b) => b.count - a.count).slice(0, 2)
+  const ps = prizeSum.value
+  const t = tails.value
+  const gb = gapBuckets.value.totalDist
+  const vf = valueFreq.value.freqs
+  const vz = valueZero.value
+  const pairRate = t.pairJudged > 0
+    ? (t.pairNextPairCarry + t.pairNextPairFresh) / t.pairJudged
+    : null
+  return {
+    oddEven: `最常見：${oe.map(d => `${d.label} ${pct(d.pct)}`).join('、')}`,
+    prizeSum: `平均 ${ps.mean.toFixed(0)} · 常見範圍 ${ps.p10}–${ps.p90} · 下期走反方向 ${ratio(ps.alternation.flips, ps.alternation.pairs)}`,
+    tails: `跟上期完全不同尾只佔 ${pct(t.noRepeatRate)} · 兩顆同尾後下期又成對只有 ${pct(pairRate)}`,
+    gapBuckets: gb.map(d => `${d.label} 期前 ${pct(d.pct)}`).join(' · '),
+    valueFreq: `0 佔 ${pct(vf[0]?.pct)} · 1 佔 ${pct(vf[1]?.pct)} · 超過 5 佔 ${pct(vf.at(-1)?.pct)}`,
+    valueZero: `${pct(vz.periodsWithZeroRate)} 的期至少有一顆數值 0`
+  }
+})
+
+interface CardDef {
+  id: string
+  title: string
+  summaryKey: 'oddEven' | 'prizeSum' | 'tails' | 'gapBuckets' | 'valueFreq' | 'valueZero'
 }
+
+const CARDS: CardDef[] = [
+  { id: 'odd-even', title: '每期幾個單數、幾個雙數', summaryKey: 'oddEven' },
+  { id: 'prize-sum', title: '五顆獎號加起來的總和', summaryKey: 'prizeSum' },
+  { id: 'tails', title: '尾數：不同尾 & 兩顆同尾之後', summaryKey: 'tails' },
+  { id: 'gap-buckets', title: '獎號從多久以前來（近／中／遠）', summaryKey: 'gapBuckets' },
+  { id: 'value-freq', title: '數值 0～5 各出現多少', summaryKey: 'valueFreq' },
+  { id: 'value-zero', title: '數值 0 多常出現', summaryKey: 'valueZero' }
+]
 </script>
 
 <template>
-  <div class="space-y-4">
-    <h2 class="text-xl font-semibold tracking-tight">
-      觀察卡
-    </h2>
-    <p class="text-xs text-muted">
-      走勢／頻率型：無亮燈與命中判定，把載入視窗內的分布、間隔與近期走勢如實攤開。走勢帶由左（舊）到右（新）。
-    </p>
+  <UCard>
+    <template #header>
+      <div class="space-y-1">
+        <p class="font-semibold">
+          觀察卡
+        </p>
+        <p class="text-xs text-muted">
+          沒有亮燈、單純把規律攤開看的統計。每張平時只露一行重點，點開看完整分布；走勢帶由左（舊）到右（新）。
+        </p>
+      </div>
+    </template>
 
-    <div class="grid gap-4 lg:grid-cols-2">
-      <!-- 1. 單雙數 -->
-      <UCard>
-        <template #header>
-          <p class="font-semibold">
-            1 單雙數分布與走勢
-          </p>
-        </template>
-        <div class="space-y-3 text-sm">
+    <ul class="divide-y divide-default">
+      <li
+        v-for="card in CARDS"
+        :key="card.id"
+        class="py-3"
+      >
+        <!-- 收合列 -->
+        <div
+          class="flex cursor-pointer flex-wrap items-center gap-2"
+          @click="toggle(card.id)"
+        >
+          <span class="text-sm font-medium">{{ card.title }}</span>
+          <span class="text-xs text-muted">{{ cardSummaries[card.summaryKey] }}</span>
+          <UButton
+            color="neutral"
+            variant="ghost"
+            size="xs"
+            class="ml-auto"
+            :icon="expanded.has(card.id) ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
+            :aria-label="expanded.has(card.id) ? '收合' : '展開'"
+          />
+        </div>
+
+        <!-- 1. 單雙數 -->
+        <div
+          v-if="card.id === 'odd-even' && expanded.has(card.id)"
+          class="mt-3 space-y-3 rounded-lg bg-elevated/50 p-3 text-sm"
+        >
           <div class="flex flex-wrap gap-2">
             <UBadge
               v-for="d in oddEven.dist"
@@ -84,7 +159,7 @@ function pad2(n: number): string {
             </UBadge>
           </div>
           <p class="text-xs text-muted">
-            單數顆數與前期比的反向率：{{ pct(oddEven.alternation.pairs > 0 ? oddEven.alternation.flips / oddEven.alternation.pairs : null) }}（{{ oddEven.alternation.flips }}/{{ oddEven.alternation.pairs }}）
+            單數顆數跟前一期比、方向相反的比例：{{ ratio(oddEven.alternation.flips, oddEven.alternation.pairs) }}（{{ oddEven.alternation.flips }}/{{ oddEven.alternation.pairs }}）
           </p>
           <div class="flex flex-wrap gap-1">
             <span
@@ -97,38 +172,34 @@ function pad2(n: number): string {
             </span>
           </div>
         </div>
-      </UCard>
 
-      <!-- 2. 獎號總和 -->
-      <UCard>
-        <template #header>
-          <p class="font-semibold">
-            2 獎號總和走勢（五顆號碼加總）
-          </p>
-        </template>
-        <div class="space-y-3 text-sm">
+        <!-- 2. 獎號總和 -->
+        <div
+          v-if="card.id === 'prize-sum' && expanded.has(card.id)"
+          class="mt-3 space-y-3 rounded-lg bg-elevated/50 p-3 text-sm"
+        >
           <div class="flex flex-wrap gap-2">
             <UBadge
               color="neutral"
               variant="subtle"
             >
-              mean {{ prizeSum.mean.toFixed(1) }} · median {{ prizeSum.median }}
+              平均 {{ prizeSum.mean.toFixed(1) }} · 中位 {{ prizeSum.median }}
             </UBadge>
             <UBadge
               color="neutral"
               variant="subtle"
             >
-              P10 {{ prizeSum.p10 }} · P90 {{ prizeSum.p90 }}
+              常見範圍（八成落在）{{ prizeSum.p10 }}–{{ prizeSum.p90 }}
             </UBadge>
             <UBadge
               color="neutral"
               variant="subtle"
             >
-              min {{ prizeSum.min }} · max {{ prizeSum.max }}
+              最小 {{ prizeSum.min }} · 最大 {{ prizeSum.max }}
             </UBadge>
           </div>
           <p class="text-xs text-muted">
-            與前期比的反向率：{{ pct(prizeSum.alternation.pairs > 0 ? prizeSum.alternation.flips / prizeSum.alternation.pairs : null) }}（{{ prizeSum.alternation.flips }}/{{ prizeSum.alternation.pairs }}）
+            跟前一期比、方向相反的比例：{{ ratio(prizeSum.alternation.flips, prizeSum.alternation.pairs) }}（{{ prizeSum.alternation.flips }}/{{ prizeSum.alternation.pairs }}）
           </p>
           <div class="flex flex-wrap gap-2 text-xs">
             <span
@@ -136,7 +207,7 @@ function pad2(n: number): string {
               :key="r.label"
               class="text-muted"
             >
-              {{ r.label }}：{{ r.count }}（{{ pct(r.pct) }}）
+              {{ r.label }}：{{ r.count }} 段（{{ pct(r.pct) }}）
             </span>
           </div>
           <div class="flex flex-wrap gap-1">
@@ -150,19 +221,15 @@ function pad2(n: number): string {
             </span>
           </div>
         </div>
-      </UCard>
 
-      <!-- 3. 尾數 -->
-      <UCard class="lg:col-span-2">
-        <template #header>
-          <p class="font-semibold">
-            3 尾數：無重覆尾間隔 + 恰兩顆同尾追蹤
-          </p>
-        </template>
-        <div class="space-y-4 text-sm">
+        <!-- 3. 尾數 -->
+        <div
+          v-if="card.id === 'tails' && expanded.has(card.id)"
+          class="mt-3 space-y-4 rounded-lg bg-elevated/50 p-3 text-sm"
+        >
           <div class="space-y-2">
             <p class="text-xs font-medium text-muted">
-              與上一期完全無重覆尾數
+              五顆獎號的尾數，跟上一期完全沒有重覆
             </p>
             <div class="flex flex-wrap gap-2">
               <UBadge
@@ -175,14 +242,14 @@ function pad2(n: number): string {
                 color="neutral"
                 variant="subtle"
               >
-                平均間隔 {{ num1(tails.noRepeatIntervalMean) }} 期 · 最長 {{ tails.noRepeatIntervalMax ?? '—' }} 期
+                平均 {{ num1(tails.noRepeatIntervalMean) }} 期一次 · 最久 {{ tails.noRepeatIntervalMax ?? '—' }} 期沒出現
               </UBadge>
               <UBadge
                 v-if="tails.lastNoRepeat"
                 color="neutral"
                 variant="subtle"
               >
-                最近一次 {{ tails.lastNoRepeat.issue }}（{{ tails.lastNoRepeat.date }}）· 距今 {{ tails.sinceLastNoRepeat }} 期
+                最近一次 {{ tails.lastNoRepeat.issue }}（{{ tails.lastNoRepeat.date }}）· 已隔 {{ tails.sinceLastNoRepeat }} 期
               </UBadge>
             </div>
           </div>
@@ -191,32 +258,32 @@ function pad2(n: number): string {
 
           <div class="space-y-2">
             <p class="text-xs font-medium text-muted">
-              恰兩顆同尾（≥3 顆同尾不計）後，下一期該尾的狀況（已判定 {{ tails.pairJudged }} 次）
+              某期剛好兩顆同尾（三顆以上不算）→ 下一期那個尾的狀況（共 {{ tails.pairJudged }} 次）
             </p>
             <div class="flex flex-wrap gap-2">
               <UBadge
                 color="success"
                 variant="subtle"
               >
-                同尾成對・連莊 {{ tails.pairNextPairCarry }}（{{ pct(tails.pairJudged > 0 ? tails.pairNextPairCarry / tails.pairJudged : null) }}）
+                又成對・帶到原本的號 {{ tails.pairNextPairCarry }}（{{ ratio(tails.pairNextPairCarry, tails.pairJudged) }}）
               </UBadge>
               <UBadge
                 color="info"
                 variant="subtle"
               >
-                同尾成對・全新兩顆 {{ tails.pairNextPairFresh }}（{{ pct(tails.pairJudged > 0 ? tails.pairNextPairFresh / tails.pairJudged : null) }}）
+                又成對・換兩顆新號 {{ tails.pairNextPairFresh }}（{{ ratio(tails.pairNextPairFresh, tails.pairJudged) }}）
               </UBadge>
               <UBadge
                 color="neutral"
                 variant="subtle"
               >
-                只出 1 顆 {{ tails.pairNextSingle }}（{{ pct(tails.pairJudged > 0 ? tails.pairNextSingle / tails.pairJudged : null) }}）
+                只出 1 顆 {{ tails.pairNextSingle }}（{{ ratio(tails.pairNextSingle, tails.pairJudged) }}）
               </UBadge>
               <UBadge
                 color="neutral"
                 variant="subtle"
               >
-                沒出 {{ tails.pairNextNone }}（{{ pct(tails.pairJudged > 0 ? tails.pairNextNone / tails.pairJudged : null) }}）
+                沒出 {{ tails.pairNextNone }}（{{ ratio(tails.pairNextNone, tails.pairJudged) }}）
               </UBadge>
             </div>
             <ul class="space-y-1.5 text-xs">
@@ -250,16 +317,15 @@ function pad2(n: number): string {
             </ul>
           </div>
         </div>
-      </UCard>
 
-      <!-- 4. 隔期分桶 -->
-      <UCard>
-        <template #header>
-          <p class="font-semibold">
-            4 隔期分桶（0-5 / 6-10 / 11+）
+        <!-- 4. 隔期分桶 -->
+        <div
+          v-if="card.id === 'gap-buckets' && expanded.has(card.id)"
+          class="mt-3 space-y-3 rounded-lg bg-elevated/50 p-3 text-sm"
+        >
+          <p class="text-xs text-muted">
+            每顆獎號都能回溯到它上一次出現是幾期前（= 隔期）。這裡分三段：0-5 期前（近）、6-10 期前（中）、11 期以上（遠）。
           </p>
-        </template>
-        <div class="space-y-3 text-sm">
           <div class="flex flex-wrap gap-2">
             <UBadge
               v-for="d in gapBuckets.totalDist"
@@ -267,15 +333,15 @@ function pad2(n: number): string {
               color="primary"
               variant="subtle"
             >
-              隔 {{ d.label }} 期：{{ d.count }} 顆（{{ pct(d.pct) }}）
+              {{ d.label }} 期前：{{ d.count }} 顆（{{ pct(d.pct) }}）
             </UBadge>
           </div>
           <p class="text-xs text-muted">
-            每期平均：0-5 佔 {{ gapBuckets.perPeriodAvg.low.toFixed(2) }} 顆 · 6-10 佔 {{ gapBuckets.perPeriodAvg.mid.toFixed(2) }} 顆 · 11+ 佔 {{ gapBuckets.perPeriodAvg.high.toFixed(2) }} 顆
+            平均每期五顆裡：近 {{ gapBuckets.perPeriodAvg.low.toFixed(2) }} 顆 · 中 {{ gapBuckets.perPeriodAvg.mid.toFixed(2) }} 顆 · 遠 {{ gapBuckets.perPeriodAvg.high.toFixed(2) }} 顆
           </p>
           <div class="space-y-1 text-xs">
             <p class="font-medium text-muted">
-              常見組成（低-中-高 顆數）：
+              常見組成（近-中-遠 顆數）：
             </p>
             <div class="flex flex-wrap gap-2">
               <span
@@ -298,16 +364,12 @@ function pad2(n: number): string {
             </span>
           </div>
         </div>
-      </UCard>
 
-      <!-- 5. 數值 0-5 頻率 -->
-      <UCard>
-        <template #header>
-          <p class="font-semibold">
-            5 數值 0～5 出現頻率
-          </p>
-        </template>
-        <div class="space-y-3 text-sm">
+        <!-- 5. 數值頻率 -->
+        <div
+          v-if="card.id === 'value-freq' && expanded.has(card.id)"
+          class="mt-3 space-y-3 rounded-lg bg-elevated/50 p-3 text-sm"
+        >
           <div class="flex flex-wrap gap-2">
             <UBadge
               v-for="f in valueFreq.freqs"
@@ -315,51 +377,47 @@ function pad2(n: number): string {
               :color="f.label === '>5' ? 'neutral' : 'primary'"
               variant="subtle"
             >
-              數值 {{ f.label }}：{{ f.count }} 顆（{{ pct(f.pct) }}）
+              數值 {{ f.label === '>5' ? '超過 5' : f.label }}：{{ f.count }} 顆（{{ pct(f.pct) }}）
             </UBadge>
           </div>
           <p class="text-xs text-muted">
-            分母 = 視窗內全部 {{ valueFreq.totalNums }} 顆獎號的數值。
+            分母 = 載入歷史裡全部 {{ valueFreq.totalNums }} 顆獎號的數值。
           </p>
         </div>
-      </UCard>
 
-      <!-- 6. 數值0 規律 -->
-      <UCard class="lg:col-span-2">
-        <template #header>
-          <p class="font-semibold">
-            6 數值0 的出現規律
-          </p>
-        </template>
-        <div class="space-y-3 text-sm">
+        <!-- 6. 數值0 -->
+        <div
+          v-if="card.id === 'value-zero' && expanded.has(card.id)"
+          class="mt-3 space-y-3 rounded-lg bg-elevated/50 p-3 text-sm"
+        >
           <p class="text-xs text-muted">
-            數值0 = 該獎號的來源 slot 前一期才剛被撈中過（記錄首位為 0）。
+            數值 0 的意思：那顆獎號的來源格子，前一期才剛被撈中過。
           </p>
           <div class="flex flex-wrap gap-2">
             <UBadge
               color="primary"
               variant="subtle"
             >
-              期含至少一顆數值0：{{ valueZero.periodsWithZero }}/{{ valueZero.totalPeriods }}（{{ pct(valueZero.periodsWithZeroRate) }}）
+              有數值 0 的期：{{ valueZero.periodsWithZero }}/{{ valueZero.totalPeriods }}（{{ pct(valueZero.periodsWithZeroRate) }}）
             </UBadge>
             <UBadge
               color="neutral"
               variant="subtle"
             >
-              無數值0 的期：{{ valueZero.noZeroCount }} 次 · 平均間隔 {{ num1(valueZero.noZeroIntervalMean) }} 期 · 最長 {{ valueZero.noZeroIntervalMax ?? '—' }} 期
+              完全沒有數值 0 的期：{{ valueZero.noZeroCount }} 次 · 平均 {{ num1(valueZero.noZeroIntervalMean) }} 期一次 · 最久 {{ valueZero.noZeroIntervalMax ?? '—' }} 期
             </UBadge>
             <UBadge
               v-if="valueZero.lastNoZero"
               color="neutral"
               variant="subtle"
             >
-              最近一次無0：{{ valueZero.lastNoZero.issue }}（{{ valueZero.lastNoZero.date }}）· 距今 {{ valueZero.sinceLastNoZero }} 期
+              最近一次沒有 0：{{ valueZero.lastNoZero.issue }}（{{ valueZero.lastNoZero.date }}）· 已隔 {{ valueZero.sinceLastNoZero }} 期
             </UBadge>
             <UBadge
               color="neutral"
               variant="subtle"
             >
-              連續有0最長 {{ valueZero.maxZeroStreak }} 期 · 目前連續 {{ valueZero.currentZeroStreak }} 期
+              連續都有 0 最長 {{ valueZero.maxZeroStreak }} 期 · 目前連續 {{ valueZero.currentZeroStreak }} 期
             </UBadge>
           </div>
           <div class="flex flex-wrap gap-2 text-xs">
@@ -368,7 +426,7 @@ function pad2(n: number): string {
               :key="d.label"
               class="text-muted"
             >
-              {{ d.label }}數值0：{{ d.count }} 期（{{ pct(d.pct) }}）
+              一期出 {{ d.label }} 0：{{ d.count }} 期（{{ pct(d.pct) }}）
             </span>
           </div>
           <div class="flex flex-wrap gap-1">
@@ -382,7 +440,7 @@ function pad2(n: number): string {
             </span>
           </div>
         </div>
-      </UCard>
-    </div>
-  </div>
+      </li>
+    </ul>
+  </UCard>
 </template>

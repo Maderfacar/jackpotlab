@@ -2,10 +2,11 @@
 /**
  * 訊號 /signals
  *
- * 「/draws 獎號關聯表」欄位行為的驗證規則儀表板（539 專用）。
+ * 「/draws 獎號關聯」表欄位行為的驗證規則儀表板（539 專用）。
  *   - 資料層與 /draws 完全同一套：抓 recent?limit=D → hydrateFromDraws(N=60)
- *   - 每條規則對載入視窗即時回測（命中率／基準率都是活的，不寫死）
- *   - 本期條件成立 → 亮燈 + 攤出湊成條件的獎號明細
+ *   - 每條規則對載入的歷史即時回測（命中率／平常機率都是活的，不寫死）
+ *   - 版面（2026-08-30 改版）：頂部總覽列 → 條件燈表格式清單（點行展開）
+ *     → 觀察卡預設收合。全頁文案白話化，術語不上頁面。
  *   - 與鑑古（app/hindsight）獨立；規則定義在 app/signals/rules.ts
  *
  * ⚠️ 動本頁或規則前必看 docs/HINDSIGHT-PRINCIPLE.md（客觀數據分析最高原則）。
@@ -99,9 +100,9 @@ const ruleViews = computed<RuleView[]>(() => SIGNAL_RULES.map((rule) => {
   }
 }))
 
-const litCount = computed(() => ruleViews.value.filter(v => v.current?.met).length)
+const litViews = computed(() => ruleViews.value.filter(v => v.current?.met))
 
-// 每張卡「最近亮燈紀錄」展開狀態
+// 條件燈清單：點行展開細節
 const expandedRules = ref<Set<string>>(new Set())
 
 function toggleExpanded(id: string): void {
@@ -128,7 +129,7 @@ function pad2(n: number): string {
           訊號
         </h1>
         <p class="text-sm text-muted">
-          今彩 539 · 基於 /draws「獎號關聯」表的驗證規則 — 條件成立亮燈，命中率對載入視窗即時回測
+          今彩 539 · 看的是 /draws「獎號關聯」表的「數值」和「總和」兩欄 — 條件成立就亮燈，說中的比例用載入的歷史即時重算
         </p>
       </div>
       <UButton
@@ -142,70 +143,22 @@ function pad2(n: number): string {
       </UButton>
     </header>
 
+    <UAlert
+      v-if="error"
+      color="error"
+      variant="subtle"
+      icon="i-lucide-triangle-alert"
+      :title="`載入失敗：${error}`"
+    />
+
+    <!-- ====== 頂部總覽列 ====== -->
     <UCard>
-      <div class="space-y-4">
-        <div class="flex flex-wrap items-center gap-3 text-xs">
-          <label class="flex items-center gap-2">
-            <span class="text-muted">D 灌入深度</span>
-            <UInput
-              :model-value="depthD"
-              type="number"
-              size="xs"
-              min="100"
-              max="5000"
-              class="w-24"
-              @change="(e: Event) => commitDepth((e.target as HTMLInputElement).value)"
-            />
-          </label>
-          <span class="text-muted">預設 700 期 ≒ 兩年 · N 固定 {{ ANALYSIS_N }} · 暖機前 {{ ANALYSIS_N }} 期不入樣本</span>
-          <UBadge
-            v-if="loading"
-            color="info"
-            variant="subtle"
-            size="sm"
-            class="animate-pulse"
-          >
-            載入中…
-          </UBadge>
-        </div>
-
-        <UAlert
-          v-if="error"
-          color="error"
-          variant="subtle"
-          icon="i-lucide-triangle-alert"
-          :title="`載入失敗：${error}`"
-        />
-
-        <div
-          v-if="rows.length > 0"
-          class="flex flex-wrap items-center gap-2 text-xs text-muted"
-        >
-          <UBadge
-            color="neutral"
-            variant="subtle"
-          >
-            樣本 {{ rows.length }} 期
-          </UBadge>
-          <UBadge
-            color="neutral"
-            variant="subtle"
-          >
-            {{ rows[0]?.issue }}（{{ rows[0]?.date }}）→ {{ latestRow?.issue }}（{{ latestRow?.date }}）
-          </UBadge>
-          <UBadge
-            :color="litCount > 0 ? 'success' : 'neutral'"
-            variant="subtle"
-          >
-            本期亮燈 {{ litCount }} / {{ ruleViews.length }}
-          </UBadge>
-        </div>
-
+      <div class="space-y-3">
         <div
           v-if="latestRow"
           class="flex flex-wrap items-center gap-2"
         >
-          <span class="text-xs text-muted">最新一期 {{ latestRow.issue }}（{{ latestRow.date }}）：</span>
+          <span class="text-sm font-medium">最新一期 {{ latestRow.issue }}（{{ latestRow.date }}）</span>
           <UBadge
             v-for="num in latestRow.prizes"
             :key="num"
@@ -216,141 +169,221 @@ function pad2(n: number): string {
           >
             {{ pad2(num) }}
           </UBadge>
-          <span class="text-xs text-muted">數值加總 {{ latestRow.values.reduce((a, b) => a + b, 0) }} · 總和 {{ latestRow.sum }}</span>
+          <span class="text-xs text-muted">五顆數值加起來 {{ latestRow.values.reduce((a, b) => a + b, 0) }} · 總和 {{ latestRow.sum }}</span>
+        </div>
+
+        <div
+          v-if="rows.length > 0"
+          class="flex flex-wrap items-center gap-2"
+        >
+          <UBadge
+            :color="litViews.length > 0 ? 'success' : 'neutral'"
+            variant="solid"
+            size="lg"
+            icon="i-lucide-lightbulb"
+          >
+            本期亮燈 {{ litViews.length }} / {{ ruleViews.length }}
+          </UBadge>
+          <UBadge
+            v-for="v in litViews"
+            :key="v.rule.id"
+            color="success"
+            variant="subtle"
+            size="lg"
+          >
+            {{ v.rule.code }} · {{ v.rule.expectation }}
+          </UBadge>
+          <span
+            v-if="litViews.length === 0"
+            class="text-xs text-muted"
+          >這期沒有任何條件成立</span>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-3 text-xs text-muted">
+          <label class="flex items-center gap-2">
+            <span>載入期數</span>
+            <UInput
+              :model-value="depthD"
+              type="number"
+              size="xs"
+              min="100"
+              max="5000"
+              class="w-24"
+              @change="(e: Event) => commitDepth((e.target as HTMLInputElement).value)"
+            />
+          </label>
+          <span v-if="rows.length > 0">預設 700 期 ≒ 兩年 · 前 {{ ANALYSIS_N }} 期表格還沒填滿不列入 · 實際計算 {{ rows.length }} 期（{{ rows[0]?.date }} ～ {{ latestRow?.date }}）</span>
+          <UBadge
+            v-if="loading"
+            color="info"
+            variant="subtle"
+            size="sm"
+            class="animate-pulse"
+          >
+            載入中…
+          </UBadge>
         </div>
       </div>
     </UCard>
 
-    <div class="grid gap-4 lg:grid-cols-2">
-      <UCard
-        v-for="view in ruleViews"
-        :key="view.rule.id"
-        :class="view.current?.met ? 'ring-2 ring-success' : ''"
-      >
-        <template #header>
-          <div class="flex items-start justify-between gap-3">
-            <div class="space-y-1">
-              <p class="font-semibold leading-snug">
-                {{ view.rule.name }}
-              </p>
-              <p class="text-xs text-muted">
-                {{ view.rule.description }}
-              </p>
-            </div>
+    <!-- ====== 條件燈清單 ====== -->
+    <UCard>
+      <template #header>
+        <div class="space-y-1">
+          <p class="font-semibold">
+            條件燈
+          </p>
+          <p class="text-xs text-muted">
+            一行一條規則，點右邊箭頭看說明、相關獎號和過去的亮燈紀錄。「平常機率」= 不管任何條件、隨便一期也會發生的機率 — 命中率要明顯高於它，這條規則才算有料。
+          </p>
+        </div>
+      </template>
+
+      <ul class="divide-y divide-default">
+        <li
+          v-for="view in ruleViews"
+          :key="view.rule.id"
+          class="py-3"
+        >
+          <!-- 主行 -->
+          <div class="flex flex-wrap items-center gap-2">
             <UBadge
               :color="view.current?.met ? 'success' : 'neutral'"
               :variant="view.current?.met ? 'solid' : 'subtle'"
-              size="lg"
-              class="shrink-0"
-              :icon="view.current?.met ? 'i-lucide-lightbulb' : 'i-lucide-lightbulb-off'"
+              size="sm"
+              class="w-14 justify-center shrink-0"
             >
               {{ view.current?.met ? '亮燈' : '未亮' }}
             </UBadge>
-          </div>
-        </template>
-
-        <div class="space-y-3 text-sm">
-          <p v-if="view.current">
-            {{ view.current.detail }}
-          </p>
-          <p
-            v-else
-            class="text-muted"
-          >
-            資料不足，無法判定本期
-          </p>
-
-          <div
-            v-if="view.current?.met"
-            class="space-y-2"
-          >
-            <p class="text-success font-medium">
-              預期：{{ view.rule.expectation }}
-            </p>
-            <div class="flex flex-wrap gap-2">
-              <div
-                v-for="item in view.current.related"
-                :key="item.num"
-                class="flex flex-col items-center gap-0.5"
-              >
-                <UBadge
-                  color="warning"
-                  variant="solid"
-                  size="md"
-                  class="min-w-8 justify-center font-mono"
-                >
-                  {{ pad2(item.num) }}
-                </UBadge>
-                <span class="text-[10px] text-muted">{{ item.note }}</span>
-              </div>
+            <UBadge
+              color="neutral"
+              variant="outline"
+              size="sm"
+              class="w-12 justify-center shrink-0 font-mono"
+            >
+              {{ view.rule.code }}
+            </UBadge>
+            <span class="text-sm font-medium">{{ view.rule.name }}</span>
+            <div class="ml-auto flex items-center gap-2">
+              <span class="text-xs text-muted">
+                說中 {{ pct(view.backtest.hitRate) }}（平常 {{ pct(view.backtest.baselineRate) }}）
+              </span>
+              <UButton
+                color="neutral"
+                variant="ghost"
+                size="xs"
+                :icon="expandedRules.has(view.rule.id) ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
+                :aria-label="expandedRules.has(view.rule.id) ? '收合' : '展開'"
+                @click="toggleExpanded(view.rule.id)"
+              />
             </div>
           </div>
 
-          <USeparator />
+          <!-- 本期狀況一行 -->
+          <p
+            class="mt-1 pl-1 text-xs"
+            :class="view.current?.met ? 'text-success' : 'text-muted'"
+          >
+            <template v-if="view.current">
+              {{ view.current.detail }}<template v-if="view.current.met">
+                → 預期：{{ view.rule.expectation }}
+              </template>
+            </template>
+            <template v-else>
+              資料不足，無法判定本期
+            </template>
+          </p>
 
-          <div class="flex flex-wrap items-center gap-2 text-xs">
-            <UBadge
-              color="primary"
-              variant="subtle"
-            >
-              命中 {{ view.backtest.hit }}/{{ view.backtest.fired }}（{{ pct(view.backtest.hitRate) }}）
-            </UBadge>
-            <UBadge
-              color="neutral"
-              variant="subtle"
-            >
-              基準 {{ pct(view.backtest.baselineRate) }}
-            </UBadge>
-            <UBadge
-              v-if="view.lift != null"
-              :color="view.lift >= 1.3 ? 'success' : view.lift >= 1.05 ? 'info' : 'error'"
-              variant="subtle"
-            >
-              lift ×{{ view.lift.toFixed(2) }}
-            </UBadge>
-          </div>
+          <!-- 展開細節 -->
+          <div
+            v-if="expandedRules.has(view.rule.id)"
+            class="mt-3 space-y-3 rounded-lg bg-elevated/50 p-3 text-sm"
+          >
+            <p class="text-xs text-muted">
+              {{ view.rule.description }}
+            </p>
 
-          <div>
-            <UButton
-              color="neutral"
-              variant="ghost"
-              size="xs"
-              :icon="expandedRules.has(view.rule.id) ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
-              @click="toggleExpanded(view.rule.id)"
+            <div
+              v-if="view.current?.met && view.current.related.length > 0"
+              class="space-y-1"
             >
-              最近亮燈紀錄（{{ view.backtest.recentFirings.length }}）
-            </UButton>
-            <ul
-              v-if="expandedRules.has(view.rule.id)"
-              class="mt-2 space-y-1.5 text-xs"
-            >
-              <li
-                v-for="firing in view.backtest.recentFirings"
-                :key="firing.issue"
-                class="flex flex-wrap items-center gap-2"
-              >
-                <UBadge
-                  :color="firing.hit ? 'success' : 'error'"
-                  variant="subtle"
-                  size="sm"
+              <p class="text-xs font-medium text-muted">
+                這期湊成條件的五顆獎號：
+              </p>
+              <div class="flex flex-wrap gap-2">
+                <div
+                  v-for="item in view.current.related"
+                  :key="item.num"
+                  class="flex flex-col items-center gap-0.5"
                 >
-                  {{ firing.hit ? '✓ 命中' : '✗ 失手' }}
-                </UBadge>
-                <span class="font-mono">{{ firing.issue }}</span>
-                <span class="text-muted">{{ firing.date }}</span>
-                <span class="text-muted">{{ firing.detail }} → 下期 {{ firing.nextIssue }}</span>
-              </li>
-              <li
-                v-if="view.backtest.recentFirings.length === 0"
-                class="text-muted"
+                  <UBadge
+                    color="warning"
+                    variant="solid"
+                    size="md"
+                    class="min-w-8 justify-center font-mono"
+                  >
+                    {{ pad2(item.num) }}
+                  </UBadge>
+                  <span class="text-[10px] text-muted">{{ item.note }}</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="flex flex-wrap items-center gap-2 text-xs">
+              <UBadge
+                color="primary"
+                variant="subtle"
               >
-                載入視窗內無亮燈紀錄
-              </li>
-            </ul>
+                歷史上亮過 {{ view.backtest.fired }} 次、說中 {{ view.backtest.hit }} 次（{{ pct(view.backtest.hitRate) }}）
+              </UBadge>
+              <UBadge
+                color="neutral"
+                variant="subtle"
+              >
+                平常機率 {{ pct(view.backtest.baselineRate) }}
+              </UBadge>
+              <UBadge
+                v-if="view.lift != null"
+                :color="view.lift >= 1.3 ? 'success' : view.lift >= 1.05 ? 'info' : 'error'"
+                variant="subtle"
+              >
+                是平常的 {{ view.lift.toFixed(2) }} 倍
+              </UBadge>
+            </div>
+
+            <div v-if="view.backtest.recentFirings.length > 0">
+              <p class="mb-1 text-xs font-medium text-muted">
+                最近幾次亮燈：
+              </p>
+              <ul class="space-y-1.5 text-xs">
+                <li
+                  v-for="firing in view.backtest.recentFirings"
+                  :key="firing.issue"
+                  class="flex flex-wrap items-center gap-2"
+                >
+                  <UBadge
+                    :color="firing.hit ? 'success' : 'error'"
+                    variant="subtle"
+                    size="sm"
+                  >
+                    {{ firing.hit ? '✓ 說中' : '✗ 沒中' }}
+                  </UBadge>
+                  <span class="font-mono">{{ firing.issue }}</span>
+                  <span class="text-muted">{{ firing.date }}</span>
+                  <span class="text-muted">{{ firing.detail }} → 下期 {{ firing.nextIssue }}</span>
+                </li>
+              </ul>
+            </div>
+            <p
+              v-else
+              class="text-xs text-muted"
+            >
+              載入的歷史裡沒有亮燈紀錄
+            </p>
           </div>
-        </div>
-      </UCard>
-    </div>
+        </li>
+      </ul>
+    </UCard>
 
     <SignalsObservationCards
       v-if="rows.length > 0"
@@ -358,7 +391,7 @@ function pad2(n: number): string {
     />
 
     <p class="text-xs text-muted">
-      誠實註記：B1／B2／C1／C2 屬「極端值往中間帶回歸」型規則 — 數字是真的、穩定度是真的，但它們描述的是欄位行為、不直接指向特定號碼。命中率隨載入視窗即時重算，失手照登不藏。
+      誠實註記：B1／B2／C1／C2 這類規則說的是「衝太高就會掉回來、掉太低就會彈回去」— 數字是真的、穩定度是真的，但它們描述的是整體數字的走向，不直接指向哪一顆號碼。所有比例都用載入的歷史即時重算，沒中的照登不藏。
     </p>
   </UContainer>
 </template>

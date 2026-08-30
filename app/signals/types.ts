@@ -40,6 +40,8 @@ export interface ConditionResult {
 
 export interface LightRule {
   id: string
+  /** 短代號（B0/B1/C1…），對話引用用，UI 上是小標籤 */
+  code: string
   name: string
   /** 規則白話說明 */
   description: string
