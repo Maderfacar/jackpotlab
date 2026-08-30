@@ -17,6 +17,7 @@ import { hydrateFromDraws, defaultN, clampD, type AnalysisDrawInput, type Analys
 import { toSignalRows } from '~/signals/history'
 import { SIGNAL_RULES } from '~/signals/rules'
 import { backtestRule, evaluateCurrent } from '~/signals/engine'
+import { buildSlotAlerts } from '~/signals/checkup'
 import type { SignalRow } from '~/signals/types'
 
 definePageMeta({
@@ -103,6 +104,37 @@ const ruleViews = computed<RuleView[]>(() => SIGNAL_RULES.map((rule) => {
 }))
 
 const litViews = computed(() => ruleViews.value.filter(v => v.current?.met))
+
+// ---- slot 記錄警示燈（警示型：無下期判定、無命中率） ----
+const slotWatch = computed(() => {
+  if (!analysisState.value) return null
+  const info = buildSlotAlerts(analysisState.value)
+  return {
+    ...info,
+    newHighs: info.alerts.filter(a => a.isNewHigh),
+    nearMaxes: info.alerts.filter(a => a.nearHistoricalMax),
+    empties: info.alerts.filter(a => a.remaining.length === 0),
+    /** 展開時列的重點 slot：破新高 / 接近新高 / 無號碼 */
+    highlighted: info.alerts.filter(a => a.isNewHigh || a.nearHistoricalMax || a.remaining.length === 0)
+  }
+})
+
+/** 最新一期每顆獎號的完整身份（slot / 位置 / 數值 / 尾數），亮燈規則展開時用 */
+const latestInfoByNum = computed(() => {
+  const m = new Map<number, { gap: number, pos: string, value: number, tail: number }>()
+  const cur = rows.value.at(-1)
+  if (cur) {
+    cur.prizes.forEach((num, k) => {
+      m.set(num, {
+        gap: cur.gaps[k] ?? -1,
+        pos: cur.xs[k] != null && cur.xs[k]! >= 0 ? `${cur.xs[k]}-${cur.ys[k]}` : '—',
+        value: cur.values[k] ?? -1,
+        tail: num % 10
+      })
+    })
+  }
+  return m
+})
 
 // 條件燈清單：點行展開細節
 const expandedRules = ref<Set<string>>(new Set())
@@ -249,6 +281,122 @@ function pad2(n: number): string {
       </template>
 
       <ul class="divide-y divide-default">
+        <!-- slot 記錄警示燈（警示型，無命中率） -->
+        <li
+          v-if="slotWatch"
+          class="py-3"
+        >
+          <div class="flex flex-wrap items-center gap-2">
+            <UBadge
+              :color="slotWatch.alerts.length > 0 ? 'warning' : 'neutral'"
+              :variant="slotWatch.alerts.length > 0 ? 'solid' : 'subtle'"
+              size="sm"
+              class="w-14 justify-center shrink-0"
+            >
+              {{ slotWatch.alerts.length > 0 ? '警示' : '無' }}
+            </UBadge>
+            <UBadge
+              color="neutral"
+              variant="outline"
+              size="sm"
+              class="w-12 justify-center shrink-0 font-mono"
+            >
+              SLOT
+            </UBadge>
+            <span class="text-sm font-medium">slot 記錄超過均值警示</span>
+            <div class="ml-auto flex items-center gap-2">
+              <span class="text-xs text-muted">警示型 · 不做下期判定</span>
+              <UButton
+                color="neutral"
+                variant="ghost"
+                size="xs"
+                :icon="expandedRules.has('slot-watch') ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
+                :aria-label="expandedRules.has('slot-watch') ? '收合' : '展開'"
+                @click="toggleExpanded('slot-watch')"
+              />
+            </div>
+          </div>
+          <p class="mt-1 pl-1 text-xs text-warning">
+            {{ slotWatch.alerts.length }} 個 slot 記錄值超過均值 {{ slotWatch.avg.toFixed(1) }} — 其中破自己歷史新高 {{ slotWatch.newHighs.length }} 個、接近歷史最高 {{ slotWatch.nearMaxes.length }} 個、目前無號碼 {{ slotWatch.empties.length }} 個
+          </p>
+          <div
+            v-if="expandedRules.has('slot-watch')"
+            class="mt-3 space-y-3 rounded-lg bg-elevated/50 p-3 text-sm"
+          >
+            <p class="text-xs text-muted">
+              這裡只列重點（破新高／接近歷史最高／無號碼）；全部超過均值的清單在下面「⑤ 哪些 slot 太久沒開」。「接近歷史最高」= 現值已達該格自己過去最大值的 9 成。
+            </p>
+            <ul class="space-y-2">
+              <li
+                v-for="a in slotWatch.highlighted"
+                :key="a.slot"
+                class="flex flex-wrap items-center gap-2 text-xs"
+              >
+                <span class="font-mono font-semibold">slot {{ a.slot }}</span>
+                <span class="text-muted">{{ a.issue }}（{{ a.date }}）</span>
+                <span class="font-mono">已 {{ a.current }} 期沒開（自己過去最高 {{ a.pastMax ?? '—' }}）</span>
+                <UBadge
+                  v-if="a.isNewHigh"
+                  color="error"
+                  variant="solid"
+                  size="sm"
+                >
+                  破歷史新高
+                </UBadge>
+                <UBadge
+                  v-else-if="a.nearHistoricalMax"
+                  color="warning"
+                  variant="solid"
+                  size="sm"
+                >
+                  接近歷史最高
+                </UBadge>
+                <template v-if="a.remaining.length > 0">
+                  <span class="text-muted">現有號碼：</span>
+                  <UBadge
+                    v-for="n in a.remaining"
+                    :key="n"
+                    color="warning"
+                    variant="soft"
+                    size="sm"
+                    class="min-w-7 justify-center font-mono"
+                  >
+                    {{ pad2(n) }}
+                  </UBadge>
+                </template>
+                <template v-else-if="a.emptyProjection">
+                  <UBadge
+                    color="error"
+                    variant="subtle"
+                    size="sm"
+                  >
+                    目前無號碼
+                  </UBadge>
+                  <span class="text-muted">
+                    最快 {{ a.emptyProjection.waitPeriods }} 期後輪入 slot {{ a.emptyProjection.fromSlot }} 的號碼（若沒被中途開走），屆時記錄值 {{ a.emptyProjection.projectedValue }}：
+                  </span>
+                  <UBadge
+                    v-for="n in a.emptyProjection.incoming"
+                    :key="n"
+                    color="neutral"
+                    variant="soft"
+                    size="sm"
+                    class="min-w-7 justify-center font-mono"
+                  >
+                    {{ pad2(n) }}
+                  </UBadge>
+                </template>
+              </li>
+              <li
+                v-if="slotWatch.highlighted.length === 0"
+                class="text-xs text-muted"
+              >
+                目前沒有破新高、接近新高或無號碼的 slot
+              </li>
+            </ul>
+          </div>
+        </li>
+
         <li
           v-for="view in ruleViews"
           :key="view.rule.id"
@@ -317,24 +465,60 @@ function pad2(n: number): string {
               class="space-y-1"
             >
               <p class="text-xs font-medium text-muted">
-                這期湊成條件的五顆獎號：
+                這期湊成條件的五顆獎號（含 /draws 表的完整身份）：
               </p>
-              <div class="flex flex-wrap gap-2">
-                <div
-                  v-for="item in view.current.related"
-                  :key="item.num"
-                  class="flex flex-col items-center gap-0.5"
-                >
-                  <UBadge
-                    color="warning"
-                    variant="solid"
-                    size="md"
-                    class="min-w-8 justify-center font-mono"
-                  >
-                    {{ pad2(item.num) }}
-                  </UBadge>
-                  <span class="text-[10px] text-muted">{{ item.note }}</span>
-                </div>
+              <div class="overflow-x-auto">
+                <table class="w-full min-w-md text-xs">
+                  <thead>
+                    <tr class="border-b border-default text-left text-muted">
+                      <th class="py-1 pr-3 font-medium">
+                        獎號
+                      </th>
+                      <th class="py-1 pr-3 font-medium">
+                        來自 slot
+                      </th>
+                      <th class="py-1 pr-3 font-medium">
+                        位置 x-y
+                      </th>
+                      <th class="py-1 pr-3 font-medium">
+                        數值
+                      </th>
+                      <th class="py-1 font-medium">
+                        尾數
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr
+                      v-for="item in view.current.related"
+                      :key="item.num"
+                      class="border-b border-default/50"
+                    >
+                      <td class="py-1 pr-3">
+                        <UBadge
+                          color="warning"
+                          variant="solid"
+                          size="sm"
+                          class="min-w-7 justify-center font-mono"
+                        >
+                          {{ pad2(item.num) }}
+                        </UBadge>
+                      </td>
+                      <td class="py-1 pr-3 font-mono">
+                        隔 {{ latestInfoByNum.get(item.num)?.gap ?? '—' }} 期
+                      </td>
+                      <td class="py-1 pr-3 font-mono">
+                        {{ latestInfoByNum.get(item.num)?.pos ?? '—' }}
+                      </td>
+                      <td class="py-1 pr-3 font-mono">
+                        {{ latestInfoByNum.get(item.num)?.value ?? '—' }}
+                      </td>
+                      <td class="py-1 font-mono">
+                        {{ latestInfoByNum.get(item.num)?.tail ?? '—' }} 尾
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
               </div>
             </div>
 

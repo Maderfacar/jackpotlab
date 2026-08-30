@@ -275,6 +275,15 @@ function dirWord(dir: 1 | -1 | 0 | null): string {
                   >
                     歷史新高
                   </UBadge>
+                  <UBadge
+                    v-else-if="a.nearHistoricalMax"
+                    color="warning"
+                    variant="solid"
+                    size="sm"
+                    class="ml-2"
+                  >
+                    接近歷史最高
+                  </UBadge>
                 </td>
                 <td class="py-1.5 pr-3 font-mono text-xs">
                   <template v-if="a.pastMax != null">
@@ -301,6 +310,10 @@ function dirWord(dir: 1 | -1 | 0 | null): string {
                       {{ pad2(n) }}
                     </UBadge>
                   </div>
+                  <span
+                    v-else-if="a.emptyProjection"
+                    class="text-xs text-muted"
+                  >無號碼 — 最快 {{ a.emptyProjection.waitPeriods }} 期後輪入 slot {{ a.emptyProjection.fromSlot }} 的 {{ a.emptyProjection.incoming.length }} 顆（屆時記錄值 {{ a.emptyProjection.projectedValue }}）</span>
                   <span
                     v-else
                     class="text-xs text-muted"

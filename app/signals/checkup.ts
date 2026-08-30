@@ -136,8 +136,20 @@ export interface SlotAlert {
   /** 該 slot 自己過去紀錄的最大值（記錄字串第 2 個值起）；無過去紀錄 = null */
   pastMax: number | null
   isNewHigh: boolean
+  /** 有過去紀錄、尚未突破、但已達歷史最大的 9 成 */
+  nearHistoricalMax: boolean
   /** 剩餘號碼 */
   remaining: number[]
+  /**
+   * 目前無號碼時的預估：最快幾期後輪入號碼（來自更年輕的 slot）、
+   * 屆時記錄值會是多少。前提是輪入前那些號碼沒被中途開走。
+   */
+  emptyProjection: {
+    waitPeriods: number
+    projectedValue: number
+    fromSlot: number
+    incoming: number[]
+  } | null
 }
 
 export interface SlotAlertInfo {
@@ -155,6 +167,9 @@ function recordValues(record: string): number[] {
     .filter(Number.isFinite)
 }
 
+/** 「接近歷史最大」門檻：現值 ≥ 歷史最大的 9 成 */
+const NEAR_MAX_RATIO = 0.9
+
 export function buildSlotAlerts(state: AnalysisState): SlotAlertInfo {
   const avg = averageOfCsvFirst(state.periods)
   const alerts: SlotAlert[] = []
@@ -165,14 +180,35 @@ export function buildSlotAlerts(state: AnalysisState): SlotAlertInfo {
     if (current <= avg) continue
     const past = vals.slice(1)
     const pastMax = past.length > 0 ? Math.max(...past) : null
+    const isNewHigh = pastMax != null && current > pastMax
+
+    // 空 slot：往更年輕的格子找最近有號碼的，預估幾期後輪入、屆時記錄值。
+    let emptyProjection: SlotAlert['emptyProjection'] = null
+    if (p.prizes.length === 0) {
+      for (let j = 1; j <= p.period; j++) {
+        const younger = state.periods[p.period - j]
+        if (younger && younger.prizes.length > 0) {
+          emptyProjection = {
+            waitPeriods: j,
+            projectedValue: current + j,
+            fromSlot: younger.period,
+            incoming: [...younger.prizes].sort((a, b) => a - b)
+          }
+          break
+        }
+      }
+    }
+
     alerts.push({
       slot: p.period,
       issue: p.issue,
       date: p.date,
       current,
       pastMax,
-      isNewHigh: pastMax != null && current > pastMax,
-      remaining: [...p.prizes].sort((a, b) => a - b)
+      isNewHigh,
+      nearHistoricalMax: pastMax != null && !isNewHigh && current >= pastMax * NEAR_MAX_RATIO,
+      remaining: [...p.prizes].sort((a, b) => a - b),
+      emptyProjection
     })
   }
   alerts.sort((a, b) => b.current - a.current)
