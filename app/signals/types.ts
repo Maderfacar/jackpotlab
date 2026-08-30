@@ -19,6 +19,10 @@ export interface SignalRow {
   values: number[]
   /** 「隔期」欄：每顆獎號回溯到的 slot index */
   gaps: number[]
+  /** 「位置」欄 x：該獎號來源 slot 當時的剩餘號碼數 */
+  xs: number[]
+  /** 「位置」欄 y：該獎號在來源 slot 剩餘號碼（小→大）中的排位 */
+  ys: number[]
   /** 「總和」欄（= 該期隔期值加總；欄位為空時為 0） */
   sum: number
   /** 隔期／數值五欄皆齊全（無空值）才可進回測 */

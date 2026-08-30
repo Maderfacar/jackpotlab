@@ -22,30 +22,36 @@ export function toSignalRows(state: AnalysisState): SignalRow[] {
         .filter(Number.isFinite)
       const gapParts = (h.periods ?? '').split(',')
       const valParts = (h.values ?? '').split(',')
+      const posParts = (h.positions ?? '').split(',')
       const gaps: number[] = []
       const values: number[] = []
+      const xs: number[] = []
+      const ys: number[] = []
       let valid = prizes.length === PRIZE_COUNT
         && gapParts.length === PRIZE_COUNT
         && valParts.length === PRIZE_COUNT
+        && posParts.length === PRIZE_COUNT
       for (let k = 0; k < PRIZE_COUNT; k++) {
         const g = gapParts[k] ?? ''
         const v = valParts[k] ?? ''
-        if (g === '' || v === '') {
-          valid = false
-          gaps.push(-1)
-          values.push(-1)
-          continue
-        }
+        const p = posParts[k] ?? ''
+        const [xRaw, yRaw] = p.includes('-') ? p.split('-') : ['', '']
         const gn = Number.parseInt(g, 10)
         const vn = Number.parseInt(v, 10)
-        if (!Number.isFinite(gn) || !Number.isFinite(vn)) {
+        const xn = Number.parseInt(xRaw ?? '', 10)
+        const yn = Number.parseInt(yRaw ?? '', 10)
+        if (!Number.isFinite(gn) || !Number.isFinite(vn) || !Number.isFinite(xn) || !Number.isFinite(yn)) {
           valid = false
           gaps.push(-1)
           values.push(-1)
+          xs.push(-1)
+          ys.push(-1)
           continue
         }
         gaps.push(gn)
         values.push(vn)
+        xs.push(xn)
+        ys.push(yn)
       }
       return {
         issue: h.issue,
@@ -53,6 +59,8 @@ export function toSignalRows(state: AnalysisState): SignalRow[] {
         prizes,
         values,
         gaps,
+        xs,
+        ys,
         sum: typeof h.sum === 'number' ? h.sum : 0,
         valid
       }
