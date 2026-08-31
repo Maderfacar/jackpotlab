@@ -12,7 +12,7 @@
  */
 
 import type { DrawQueryResponse } from '~~/shared/lotto/types'
-import { hydrateFromDraws, defaultN, clampD, type AnalysisDrawInput } from '~/utils/analysis'
+import { hydrateFromDraws, defaultN, clampD, type AnalysisDrawInput, type AnalysisState } from '~/utils/analysis'
 import { toSignalRows } from '~/signals/history'
 import type { SignalRow } from '~/signals/types'
 
@@ -30,6 +30,7 @@ const depthD = ref(DEFAULT_DEPTH)
 const loading = ref(false)
 const error = ref<string | null>(null)
 const rows = shallowRef<SignalRow[]>([])
+const analysisState = shallowRef<AnalysisState | null>(null)
 
 function loadDepthPref() {
   if (typeof window === 'undefined') return
@@ -52,6 +53,7 @@ async function load() {
       prizes: [...new Set(r.special != null ? [...r.numbers, r.special] : r.numbers)]
     }))
     const state = hydrateFromDraws(GAME_ID, ANALYSIS_N, inputs)
+    analysisState.value = state
     rows.value = toSignalRows(state)
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'unknown error'
@@ -160,6 +162,12 @@ function pad2(n: number): string {
     <SignalsSimilaritySection
       v-if="rows.length > 0"
       :rows="rows"
+    />
+
+    <SignalsComboTool
+      v-if="analysisState && latestRow"
+      :state="analysisState"
+      :latest-issue="latestRow.issue"
     />
 
     <p class="text-xs text-muted">

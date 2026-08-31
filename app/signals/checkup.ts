@@ -16,9 +16,9 @@ import type { AnalysisState } from '../utils/analysis'
 import { averageOfCsvFirst } from '../utils/analysis'
 import type { SignalRow } from './types'
 
-/** 與觀察卡一致的分桶邊界（2026-08-30 拍板統一）：0-5 近 / 6-10 中 / 11+ 遠 */
+/** 分桶邊界（2026-09-01 使用者拍板）：近 0-5 / 中 6-9 / 遠 10+ */
 const GAP_LOW_MAX = 5
-const GAP_MID_MAX = 10
+const GAP_MID_MAX = 9
 const VALUE_CENSUS_MAX = 5
 
 // ---------- ①② 本期身世 ----------
@@ -264,7 +264,7 @@ export interface PositionOriginRow {
   currentGap: number | null
   /** y=1..5 的比例 */
   yDist: number[]
-  /** 來源 slot 遠近比例：近 0-5 / 中 6-10 / 遠 11+ */
+  /** 來源 slot 遠近比例：近 0-5 / 中 6-9 / 遠 10+ */
   bucketDist: { low: number, mid: number, high: number }
   sample: number
 }

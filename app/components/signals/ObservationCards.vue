@@ -324,7 +324,7 @@ const CARDS: CardDef[] = [
           class="mt-3 space-y-3 rounded-lg bg-elevated/50 p-3 text-sm"
         >
           <p class="text-xs text-muted">
-            每顆獎號都能回溯到它上一次出現是幾期前（= 隔期）。這裡分三段：0-5 期前（近）、6-10 期前（中）、11 期以上（遠）。
+            每顆獎號都能回溯到它上一次出現是幾期前（= 隔期）。這裡分三段：0-5 期前（近）、6-9 期前（中）、10 期以上（遠）。
           </p>
           <div class="flex flex-wrap gap-2">
             <UBadge

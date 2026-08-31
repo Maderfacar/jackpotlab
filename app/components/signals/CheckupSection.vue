@@ -414,7 +414,7 @@ function dirWord(dir: 1 | -1 | 0 | null): string {
           ⑦ 第 1～5 顆的位置 y 與來源遠近分布
         </h3>
         <p class="text-xs text-muted">
-          每顆獎號（由小到大）歷史上的 y 值分布、來源 slot 遠近分布（近 = 隔 0-5 期、中 = 6-10、遠 = 11 期以上），加上本期實際落點。
+          每顆獎號（由小到大）歷史上的 y 值分布、來源 slot 遠近分布（近 = 隔 0-5 期、中 = 6-9、遠 = 10 期以上），加上本期實際落點。
         </p>
         <p class="text-[10px] text-muted sm:hidden">
           ← 表格可左右滑動 →

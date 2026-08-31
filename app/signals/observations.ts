@@ -8,7 +8,7 @@
  *   1. 單雙數分布與走勢
  *   2. 獎號總和（實際開出號碼加總）分布與走勢
  *   3. 尾數：與上期完全無重覆尾的間隔；恰兩顆同尾後下一期的同尾追蹤
- *   4. 隔期分桶（0-5 / 6-10 / 11+）
+ *   4. 隔期分桶（0-5 / 6-9 / 10+）
  *   5. 數值 0～5 出現頻率
  *   6. 數值0 的出現規律
  */
@@ -263,8 +263,9 @@ export interface GapBucketStats {
   recent: RecentPoint[]
 }
 
+/** 分桶邊界（2026-09-01 使用者拍板）：近 0-5 / 中 6-9 / 遠 10+ */
 const GAP_LOW_MAX = 5
-const GAP_MID_MAX = 10
+const GAP_MID_MAX = 9
 
 function bucketsOf(r: SignalRow): { low: number, mid: number, high: number } {
   let low = 0
