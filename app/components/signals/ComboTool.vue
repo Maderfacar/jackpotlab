@@ -14,6 +14,8 @@ const props = defineProps<{ state: AnalysisState, latestIssue: string, request?:
 const gapTarget = ref<number | null>(null)
 const valTarget = ref<number | null>(null)
 const tolerance = ref(0)
+/** 位置條件：組合中 y=1 的顆數（null = 不限） */
+const y1Count = ref<number | null>(null)
 const requestLabel = ref<string | null>(null)
 const result = shallowRef<ComboResult | null>(null)
 const missing = ref<number[]>([])
@@ -26,7 +28,7 @@ function run() {
   try {
     const { infos, missing: miss } = numberInfosFromState(props.state)
     missing.value = miss
-    result.value = findCombos(infos, gapTarget.value, valTarget.value, 5, tolerance.value)
+    result.value = findCombos(infos, gapTarget.value, valTarget.value, 5, tolerance.value, y1Count.value)
   } finally {
     computing.value = false
   }
@@ -66,7 +68,7 @@ function commitNum(target: 'gap' | 'val', rawVal: string) {
             組合湊數工具
           </p>
           <p class="text-xs text-muted">
-            輸入目標「隔期總和」和「數值總和」，用目前每個號碼所在的 slot 與記錄值，枚舉下一期所有能湊出這兩個加總的五碼組合。只對下一期有效 — 每開一期，號碼的隔期與數值都會變，要重算。
+            輸入目標「隔期總和」和「數值總和」，用目前每個號碼所在的 slot 與記錄值，枚舉下一期所有能湊出這兩個加總的五碼組合。每顆號碼的隔期、數值、位置 x-y 在開獎前都已確定，號碼下方會標完整三重身份；可再用「y=1 顆數」當第三個條件收斂。只對下一期有效 — 每開一期整張對照表都會變，要重算。
           </p>
         </div>
       </template>
@@ -95,6 +97,18 @@ function commitNum(target: 'gap' | 'val', rawVal: string) {
               placeholder="55"
               class="w-24"
               @change="(e: Event) => commitNum('val', (e.target as HTMLInputElement).value)"
+            />
+          </label>
+          <label class="flex items-center gap-2 text-xs">
+            <span class="text-muted">y=1 顆數（留空不限）</span>
+            <UInput
+              :model-value="y1Count == null ? '' : String(y1Count)"
+              type="number"
+              size="sm"
+              min="0"
+              max="5"
+              class="w-16"
+              @change="(e: Event) => { const v = Number.parseInt((e.target as HTMLInputElement).value, 10); y1Count = Number.isFinite(v) && v >= 0 && v <= 5 ? v : null }"
             />
           </label>
           <label class="flex items-center gap-2 text-xs">
@@ -137,7 +151,7 @@ function commitNum(target: 'gap' | 'val', rawVal: string) {
               variant="subtle"
               size="lg"
             >
-              隔期總和 {{ gapTarget }} · 數值總和 {{ valTarget }}{{ tolerance > 0 ? ` ±${tolerance}` : '' }} → 符合 {{ result.total.toLocaleString() }} 組（全部 {{ result.totalPossible.toLocaleString() }} 種中）
+              隔期總和 {{ gapTarget }} · 數值總和 {{ valTarget }}{{ tolerance > 0 ? ` ±${tolerance}` : '' }}{{ y1Count != null ? ` · y=1 恰 ${y1Count} 顆` : '' }} → 符合 {{ result.total.toLocaleString() }} 組（全部 {{ result.totalPossible.toLocaleString() }} 種中）
             </UBadge>
             <UBadge
               color="neutral"
@@ -173,7 +187,7 @@ function commitNum(target: 'gap' | 'val', rawVal: string) {
                   >
                     {{ pad2(f.num) }}
                   </UBadge>
-                  <span class="text-[10px] text-muted">隔{{ f.gap }}·值{{ f.value }}</span>
+                  <span class="text-[10px] text-muted">隔{{ f.gap }}·值{{ f.value }}·位{{ f.x }}-{{ f.y }}</span>
                   <span class="text-[10px] font-mono">{{ f.count }}次</span>
                 </div>
               </div>
@@ -210,7 +224,7 @@ function commitNum(target: 'gap' | 'val', rawVal: string) {
                     >
                       {{ pad2(n.num) }}
                     </UBadge>
-                    <span class="text-[10px] text-muted">隔{{ n.gap }}·值{{ n.value }}</span>
+                    <span class="text-[10px] text-muted">隔{{ n.gap }}·值{{ n.value }}·位{{ n.x }}-{{ n.y }}</span>
                   </div>
                   <span class="text-[10px] text-muted">頻率分數 {{ t.score }}</span>
                 </li>

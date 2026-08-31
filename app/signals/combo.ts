@@ -17,6 +17,10 @@ export interface ComboNumberInfo {
   num: number
   gap: number
   value: number
+  /** 下期開出時的位置 x：來源格目前剩餘顆數（開獎前已定） */
+  x: number
+  /** 下期開出時的位置 y：在來源格剩餘號碼（小→大）中的排位（開獎前已定） */
+  y: number
 }
 
 export interface NumberFreq extends ComboNumberInfo {
@@ -63,15 +67,26 @@ function leftVal(record: string): number {
   return Number.isFinite(v) ? v : 0
 }
 
-/** 從目前 AnalysisState 取出每個號碼的（隔期, 數值）。539 專用（1-39）。 */
+/** 從目前 AnalysisState 取出每個號碼的（隔期, 數值, 位置x-y）。539 專用（1-39）。 */
 export function numberInfosFromState(state: AnalysisState, maxNum = 39): { infos: ComboNumberInfo[], missing: number[] } {
   const byNum = new Map<number, ComboNumberInfo>()
   for (const p of state.periods) {
     if (!p.issue) continue
     const value = leftVal(p.record)
+    const sorted = [...p.prizes].sort((a, b) => a - b)
     for (const num of p.prizes) {
-      // 演算法保證每號僅存在一個 slot；防禦性只取第一次遇到的
-      if (!byNum.has(num)) byNum.set(num, { num, gap: p.period, value })
+      // 演算法保證每號僅存在一個 slot；防禦性只取第一次遇到的。
+      // 位置與 analysis.ts step a 同規則：x=原始剩餘顆數、y=原始排序排位，
+      // 同格多顆各算各的、不互相扣減（v4 修正）。
+      if (!byNum.has(num)) {
+        byNum.set(num, {
+          num,
+          gap: p.period,
+          value,
+          x: p.prizes.length,
+          y: sorted.indexOf(num) + 1
+        })
+      }
     }
   }
   const infos: ComboNumberInfo[] = []
@@ -89,10 +104,13 @@ export function findCombos(
   gapTarget: number,
   valTarget: number,
   topN = 5,
-  tolerance = 0
+  tolerance = 0,
+  /** 位置條件：組合中 y=1 的顆數需恰等於此值；null = 不限 */
+  y1Count: number | null = null
 ): ComboResult {
   const K = infos.length
   const totalPossible = K >= 5 ? (K * (K - 1) * (K - 2) * (K - 3) * (K - 4)) / 120 : 0
+  const y1 = infos.map(i => (i.y === 1 ? 1 : 0))
 
   // pass 1：計數 + 每號出現次數（streaming，不存全部組合）
   const counts = new Array<number>(K).fill(0)
@@ -104,6 +122,7 @@ export function findCombos(
           for (let e = d + 1; e < K; e++) {
             if (Math.abs(infos[a]!.gap + infos[b]!.gap + infos[c]!.gap + infos[d]!.gap + infos[e]!.gap - gapTarget) > tolerance) continue
             if (Math.abs(infos[a]!.value + infos[b]!.value + infos[c]!.value + infos[d]!.value + infos[e]!.value - valTarget) > tolerance) continue
+            if (y1Count != null && y1[a]! + y1[b]! + y1[c]! + y1[d]! + y1[e]! !== y1Count) continue
             total++
             counts[a]!++
             counts[b]!++
@@ -126,6 +145,7 @@ export function findCombos(
             for (let e = d + 1; e < K; e++) {
               if (Math.abs(infos[a]!.gap + infos[b]!.gap + infos[c]!.gap + infos[d]!.gap + infos[e]!.gap - gapTarget) > tolerance) continue
               if (Math.abs(infos[a]!.value + infos[b]!.value + infos[c]!.value + infos[d]!.value + infos[e]!.value - valTarget) > tolerance) continue
+              if (y1Count != null && y1[a]! + y1[b]! + y1[c]! + y1[d]! + y1[e]! !== y1Count) continue
               const score = counts[a]! + counts[b]! + counts[c]! + counts[d]! + counts[e]!
               if (top.length < topN) {
                 top.push({ idx: [a, b, c, d, e], score })
