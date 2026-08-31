@@ -578,6 +578,11 @@ function pad2(n: number): string {
       </ul>
     </UCard>
 
+    <SignalsSimilaritySection
+      v-if="rows.length > 0"
+      :rows="rows"
+    />
+
     <SignalsObservationCards
       v-if="rows.length > 0"
       :rows="rows"
