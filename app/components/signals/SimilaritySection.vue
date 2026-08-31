@@ -19,7 +19,7 @@ export interface ComboRequest {
 
 const emit = defineEmits<{ useTargets: [req: ComboRequest] }>()
 
-const result = computed(() => buildSimilarity(props.rows, 5, 5))
+const result = computed(() => buildSimilarity(props.rows, 3, 5))
 
 const expanded = ref<Set<number>>(new Set([0]))
 
@@ -85,7 +85,7 @@ function useScaled(m: SimilarMatch): void {
           歷史相似片段（形狀比對）
         </p>
         <p class="text-xs text-muted">
-          拿最新 {{ result.windowLen }} 期的「形狀」（比例與漲跌節奏，不比絕對數字、不含尾數）在載入歷史的 {{ result.candidates }} 段窗口裡找最像的。分數 = 10 項檢查平均像幾成；隨便抓一段平均 {{ pct(result.mean) }}、前 5% 門檻 {{ pct(result.p95) }} — 高於門檻才算真的突出。每段附「下一期／下二期」實際開出的結果，供回頭驗證參考（樣本少，是參考不是預測）。
+          拿最新 {{ result.windowLen }} 期的「形狀」（比例與漲跌節奏，不比絕對數字、不含尾數）找最像的歷史段落。硬性門檻：三條總和線（獎號／隔期／數值）收尾那一步的加減方向必須跟現在完全一致（加=加、減=減、0 才算平），不一致的直接淘汰 — {{ result.candidatesAll }} 段裡有 {{ result.candidates }} 段通過。分數 = 10 項檢查平均像幾成；通過段的平均 {{ pct(result.mean) }}、前 5% 門檻 {{ pct(result.p95) }}。每段附「下一期／下二期」實際開出的結果，供回頭驗證參考（樣本少，是參考不是預測）。
         </p>
       </div>
     </template>

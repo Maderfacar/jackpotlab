@@ -44,6 +44,9 @@ export interface SimilarMatch {
 
 export interface SimilarityResult {
   windowLen: number
+  /** 全部候選窗口數（含被收尾方向過濾掉的） */
+  candidatesAll: number
+  /** 通過收尾方向硬過濾、實際進入比分的窗口數 */
   candidates: number
   mean: number
   p95: number
@@ -223,16 +226,34 @@ function scoreDims(cur: WindowFeatures, cand: WindowFeatures, L: number): DimSco
   ]
 }
 
-export function buildSimilarity(rows: SignalRow[], windowLen = 5, topK = 5): SimilarityResult | null {
+/** 序列收尾那一步的方向：1 加 / -1 減 / 0 平（嚴格看正負，0 才算平） */
+function lastStepDir(series: number[]): number {
+  const d = series[series.length - 1]! - series[series.length - 2]!
+  return d > 0 ? 1 : d < 0 ? -1 : 0
+}
+
+export function buildSimilarity(rows: SignalRow[], windowLen = 3, topK = 5): SimilarityResult | null {
   if (rows.length < windowLen * 2 + 2) return null
   const L = windowLen
   const curRows = rows.slice(-L)
   const cur = featuresOf(curRows)
 
+  // 2026-09-01 使用者拍板（方案 A）：收尾步方向硬過濾 —
+  // 三條總和線（獎號/隔期/數值）收尾那步的加減方向，與現在不一致的段落直接淘汰。
+  const curLastDirs = [lastStepDir(cur.prizeS), lastStepDir(cur.gapS), lastStepDir(cur.valS)]
+
+  let candidatesAll = 0
   const scored: Array<{ endIdx: number, score: number, dims: DimScore[] }> = []
   for (let j = L - 1; j <= rows.length - 1 - L; j++) {
     const w = rows.slice(j - L + 1, j + 1)
-    const dims = scoreDims(cur, featuresOf(w), L)
+    candidatesAll++
+    const feats = featuresOf(w)
+    if (
+      lastStepDir(feats.prizeS) !== curLastDirs[0]
+      || lastStepDir(feats.gapS) !== curLastDirs[1]
+      || lastStepDir(feats.valS) !== curLastDirs[2]
+    ) continue
+    const dims = scoreDims(cur, feats, L)
     const score = dims.reduce((a, d) => a + d.score, 0) / dims.length
     scored.push({ endIdx: j, score, dims })
   }
@@ -255,6 +276,7 @@ export function buildSimilarity(rows: SignalRow[], windowLen = 5, topK = 5): Sim
 
   return {
     windowLen: L,
+    candidatesAll,
     candidates: scored.length,
     mean,
     p95,
