@@ -79,6 +79,14 @@ onMounted(() => {
 
 const latestRow = computed(() => rows.value.at(-1) ?? null)
 
+// 相似段 →「用它的下一期算組合」一鍵帶入
+type ComboRequest = { gap: number, val: number, tolerance: number, label: string }
+const comboRequest = ref<ComboRequest | null>(null)
+
+function onUseTargets(req: ComboRequest) {
+  comboRequest.value = { ...req }
+}
+
 function pad2(n: number): string {
   return String(n).padStart(2, '0')
 }
@@ -162,12 +170,14 @@ function pad2(n: number): string {
     <SignalsSimilaritySection
       v-if="rows.length > 0"
       :rows="rows"
+      @use-targets="onUseTargets"
     />
 
     <SignalsComboTool
       v-if="analysisState && latestRow"
       :state="analysisState"
       :latest-issue="latestRow.issue"
+      :request="comboRequest"
     />
 
     <p class="text-xs text-muted">

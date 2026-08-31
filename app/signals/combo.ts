@@ -41,6 +41,22 @@ export interface ComboResult {
   missing: number[]
 }
 
+/**
+ * 「換算到現在水位」：歷史下一期的值先看它在自己窗口裡的相對位置
+ * （距窗口平均幾個標準差），再映射到當前窗口的平均與標準差上。
+ * 這就是把「形狀上的等價點」翻譯成今天的目標數字；為近似值，建議配容差使用。
+ */
+export function translateToCurrentLevel(histNext: number, histWindow: number[], curWindow: number[]): number {
+  const meanOf = (s: number[]) => s.reduce((a, b) => a + b, 0) / s.length
+  const sdOf = (s: number[], m: number) => Math.sqrt(s.reduce((a, b) => a + (b - m) ** 2, 0) / s.length) || 1
+  const mh = meanOf(histWindow)
+  const sh = sdOf(histWindow, mh)
+  const mc = meanOf(curWindow)
+  const sc = sdOf(curWindow, mc)
+  const z = (histNext - mh) / sh
+  return Math.max(0, Math.round(mc + z * sc))
+}
+
 function leftVal(record: string): number {
   const first = record.split(',')[0]
   const v = first ? Number.parseInt(first, 10) : Number.NaN
@@ -72,7 +88,8 @@ export function findCombos(
   infos: ComboNumberInfo[],
   gapTarget: number,
   valTarget: number,
-  topN = 5
+  topN = 5,
+  tolerance = 0
 ): ComboResult {
   const K = infos.length
   const totalPossible = K >= 5 ? (K * (K - 1) * (K - 2) * (K - 3) * (K - 4)) / 120 : 0
@@ -85,8 +102,8 @@ export function findCombos(
       for (let c = b + 1; c < K; c++) {
         for (let d = c + 1; d < K; d++) {
           for (let e = d + 1; e < K; e++) {
-            if (infos[a]!.gap + infos[b]!.gap + infos[c]!.gap + infos[d]!.gap + infos[e]!.gap !== gapTarget) continue
-            if (infos[a]!.value + infos[b]!.value + infos[c]!.value + infos[d]!.value + infos[e]!.value !== valTarget) continue
+            if (Math.abs(infos[a]!.gap + infos[b]!.gap + infos[c]!.gap + infos[d]!.gap + infos[e]!.gap - gapTarget) > tolerance) continue
+            if (Math.abs(infos[a]!.value + infos[b]!.value + infos[c]!.value + infos[d]!.value + infos[e]!.value - valTarget) > tolerance) continue
             total++
             counts[a]!++
             counts[b]!++
@@ -107,8 +124,8 @@ export function findCombos(
         for (let c = b + 1; c < K; c++) {
           for (let d = c + 1; d < K; d++) {
             for (let e = d + 1; e < K; e++) {
-              if (infos[a]!.gap + infos[b]!.gap + infos[c]!.gap + infos[d]!.gap + infos[e]!.gap !== gapTarget) continue
-              if (infos[a]!.value + infos[b]!.value + infos[c]!.value + infos[d]!.value + infos[e]!.value !== valTarget) continue
+              if (Math.abs(infos[a]!.gap + infos[b]!.gap + infos[c]!.gap + infos[d]!.gap + infos[e]!.gap - gapTarget) > tolerance) continue
+              if (Math.abs(infos[a]!.value + infos[b]!.value + infos[c]!.value + infos[d]!.value + infos[e]!.value - valTarget) > tolerance) continue
               const score = counts[a]! + counts[b]! + counts[c]! + counts[d]! + counts[e]!
               if (top.length < topN) {
                 top.push({ idx: [a, b, c, d, e], score })

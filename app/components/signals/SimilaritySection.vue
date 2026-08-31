@@ -5,9 +5,19 @@
  */
 
 import type { SignalRow } from '~/signals/types'
-import { buildSimilarity, type WindowPeriod } from '~/signals/similarity'
+import { buildSimilarity, type SimilarMatch, type WindowPeriod } from '~/signals/similarity'
+import { translateToCurrentLevel } from '~/signals/combo'
 
 const props = defineProps<{ rows: SignalRow[] }>()
+
+export interface ComboRequest {
+  gap: number
+  val: number
+  tolerance: number
+  label: string
+}
+
+const emit = defineEmits<{ useTargets: [req: ComboRequest] }>()
 
 const result = computed(() => buildSimilarity(props.rows, 5, 5))
 
@@ -30,6 +40,40 @@ function pad2(n: number): string {
 
 function periodLine(p: WindowPeriod): string {
   return `獎號總和 ${p.prizeSum} · 隔期總和 ${p.gapSum} · 數值總和 ${p.valueSum} · 遠近 ${p.bucket}`
+}
+
+/** 歷史下一期的隔期/數值總和 → 換算到當前窗口水位的目標值 */
+function scaledTargets(m: SimilarMatch): { gap: number, val: number } | null {
+  if (!m.next1 || !result.value) return null
+  const histGaps = m.window.map(p => p.gapSum)
+  const histVals = m.window.map(p => p.valueSum)
+  const curGaps = result.value.current.map(p => p.gapSum)
+  const curVals = result.value.current.map(p => p.valueSum)
+  return {
+    gap: translateToCurrentLevel(m.next1.gapSum, histGaps, curGaps),
+    val: translateToCurrentLevel(m.next1.valueSum, histVals, curVals)
+  }
+}
+
+function useRaw(m: SimilarMatch): void {
+  if (!m.next1) return
+  emit('useTargets', {
+    gap: m.next1.gapSum,
+    val: m.next1.valueSum,
+    tolerance: 0,
+    label: `照 ${m.next1.issue} 原值（隔期總和 ${m.next1.gapSum}·數值總和 ${m.next1.valueSum}）`
+  })
+}
+
+function useScaled(m: SimilarMatch): void {
+  const t = scaledTargets(m)
+  if (!t || !m.next1) return
+  emit('useTargets', {
+    gap: t.gap,
+    val: t.val,
+    tolerance: 3,
+    label: `${m.next1.issue} 換算到現在水位（≈隔期總和 ${t.gap}·數值總和 ${t.val}，容差 ±3）`
+  })
 }
 </script>
 
@@ -99,12 +143,30 @@ function periodLine(p: WindowPeriod): string {
               :aria-label="expanded.has(i) ? '收合' : '展開'"
             />
           </div>
-          <p
+          <div
             v-if="m.next1"
-            class="mt-1 pl-1 text-xs text-muted"
+            class="mt-1 flex flex-wrap items-center gap-2 pl-1 text-xs text-muted"
           >
-            它的下一期：隔期總和 {{ m.next1.gapSum }} · 數值總和 {{ m.next1.valueSum }} · 遠近 {{ m.next1.bucket }}
-          </p>
+            <span>它的下一期：隔期總和 {{ m.next1.gapSum }} · 數值總和 {{ m.next1.valueSum }} · 遠近 {{ m.next1.bucket }}</span>
+            <UButton
+              color="primary"
+              variant="soft"
+              size="xs"
+              icon="i-lucide-calculator"
+              @click.stop="useRaw(m)"
+            >
+              照原值算組合
+            </UButton>
+            <UButton
+              color="info"
+              variant="soft"
+              size="xs"
+              icon="i-lucide-scale"
+              @click.stop="useScaled(m)"
+            >
+              換算現在水位算組合{{ scaledTargets(m) ? `（≈${scaledTargets(m)!.gap}·${scaledTargets(m)!.val}）` : '' }}
+            </UButton>
+          </div>
 
           <div
             v-if="expanded.has(i)"
