@@ -30,11 +30,8 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { label: '艾佛森', icon: 'i-lucide-target', to: '/iverson' },
-  { label: '柯比', icon: 'i-lucide-crosshair', to: '/kobe' },
-  { label: '賓果海尼根', icon: 'i-lucide-beer', to: '/bingo-heineken' },
-  { label: '鑑古', icon: 'i-lucide-brain', to: '/hindsight' },
   { label: '訊號', icon: 'i-lucide-lightbulb', to: '/signals' },
+  { label: '賓果訊號', icon: 'i-lucide-grid-3x3', to: '/bingo-signals' },
   { label: '開獎號碼', icon: 'i-lucide-list-checks', to: '/draws' },
   { label: '系統健康', icon: 'i-lucide-activity', to: '/admin/health' }
 ]
