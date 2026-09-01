@@ -1,9 +1,11 @@
 <script setup lang="ts">
 /**
- * 「預期 vs 實際」帳本（2026-09-02 使用者拍板：都記、Firestore、一拍兩瞪眼）。
+ * 「預期 vs 實際」帳本（2026-09-02 拍板：都記、Firestore、一拍兩瞪眼）。
+ * 2026-09-02 改版：使用者反映看不懂 → 全面改成「項目｜預期｜實際｜對了嗎」對照表，
+ * 術語降到最低（不再出現多數決／中位／逐位等字眼）。
  *
- * 資料一律來自 GET /api/signals/forecast：server 自算自存自對帳，
- * 本元件只讀不寫。快照固定 3 期窗口（與頁面上的探索用 3/4/5 切換無關）。
+ * 資料一律來自 GET /api/signals/forecast：server 自算自存自對帳，本元件只讀不寫。
+ * 快照固定 3 期窗口（與頁面上探索用的 3/4/5 切換無關）。
  */
 
 import type { Forecast, ForecastOutcome } from '~/signals/forecast'
@@ -37,12 +39,17 @@ interface ForecastResponse {
 const data = ref<ForecastResponse | null>(null)
 const loading = ref(false)
 const error = ref<string | null>(null)
+const expandedHistory = ref<Set<string>>(new Set())
 
 async function load() {
   loading.value = true
   error.value = null
   try {
-    data.value = await $fetch<ForecastResponse>('/api/signals/forecast')
+    const res = await $fetch<ForecastResponse>('/api/signals/forecast')
+    data.value = res
+    // 最新一筆歷史帳預設展開
+    const first = res.history[0]?.forecast.baseIssue
+    expandedHistory.value = new Set(first ? [first] : [])
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'unknown error'
   } finally {
@@ -52,14 +59,39 @@ async function load() {
 
 onMounted(load)
 
-function dirLabel(d: number | null): string {
-  if (d == null) return '平手·不表態'
-  return d > 0 ? '升' : d < 0 ? '降' : '平'
+function toggleHistory(key: string): void {
+  const next = new Set(expandedHistory.value)
+  if (next.has(key)) next.delete(key)
+  else next.add(key)
+  expandedHistory.value = next
 }
 
-function hitBadge(h: boolean | null): { text: string, color: 'success' | 'error' | 'neutral' } {
-  if (h == null) return { text: '—', color: 'neutral' }
-  return h ? { text: '✓', color: 'success' } : { text: '✗', color: 'error' }
+function dirWord(d: number | null): string {
+  if (d == null) return '沒共識'
+  return d > 0 ? '會變大' : d < 0 ? '會變小' : '持平'
+}
+
+/** 已對帳的實際走向（舊快照可能沒存，顯示 —） */
+function pastDirWord(d: number | undefined): string {
+  if (d == null) return '—'
+  return d > 0 ? '變大了' : d < 0 ? '變小了' : '持平'
+}
+
+/** 5 段參考的走向票整理成白話，例：「3 段變大、2 段變小」 */
+function dirVotesText(votes: number[]): string {
+  let up = 0
+  let down = 0
+  let flat = 0
+  for (const v of votes) {
+    if (v > 0) up++
+    else if (v < 0) down++
+    else flat++
+  }
+  const parts: string[] = []
+  if (up) parts.push(`${up} 段變大`)
+  if (down) parts.push(`${down} 段變小`)
+  if (flat) parts.push(`${flat} 段持平`)
+  return parts.join('、')
 }
 
 function pct(v: number | null): string {
@@ -70,8 +102,24 @@ function pad2(n: number): string {
   return String(n).padStart(2, '0')
 }
 
-function bestHit(o: ForecastOutcome): number | null {
-  return o.comboHits.length > 0 ? Math.max(...o.comboHits) : null
+function bestHit(o: ForecastOutcome): number {
+  return o.comboHits.length > 0 ? Math.max(...o.comboHits) : 0
+}
+
+/** 歷史帳一行摘要，收合時看這個就夠 */
+function entrySummary(e: SettledEntry): string {
+  const hits = [e.outcome.dirHit.gap, e.outcome.dirHit.val, e.outcome.dirHit.prize]
+  const decided = hits.filter(h => h != null)
+  const ok = decided.filter(h => h === true).length
+  return `走向對 ${ok}/${decided.length} · 隔期總和差 ${e.outcome.dGap} · 數值總和差 ${e.outcome.dVal} · 號碼最多中 ${bestHit(e.outcome)} 顆`
+}
+
+const HIT_YES = { text: '✓ 對', color: 'success' as const }
+const HIT_NO = { text: '✗ 錯', color: 'error' as const }
+const HIT_NA = { text: '不算', color: 'neutral' as const }
+
+function hitOf(h: boolean | null): { text: string, color: 'success' | 'error' | 'neutral' } {
+  return h == null ? HIT_NA : h ? HIT_YES : HIT_NO
 }
 </script>
 
@@ -89,7 +137,7 @@ function bestHit(o: ForecastOutcome): number | null {
             variant="subtle"
             size="sm"
           >
-            本次已存今日快照
+            今天的預期已存檔
           </UBadge>
           <UButton
             color="neutral"
@@ -103,7 +151,7 @@ function bestHit(o: ForecastOutcome): number | null {
           />
         </div>
         <p class="text-xs text-muted">
-          每天第一次開這頁，自動把當日預期存檔（開獎前已定、同一期不覆蓋）；開獎後下次開頁自動對帳，一拍兩瞪眼、無容差。快照固定用 3 期窗口。兩層都記：參考值（方向／隔和／值和／逐位 y）與濃縮號碼組合。
+          每天開這頁，系統自動把「相似比對前 5 段合議出的預期」記下來；開獎後再開頁，自動對答案、累積成績。存了就不能改，對錯照登。
         </p>
       </div>
     </template>
@@ -120,52 +168,126 @@ function bestHit(o: ForecastOutcome): number | null {
       color="warning"
       variant="subtle"
       icon="i-lucide-database-zap"
-      title="此環境未設定 Firestore 憑證：只顯示當下預期、不會存檔"
+      title="此環境未設定 Firestore：只顯示當下預期、不會存檔"
     />
 
     <div
       v-if="data"
-      class="space-y-5"
+      class="space-y-6"
     >
-      <!-- 今日預期 -->
+      <!-- 本期預期（未開獎） -->
       <div
         v-if="data.today"
         class="space-y-2"
       >
         <p class="text-sm font-medium">
-          本期預期（基準 {{ data.today.forecast.baseIssue }}・{{ data.today.forecast.baseDate }} 的下一期）
+          下一期的預期（{{ data.today.forecast.baseIssue }}・{{ data.today.forecast.baseDate }} 開完後存檔）
         </p>
-        <div class="grid gap-2 text-xs sm:grid-cols-3">
-          <div class="rounded-lg bg-elevated/50 p-2">
-            <p class="font-medium">
-              方向（前 5 段多數決）
-            </p>
-            <p>獎和 {{ dirLabel(data.today.forecast.majority.prize) }} · 隔和 {{ dirLabel(data.today.forecast.majority.gap) }} · 值和 {{ dirLabel(data.today.forecast.majority.val) }}</p>
-          </div>
-          <div class="rounded-lg bg-elevated/50 p-2">
-            <p class="font-medium">
-              目標值（換算水位取中位）
-            </p>
-            <p>隔和 {{ data.today.forecast.tGapMedian }}（票 {{ data.today.forecast.tGapList.join('、') }}）</p>
-            <p>值和 {{ data.today.forecast.tValMedian }}（票 {{ data.today.forecast.tValList.join('、') }}）</p>
-          </div>
-          <div class="rounded-lg bg-elevated/50 p-2">
-            <p class="font-medium">
-              位置 y
-            </p>
-            <p>y=1 顆數 {{ data.today.forecast.y1Median }}（票 {{ data.today.forecast.y1Votes.join('、') }}）</p>
-            <p>逐位中位（第1~5顆）：{{ data.today.forecast.yPosMedian.join('、') }}</p>
-          </div>
+        <div class="overflow-x-auto">
+          <table class="w-full min-w-[28rem] text-xs">
+            <thead>
+              <tr class="border-b border-default text-left text-muted">
+                <th class="py-1.5 pr-2 font-medium">
+                  項目
+                </th>
+                <th class="py-1.5 pr-2 font-medium">
+                  預期
+                </th>
+                <th class="py-1.5 font-medium">
+                  怎麼來的
+                </th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-default">
+              <tr>
+                <td class="py-1.5 pr-2">
+                  隔期總和
+                </td>
+                <td class="py-1.5 pr-2 font-mono font-semibold">
+                  {{ data.today.forecast.tGapMedian }}
+                </td>
+                <td class="py-1.5 text-muted">
+                  5 段參考值 {{ [...data.today.forecast.tGapList].sort((a, b) => a - b).join('、') }}，取中間
+                </td>
+              </tr>
+              <tr>
+                <td class="py-1.5 pr-2">
+                  數值總和
+                </td>
+                <td class="py-1.5 pr-2 font-mono font-semibold">
+                  {{ data.today.forecast.tValMedian }}
+                </td>
+                <td class="py-1.5 text-muted">
+                  5 段參考值 {{ [...data.today.forecast.tValList].sort((a, b) => a - b).join('、') }}，取中間
+                </td>
+              </tr>
+              <tr>
+                <td class="py-1.5 pr-2">
+                  隔期總和走向
+                </td>
+                <td class="py-1.5 pr-2 font-semibold">
+                  {{ dirWord(data.today.forecast.majority.gap) }}
+                </td>
+                <td class="py-1.5 text-muted">
+                  {{ dirVotesText(data.today.forecast.refs.map(r => r.dirGap)) }}
+                </td>
+              </tr>
+              <tr>
+                <td class="py-1.5 pr-2">
+                  數值總和走向
+                </td>
+                <td class="py-1.5 pr-2 font-semibold">
+                  {{ dirWord(data.today.forecast.majority.val) }}
+                </td>
+                <td class="py-1.5 text-muted">
+                  {{ dirVotesText(data.today.forecast.refs.map(r => r.dirVal)) }}
+                </td>
+              </tr>
+              <tr>
+                <td class="py-1.5 pr-2">
+                  獎號總和走向
+                </td>
+                <td class="py-1.5 pr-2 font-semibold">
+                  {{ dirWord(data.today.forecast.majority.prize) }}
+                </td>
+                <td class="py-1.5 text-muted">
+                  {{ dirVotesText(data.today.forecast.refs.map(r => r.dirPrize)) }}（這條過去命中偏低，參考就好）
+                </td>
+              </tr>
+              <tr>
+                <td class="py-1.5 pr-2">
+                  y=1 的顆數
+                </td>
+                <td class="py-1.5 pr-2 font-mono font-semibold">
+                  {{ data.today.forecast.y1Median }} 顆
+                </td>
+                <td class="py-1.5 text-muted">
+                  5 段的票 {{ [...data.today.forecast.y1Votes].sort((a, b) => a - b).join('、') }}
+                </td>
+              </tr>
+              <tr>
+                <td class="py-1.5 pr-2">
+                  五顆的位置 y
+                </td>
+                <td class="py-1.5 pr-2 font-mono font-semibold">
+                  {{ data.today.forecast.yPosMedian.join('、') }}
+                </td>
+                <td class="py-1.5 text-muted">
+                  第 1～5 顆（小→大）各自 5 段投票取中間
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
         <div class="space-y-1 text-xs">
           <p class="font-medium">
-            濃縮組合（目標 隔和 {{ data.today.forecast.comboTargets.gap }}·值和 {{ data.today.forecast.comboTargets.val }}·y=1 {{ data.today.forecast.comboTargets.y1 }} 顆·容差 ±{{ data.today.forecast.comboTargets.tolerance }}，符合 {{ data.today.forecast.comboTotal }} 組）
+            號碼組合（拿上面「隔期總和 {{ data.today.forecast.comboTargets.gap }}＋數值總和 {{ data.today.forecast.comboTargets.val }}＋y=1 共 {{ data.today.forecast.comboTargets.y1 }} 顆、容差 ±{{ data.today.forecast.comboTargets.tolerance }}」去湊，共 {{ data.today.forecast.comboTotal }} 組裡的前 5 組）
           </p>
           <p
             v-if="data.today.forecast.combos.length === 0"
             class="text-muted"
           >
-            無符合組合（照登不藏）
+            這組條件湊不出任何組合（照登不藏）
           </p>
           <div
             v-for="(c, i) in data.today.forecast.combos"
@@ -184,6 +306,9 @@ function bestHit(o: ForecastOutcome): number | null {
               {{ pad2(n) }}
             </UBadge>
           </div>
+          <p class="text-muted">
+            開獎後這整張表會自動補上「實際」和「對╱錯」。
+          </p>
         </div>
       </div>
       <p
@@ -196,19 +321,118 @@ function bestHit(o: ForecastOutcome): number | null {
       <!-- 累積成績 -->
       <div
         v-if="data.stats"
-        class="space-y-1 border-t border-default pt-3 text-xs"
+        class="space-y-2 border-t border-default pt-3"
       >
         <p class="text-sm font-medium">
-          累積成績（{{ data.stats.n }} 期已對帳）
+          累積成績（已對過 {{ data.stats.n }} 期的答案）
         </p>
-        <p>
-          方向命中：獎和 {{ pct(data.stats.dirRate.prize) }}（{{ data.stats.dirDecided.prize }} 期表態）· 隔和 {{ pct(data.stats.dirRate.gap) }}（{{ data.stats.dirDecided.gap }} 期）· 值和 {{ pct(data.stats.dirRate.val) }}（{{ data.stats.dirDecided.val }} 期）
-        </p>
-        <p>目標值平均差：隔和 {{ data.stats.avgDGap.toFixed(1) }} · 值和 {{ data.stats.avgDVal.toFixed(1) }}</p>
-        <p>y=1 顆數全中率 {{ pct(data.stats.y1Rate) }} · 逐位 y 全中率（第1~5顆）{{ data.stats.yPosRate.map(pct).join(' / ') }}</p>
-        <p v-if="data.stats.comboDays > 0">
-          組合最好成績平均 {{ data.stats.comboBestAvg?.toFixed(2) }} 顆（分布 0~5 顆：{{ data.stats.comboBestDist.join('/') }}）
-        </p>
+        <div class="overflow-x-auto">
+          <table class="w-full min-w-[24rem] text-xs">
+            <thead>
+              <tr class="border-b border-default text-left text-muted">
+                <th class="py-1.5 pr-2 font-medium">
+                  項目
+                </th>
+                <th class="py-1.5 pr-2 font-medium">
+                  成績
+                </th>
+                <th class="py-1.5 font-medium">
+                  說明
+                </th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-default">
+              <tr>
+                <td class="py-1.5 pr-2">
+                  隔期總和走向
+                </td>
+                <td class="py-1.5 pr-2 font-semibold">
+                  對 {{ pct(data.stats.dirRate.gap) }}
+                </td>
+                <td class="py-1.5 text-muted">
+                  {{ data.stats.dirDecided.gap }} 期有表態
+                </td>
+              </tr>
+              <tr>
+                <td class="py-1.5 pr-2">
+                  數值總和走向
+                </td>
+                <td class="py-1.5 pr-2 font-semibold">
+                  對 {{ pct(data.stats.dirRate.val) }}
+                </td>
+                <td class="py-1.5 text-muted">
+                  {{ data.stats.dirDecided.val }} 期有表態
+                </td>
+              </tr>
+              <tr>
+                <td class="py-1.5 pr-2">
+                  獎號總和走向
+                </td>
+                <td class="py-1.5 pr-2 font-semibold">
+                  對 {{ pct(data.stats.dirRate.prize) }}
+                </td>
+                <td class="py-1.5 text-muted">
+                  {{ data.stats.dirDecided.prize }} 期有表態
+                </td>
+              </tr>
+              <tr>
+                <td class="py-1.5 pr-2">
+                  隔期總和數字
+                </td>
+                <td class="py-1.5 pr-2 font-semibold">
+                  平均差 {{ data.stats.avgDGap.toFixed(1) }}
+                </td>
+                <td class="py-1.5 text-muted">
+                  預期值和實際差多少
+                </td>
+              </tr>
+              <tr>
+                <td class="py-1.5 pr-2">
+                  數值總和數字
+                </td>
+                <td class="py-1.5 pr-2 font-semibold">
+                  平均差 {{ data.stats.avgDVal.toFixed(1) }}
+                </td>
+                <td class="py-1.5 text-muted">
+                  預期值和實際差多少
+                </td>
+              </tr>
+              <tr>
+                <td class="py-1.5 pr-2">
+                  y=1 顆數
+                </td>
+                <td class="py-1.5 pr-2 font-semibold">
+                  全中 {{ pct(data.stats.y1Rate) }}
+                </td>
+                <td class="py-1.5 text-muted">
+                  猜的顆數 = 實際顆數才算對
+                </td>
+              </tr>
+              <tr>
+                <td class="py-1.5 pr-2">
+                  五顆的位置 y
+                </td>
+                <td class="py-1.5 pr-2 font-semibold">
+                  {{ data.stats.yPosRate.map(pct).join(' / ') }}
+                </td>
+                <td class="py-1.5 text-muted">
+                  第 1～5 顆各自的全中率
+                </td>
+              </tr>
+              <tr v-if="data.stats.comboDays > 0">
+                <td class="py-1.5 pr-2">
+                  號碼組合
+                </td>
+                <td class="py-1.5 pr-2 font-semibold">
+                  最好那組平均中 {{ data.stats.comboBestAvg?.toFixed(2) }} 顆
+                </td>
+                <td class="py-1.5 text-muted">
+                  中 0～5 顆的次數：{{ data.stats.comboBestDist.join(' / ') }}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <!-- 歷史帳 -->
@@ -217,66 +441,182 @@ function bestHit(o: ForecastOutcome): number | null {
         class="space-y-2 border-t border-default pt-3"
       >
         <p class="text-sm font-medium">
-          歷史帳（新 → 舊，最多 30 筆）
+          歷史帳（新 → 舊）
         </p>
-        <ul class="space-y-2 text-xs">
+        <ul class="space-y-2">
           <li
             v-for="entry in data.history"
             :key="entry.forecast.baseIssue"
-            class="space-y-1 rounded-lg bg-elevated/50 p-2"
+            class="rounded-lg bg-elevated/50"
           >
-            <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
-              <span class="font-mono">{{ entry.outcome.actualIssue }}</span>
+            <div
+              class="flex cursor-pointer flex-wrap items-center gap-x-2 gap-y-1 p-2 text-xs"
+              @click="toggleHistory(entry.forecast.baseIssue)"
+            >
+              <span class="font-mono font-medium">{{ entry.outcome.actualIssue }}</span>
               <span class="text-muted">{{ entry.outcome.actualDate }}</span>
-              <span>開出</span>
-              <UBadge
-                v-for="n in entry.outcome.actualPrizes"
-                :key="n"
-                color="warning"
-                variant="soft"
-                size="sm"
-                class="min-w-6 justify-center font-mono"
-              >
-                {{ pad2(n) }}
-              </UBadge>
-              <span
-                v-if="bestHit(entry.outcome) != null"
+              <span class="text-muted">{{ entrySummary(entry) }}</span>
+              <UButton
+                color="neutral"
+                variant="ghost"
+                size="xs"
                 class="ml-auto"
-              >組合最好對中 {{ bestHit(entry.outcome) }} 顆</span>
+                :icon="expandedHistory.has(entry.forecast.baseIssue) ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
+                :aria-label="expandedHistory.has(entry.forecast.baseIssue) ? '收合' : '展開'"
+              />
             </div>
-            <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
-              <span
-                v-for="line in (['prize', 'gap', 'val'] as const)"
-                :key="line"
-                class="flex items-center gap-1"
+
+            <div
+              v-if="expandedHistory.has(entry.forecast.baseIssue)"
+              class="space-y-3 px-2 pb-3 text-xs"
+            >
+              <div class="flex flex-wrap items-center gap-1">
+                <span class="text-muted">實際開出：</span>
+                <UBadge
+                  v-for="n in entry.outcome.actualPrizes"
+                  :key="n"
+                  color="warning"
+                  variant="solid"
+                  size="sm"
+                  class="min-w-7 justify-center font-mono"
+                >
+                  {{ pad2(n) }}
+                </UBadge>
+              </div>
+
+              <div class="overflow-x-auto">
+                <table class="w-full min-w-[26rem]">
+                  <thead>
+                    <tr class="border-b border-default text-left text-muted">
+                      <th class="py-1 pr-2 font-medium">
+                        項目
+                      </th>
+                      <th class="py-1 pr-2 font-medium">
+                        預期
+                      </th>
+                      <th class="py-1 pr-2 font-medium">
+                        實際
+                      </th>
+                      <th class="py-1 font-medium">
+                        對了嗎
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-default">
+                    <tr>
+                      <td class="py-1 pr-2">
+                        隔期總和
+                      </td>
+                      <td class="py-1 pr-2 font-mono">
+                        {{ entry.forecast.tGapMedian }}
+                      </td>
+                      <td class="py-1 pr-2 font-mono">
+                        {{ entry.outcome.actualGapSum }}
+                      </td>
+                      <td class="py-1">
+                        差 {{ entry.outcome.dGap }}
+                      </td>
+                    </tr>
+                    <tr>
+                      <td class="py-1 pr-2">
+                        數值總和
+                      </td>
+                      <td class="py-1 pr-2 font-mono">
+                        {{ entry.forecast.tValMedian }}
+                      </td>
+                      <td class="py-1 pr-2 font-mono">
+                        {{ entry.outcome.actualValSum }}
+                      </td>
+                      <td class="py-1">
+                        差 {{ entry.outcome.dVal }}
+                      </td>
+                    </tr>
+                    <tr
+                      v-for="line in (['gap', 'val', 'prize'] as const)"
+                      :key="line"
+                    >
+                      <td class="py-1 pr-2">
+                        {{ line === 'gap' ? '隔期總和走向' : line === 'val' ? '數值總和走向' : '獎號總和走向' }}
+                      </td>
+                      <td class="py-1 pr-2">
+                        {{ dirWord(entry.forecast.majority[line]) }}
+                      </td>
+                      <td class="py-1 pr-2">
+                        {{ pastDirWord(entry.outcome.actualDir?.[line]) }}
+                      </td>
+                      <td class="py-1">
+                        <UBadge
+                          :color="hitOf(entry.outcome.dirHit[line]).color"
+                          variant="subtle"
+                          size="sm"
+                        >
+                          {{ hitOf(entry.outcome.dirHit[line]).text }}
+                        </UBadge>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td class="py-1 pr-2">
+                        y=1 的顆數
+                      </td>
+                      <td class="py-1 pr-2 font-mono">
+                        {{ entry.forecast.y1Median }}
+                      </td>
+                      <td class="py-1 pr-2 font-mono">
+                        {{ entry.outcome.actualY1 }}
+                      </td>
+                      <td class="py-1">
+                        <UBadge
+                          :color="hitOf(entry.outcome.y1Hit).color"
+                          variant="subtle"
+                          size="sm"
+                        >
+                          {{ hitOf(entry.outcome.y1Hit).text }}
+                        </UBadge>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td class="py-1 pr-2">
+                        五顆的位置 y
+                      </td>
+                      <td class="py-1 pr-2 font-mono">
+                        {{ entry.forecast.yPosMedian.join('、') }}
+                      </td>
+                      <td class="py-1 pr-2 font-mono">
+                        {{ entry.outcome.actualYs.join('、') }}
+                      </td>
+                      <td class="py-1">
+                        {{ entry.outcome.yPosHit.filter(h => h === true).length }}／{{ entry.outcome.yPosHit.filter(h => h != null).length }} 顆對
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div
+                v-if="entry.forecast.combos.length > 0"
+                class="space-y-1"
               >
-                {{ line === 'prize' ? '獎和' : line === 'gap' ? '隔和' : '值和' }}{{ dirLabel(entry.forecast.majority[line]) }}
-                <UBadge
-                  :color="hitBadge(entry.outcome.dirHit[line]).color"
-                  variant="subtle"
-                  size="sm"
+                <p class="text-muted">
+                  號碼組合對答案（亮黃色 = 有開出）：
+                </p>
+                <div
+                  v-for="(c, i) in entry.forecast.combos"
+                  :key="i"
+                  class="flex flex-wrap items-center gap-1"
                 >
-                  {{ hitBadge(entry.outcome.dirHit[line]).text }}
-                </UBadge>
-              </span>
-              <span>隔和差 {{ entry.outcome.dGap }}（{{ entry.forecast.tGapMedian }}→{{ entry.outcome.actualGapSum }}）</span>
-              <span>值和差 {{ entry.outcome.dVal }}（{{ entry.forecast.tValMedian }}→{{ entry.outcome.actualValSum }}）</span>
-            </div>
-            <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
-              <span class="flex items-center gap-1">
-                y=1 猜 {{ entry.forecast.y1Median }} 實 {{ entry.outcome.actualY1 }}
-                <UBadge
-                  :color="hitBadge(entry.outcome.y1Hit).color"
-                  variant="subtle"
-                  size="sm"
-                >
-                  {{ hitBadge(entry.outcome.y1Hit).text }}
-                </UBadge>
-              </span>
-              <span>
-                逐位 y 猜 {{ entry.forecast.yPosMedian.join(',') }} 實 {{ entry.outcome.actualYs.join(',') }}
-                （{{ entry.outcome.yPosHit.map(h => hitBadge(h).text).join(' ') }}）
-              </span>
+                  <span class="w-16 text-muted">第{{ i + 1 }}組 中{{ entry.outcome.comboHits[i] ?? 0 }}顆</span>
+                  <UBadge
+                    v-for="n in c.nums"
+                    :key="n"
+                    :color="entry.outcome.actualPrizes.includes(n) ? 'warning' : 'neutral'"
+                    :variant="entry.outcome.actualPrizes.includes(n) ? 'solid' : 'soft'"
+                    size="sm"
+                    class="min-w-7 justify-center font-mono"
+                  >
+                    {{ pad2(n) }}
+                  </UBadge>
+                </div>
+              </div>
             </div>
           </li>
         </ul>
@@ -286,7 +626,7 @@ function bestHit(o: ForecastOutcome): number | null {
         v-if="data.pending.length > 0"
         class="text-xs text-muted"
       >
-        另有 {{ data.pending.length }} 筆較早的快照待開獎對帳。
+        另有 {{ data.pending.length }} 筆較早的預期還沒開獎、等對答案。
       </p>
     </div>
   </UCard>

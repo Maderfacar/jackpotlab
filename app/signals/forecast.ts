@@ -82,6 +82,8 @@ export interface ForecastOutcome {
   actualValSum: number
   actualYs: number[]
   actualY1: number
+  /** 實際走向（實際下一期 vs 快照基準期；1 變大 / -1 變小 / 0 持平） */
+  actualDir: { prize: number, gap: number, val: number }
   /** 多數決 vs 實際方向；多數決平手 = null（不計入命中率） */
   dirHit: { prize: boolean | null, gap: boolean | null, val: boolean | null }
   dGap: number
@@ -241,6 +243,7 @@ export function settleForecast(forecast: Forecast, actualPrev: SignalRow, actual
     actualValSum,
     actualYs: actual.ys,
     actualY1,
+    actualDir,
     dirHit,
     dGap: Math.abs(forecast.tGapMedian - actual.sum),
     dVal: Math.abs(forecast.tValMedian - actualValSum),
