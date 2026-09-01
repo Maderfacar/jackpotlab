@@ -14,7 +14,6 @@
  * client 對此 collection 無讀寫權（rules 預設拒絕）— 一律經此 route。
  */
 
-import { FieldPath } from 'firebase-admin/firestore'
 import { getLatestDraw, getRecentDraws } from '../../utils/draw-service'
 import { tryGetAdminFirestore } from '../../utils/firebase-admin'
 import { hydrateFromDraws, type AnalysisDrawInput } from '../../../app/utils/analysis'
@@ -117,8 +116,10 @@ export default defineEventHandler(async () => {
   }
 
   // ── 2. 結帳 + 撈歷史 ──
+  // 以 baseIssue 欄位倒序（單欄位自動索引雙向可用；
+  // orderBy(documentId, 'desc') 會要求另建複合索引，避開）
   const listSnap = await coll
-    .orderBy(FieldPath.documentId(), 'desc')
+    .orderBy('baseIssue', 'desc')
     .limit(MAX_DOCS)
     .get()
 
