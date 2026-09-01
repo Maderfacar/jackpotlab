@@ -1,7 +1,8 @@
 <script setup lang="ts">
 /**
  * 「歷史相似片段」區塊 — 形狀比對（app/signals/similarity.ts）。
- * 拿最新 5 期窗口對載入歷史找形狀最像的段落，附下一期/下二期供回頭驗證。
+ * 拿最新 L 期窗口（3／4／5 可切，預設 3）對載入歷史找形狀最像的段落，
+ * 附下一期/下二期供回頭驗證。
  */
 
 import type { SignalRow } from '~/signals/types'
@@ -19,7 +20,10 @@ export interface ComboRequest {
 
 const emit = defineEmits<{ useTargets: [req: ComboRequest] }>()
 
-const result = computed(() => buildSimilarity(props.rows, 3, 5))
+const WINDOW_OPTIONS = [3, 4, 5] as const
+const windowLen = ref<number>(3)
+
+const result = computed(() => buildSimilarity(props.rows, windowLen.value, 5))
 
 const expanded = ref<Set<number>>(new Set([0]))
 
@@ -78,19 +82,47 @@ function useScaled(m: SimilarMatch): void {
 </script>
 
 <template>
-  <UCard v-if="result">
+  <UCard v-if="rows.length">
     <template #header>
       <div class="space-y-1">
-        <p class="font-semibold">
-          歷史相似片段（形狀比對）
+        <div class="flex flex-wrap items-center gap-2">
+          <p class="font-semibold">
+            歷史相似片段（形狀比對）
+          </p>
+          <div class="ml-auto flex items-center gap-1">
+            <span class="text-xs text-muted">窗口</span>
+            <UButton
+              v-for="opt in WINDOW_OPTIONS"
+              :key="opt"
+              :color="windowLen === opt ? 'primary' : 'neutral'"
+              :variant="windowLen === opt ? 'solid' : 'soft'"
+              size="xs"
+              class="font-mono"
+              @click="windowLen = opt"
+            >
+              {{ opt }}期
+            </UButton>
+          </div>
+        </div>
+        <p
+          v-if="result"
+          class="text-xs text-muted"
+        >
+          拿最新 {{ windowLen }} 期的「形狀」（比例與漲跌節奏，不比絕對數字、不含尾數）找最像的歷史段落。硬性門檻：三條總和線（獎號／隔期／數值）收尾那一步的加減方向必須跟現在完全一致（加=加、減=減、0 才算平），不一致的直接淘汰 — {{ result.candidatesAll }} 段裡有 {{ result.candidates }} 段通過。分數 = 11 項檢查平均像幾成；通過段的平均 {{ pct(result.mean) }}、前 5% 門檻 {{ pct(result.p95) }}。每段附「下一期／下二期」實際開出的結果，供回頭驗證參考（樣本少，是參考不是預測）。
         </p>
-        <p class="text-xs text-muted">
-          拿最新 {{ result.windowLen }} 期的「形狀」（比例與漲跌節奏，不比絕對數字、不含尾數）找最像的歷史段落。硬性門檻：三條總和線（獎號／隔期／數值）收尾那一步的加減方向必須跟現在完全一致（加=加、減=減、0 才算平），不一致的直接淘汰 — {{ result.candidatesAll }} 段裡有 {{ result.candidates }} 段通過。分數 = 10 項檢查平均像幾成；通過段的平均 {{ pct(result.mean) }}、前 5% 門檻 {{ pct(result.p95) }}。每段附「下一期／下二期」實際開出的結果，供回頭驗證參考（樣本少，是參考不是預測）。
+        <p
+          v-else
+          class="text-xs text-muted"
+        >
+          {{ windowLen }} 期窗口下，沒有任何歷史段落通過「收尾方向硬過濾」（或資料不足），無法比對。可切換其他窗口長度。
         </p>
       </div>
     </template>
 
-    <div class="space-y-4">
+    <div
+      v-if="result"
+      class="space-y-4"
+    >
       <!-- 當前窗口 -->
       <div class="space-y-1">
         <p class="text-xs font-medium text-muted">

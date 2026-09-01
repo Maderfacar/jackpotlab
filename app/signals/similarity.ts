@@ -1,19 +1,20 @@
 /**
  * 歷史相似片段（形狀比對）引擎 — 2026-08-31 使用者拍板規格。
  *
- * 拿「最新 L 期窗口」對載入歷史中所有同長度窗口做 10 項純形狀比對，
+ * 拿「最新 L 期窗口」對載入歷史中所有同長度窗口做 11 項純形狀比對，
  * 每項 0~1（1 = 完全一樣），總分 = 等權平均。比的是形狀（比例／差的節奏），
  * 不比絕對數字；尾數不參與（使用者指定移除）。
  *
- * 10 項：
+ * 11 項：
  *   1-3 獎號總和／隔期總和／數值總和 曲線形狀（窗口內 z-score 後點距）
  *   4   漲跌方向（三序列共 3×(L-1) 步的方向吻合率）
  *   5   隔期明細形狀（每期五顆隔期排序後向量距離）
  *   6   數值明細形狀（每期五顆數值排序後、log2 壓縮的向量距離）
  *   7   數值結構（每期 0／1-5／6-10／>10 顆數組成）
  *   8   位置 y 貼近（|Δy| 距離計分，y 差 1 給部分分）
- *   9   遠近組成（0-5／6-9／10+ 顆數組成完全相同的期數比例）
- *   10  振幅特徵（三序列的 峰位置 + 振幅比例）
+ *   9   位置 y 結構（每期 y=1／y=2／y≥3 顆數組成，2026-09-02 使用者拍板）
+ *   10  遠近組成（0-5／6-9／10+ 顆數組成完全相同的期數比例）
+ *   11  振幅特徵（三序列的 峰位置 + 振幅比例）
  */
 
 import type { SignalRow } from './types'
@@ -132,6 +133,19 @@ function valueStructure(values: number[]): number[] {
   return [zero, low, mid, high]
 }
 
+/** 位置 y 組成：每期 y=1／y=2／y≥3 各幾顆（y 無資料的顆不計入） */
+function yStructure(ys: number[]): number[] {
+  let one = 0
+  let two = 0
+  let more = 0
+  for (const y of ys) {
+    if (y === 1) one++
+    else if (y === 2) two++
+    else if (y >= 3) more++
+  }
+  return [one, two, more]
+}
+
 function amplitudeFeatures(series: number[]): { peakIdx: number, amp: number } {
   let peakIdx = 0
   for (let i = 1; i < series.length; i++) {
@@ -158,6 +172,7 @@ interface WindowFeatures {
   logValsPerPeriod: number[][]
   structPerPeriod: number[][]
   ysPerPeriod: number[][]
+  yStructPerPeriod: number[][]
   buckets: string[]
 }
 
@@ -174,6 +189,7 @@ function featuresOf(w: SignalRow[]): WindowFeatures {
     logValsPerPeriod: w.map(r => r.values.map(v => Math.log2(1 + Math.max(0, v)))),
     structPerPeriod: w.map(r => valueStructure(r.values)),
     ysPerPeriod: w.map(r => r.ys),
+    yStructPerPeriod: w.map(r => yStructure(r.ys)),
     buckets: w.map(r => bucketOf(r.gaps))
   }
 }
@@ -185,6 +201,7 @@ function scoreDims(cur: WindowFeatures, cand: WindowFeatures, L: number): DimSco
   let valDetail = 0
   let struct = 0
   let yScore = 0
+  let yStruct = 0
   let bucketMatch = 0
   for (let k = 0; k < L; k++) {
     gapDetail += sortedVecClose(cur.gapsPerPeriod[k]!, cand.gapsPerPeriod[k]!, GAP_DETAIL_SCALE)
@@ -201,6 +218,11 @@ function scoreDims(cur: WindowFeatures, cand: WindowFeatures, L: number): DimSco
         yScore += Math.max(0, 1 - Math.abs(ya - yb) / 4)
       }
     }
+    const ysa = cur.yStructPerPeriod[k]!
+    const ysb = cand.yStructPerPeriod[k]!
+    let yDiff = 0
+    for (let i = 0; i < ysa.length; i++) yDiff += Math.abs(ysa[i]! - ysb[i]!)
+    yStruct += Math.max(0, 1 - yDiff / 10)
     if (cur.buckets[k] === cand.buckets[k]) bucketMatch++
   }
 
@@ -221,6 +243,7 @@ function scoreDims(cur: WindowFeatures, cand: WindowFeatures, L: number): DimSco
     { key: 'valDetail', label: '數值明細形狀', score: valDetail / L },
     { key: 'valStruct', label: '數值結構', score: struct / L },
     { key: 'yClose', label: '位置y貼近', score: yScore / (L * 5) },
+    { key: 'yStruct', label: '位置y結構', score: yStruct / L },
     { key: 'bucket', label: '遠近組成', score: bucketMatch / L },
     { key: 'amplitude', label: '振幅特徵', score: ampScore / 3 }
   ]
