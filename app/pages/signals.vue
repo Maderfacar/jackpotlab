@@ -100,7 +100,7 @@ function pad2(n: number): string {
           訊號 · 歷史相似比對
         </h1>
         <p class="text-sm text-muted">
-          今彩 539 · 以最新一期為結尾的 5 期形狀，在載入歷史裡找最像的段落
+          今彩 539 · 以最新一期為結尾的形狀（窗口 3／4／5 期可切），在載入歷史裡找最像的段落
         </p>
       </div>
       <UButton
@@ -179,6 +179,8 @@ function pad2(n: number): string {
       :latest-issue="latestRow.issue"
       :request="comboRequest"
     />
+
+    <SignalsForecastSection />
 
     <p class="text-xs text-muted">
       誠實註記：相似段的「下一期／下二期」是歷史事實紀錄，樣本很少，是參考不是預測。每次開獎後本頁自動以最新一期重新比對。
