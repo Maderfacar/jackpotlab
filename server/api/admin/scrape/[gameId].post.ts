@@ -1,5 +1,5 @@
 import { isGameId } from '../../../../shared/lotto/games'
-import { getLatestDraw } from '../../../utils/draw-service'
+import { getDrawsByDate, getLatestDraw } from '../../../utils/draw-service'
 import { tryGetAdminFirestore } from '../../../utils/firebase-admin'
 
 interface ScrapeTriggerResponse {
@@ -43,6 +43,39 @@ export default defineEventHandler(async (event): Promise<ScrapeTriggerResponse> 
   }
 
   const triggeredAt = new Date().toISOString()
+
+  // ?date=YYYY-MM-DD → 補抓「指定日期整天」（賓果回填空缺用；慢彩種也通用）。
+  // 預設走快取完整性檢查（賓果該日 ≥200 筆即略過）；?force=true 強制重抓。
+  const query = getQuery(event)
+  const dateParam = typeof query.date === 'string' ? query.date : null
+  if (dateParam != null) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateParam)) {
+      throw createError({ statusCode: 400, statusMessage: `invalid date: ${dateParam}` })
+    }
+    try {
+      const { draws, fromCache } = await getDrawsByDate(gameId, dateParam, {
+        forceFresh: query.force === 'true'
+      })
+      const top = draws.reduce<{ drawTerm: number, drawDate: string, fetchedAt: string } | null>(
+        (acc, d) => (acc == null || d.drawTerm > acc.drawTerm
+          ? { drawTerm: d.drawTerm, drawDate: d.drawDate, fetchedAt: d.fetchedAt }
+          : acc),
+        null
+      )
+      return {
+        success: true,
+        gameId,
+        fromCache,
+        triggeredAt,
+        draw: top,
+        message: `${dateParam} 共 ${draws.length} 期${fromCache ? '（快取已完整、未重抓）' : '（已向官方補抓）'}`
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'unknown'
+      throw createError({ statusCode: 502, statusMessage: `補抓 ${dateParam} 失敗：${message}` })
+    }
+  }
+
   try {
     const { draw, fromCache } = await getLatestDraw(gameId, { forceFresh: true })
     return {

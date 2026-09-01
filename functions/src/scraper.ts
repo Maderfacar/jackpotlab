@@ -233,6 +233,53 @@ function todayInTaipei(): string {
   }).format(new Date())
 }
 
+export function yesterdayInTaipei(): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Taipei',
+    year: 'numeric', month: '2-digit', day: '2-digit'
+  }).format(new Date(Date.now() - 24 * 60 * 60 * 1000))
+}
+
+/**
+ * 補一整天賓果（整批 upsert，doc id = drawTerm 自然去重）。
+ * 每日自癒 cron 用：盤中漏抓的期、23:55 尾期都靠這條收乾淨。
+ */
+export async function scrapeBingoDay(date: string): Promise<ScrapeOutcome> {
+  const startedAt = Date.now()
+  try {
+    const records = await fetchJson(`${API_BASE}/${GAMES.bingo_bingo.endpoint}?openDate=${date}&pageNum=1&pageSize=500`)
+    const arr = extractArray(records, GAMES.bingo_bingo.resultField)
+    const draws = arr.map(r => normalizeBingo(r, date))
+    await writeDrawsBatch(draws)
+    const top = draws.reduce<DrawResult | null>(
+      (a, b) => (a == null || b.drawTerm > a.drawTerm ? b : a),
+      null
+    )
+    const outcome: ScrapeOutcome = {
+      gameId: 'bingo_bingo',
+      written: draws.length,
+      durationMs: Date.now() - startedAt,
+      topDrawTerm: top?.drawTerm ?? null,
+      topDrawDate: top?.drawDate ?? null
+    }
+    await writeHeartbeat('bingo_bingo', {
+      status: 'ok',
+      lastHealDate: date,
+      lastHealWritten: outcome.written,
+      lastHealAt: nowTs()
+    })
+    return outcome
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'unknown'
+    await writeHeartbeat('bingo_bingo', {
+      status: 'error',
+      lastErrorAt: nowTs(),
+      lastErrorMessage: `heal ${date}: ${message}`
+    }).catch(() => { /* swallow */ })
+    throw error
+  }
+}
+
 async function writeDrawsBatch(draws: DrawResult[]): Promise<void> {
   if (draws.length === 0) return
   const gameId = draws[0]!.gameId
@@ -286,7 +333,12 @@ export async function scrapeAndStore(gameId: GameId): Promise<ScrapeOutcome> {
       const today = todayInTaipei()
       const records = await fetchJson(`${API_BASE}/${GAMES.bingo_bingo.endpoint}?openDate=${today}&pageNum=1&pageSize=500`)
       const arr = extractArray(records, GAMES.bingo_bingo.resultField)
-      draws = arr.map(r => normalizeBingo(r, today))
+      const all = arr.map(r => normalizeBingo(r, today))
+      // 增量：只寫比現存最新期更新的 → 每輪 1 讀 + 1~2 寫。
+      // （舊版每輪整批重寫當日 ~220 筆，是 2026-07-19 因用量停用的主因。
+      //   當日中途漏掉的期由 scrapeBingoDay 的每日自癒補齊。）
+      const latest = await getCurrentLatestTerm('bingo_bingo')
+      draws = latest == null ? all : all.filter(d => d.drawTerm > latest)
     } else {
       draws = await fetchSlowGameLatestDraws(gameId)
     }

@@ -87,9 +87,10 @@ export async function getDrawsByDate(
   return { draws: fresh, fromCache: false }
 }
 
-/** 抓最近 N 期 — 純讀 Firestore，不打 taiwanlottery（避免 N 次 HTTP）。 */
+/** 抓最近 N 期 — 純讀 Firestore，不打 taiwanlottery（避免 N 次 HTTP）。
+ *  上限 7000：涵蓋賓果 days=30（30 × 230 期）。 */
 export async function getRecentDraws(gameId: GameId, limit: number): Promise<DrawResult[]> {
-  return getRecent(gameId, Math.min(limit, 5000))
+  return getRecent(gameId, Math.min(limit, 7000))
 }
 
 // ---------- internal helpers ----------
