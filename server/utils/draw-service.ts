@@ -33,7 +33,12 @@ function normalizeOne(gameId: GameId, raw: Record<string, unknown>, queryDate?: 
  *  - 539/大樂透/威力彩：用 LatestResult 一次拿 3 個彩種，每個都 upsert
  *  - 賓果賓果：抓今日 (台北時區) 整批，回最高 drawTerm 那一筆
  *
- * maxAgeMinutes: 超過這個年齡視為過期，現抓一次。預設 5 分鐘。
+ * maxAgeMinutes: 超過這個年齡視為過期，現抓一次。預設 5 分鐘（只用於賓果）。
+ *
+ * 慢彩種（539/大樂透/威力彩）不看年齡，改看「該開的那期有沒有到」：
+ *   已存最新一期的開獎日 < 最近一個應開獎日（開獎日 20:30 後算當天）→ 現抓。
+ *   這樣 cron 那半小時內官方 API 還沒更新時，之後有人開網站就會補抓；
+ *   已經是最新就完全不打上游。同一彩種 60 秒內最多打一次上游。
  */
 export async function getLatestDraw(
   gameId: GameId,
@@ -44,11 +49,17 @@ export async function getLatestDraw(
 
   if (!forceFresh) {
     const cached = await getLatest(gameId)
-    if (cached && !isStale(cached.fetchedAt, maxAgeMinutes)) {
-      return { draw: cached, fromCache: true }
+    if (cached) {
+      const upToDate = gameId === 'bingo_bingo'
+        ? !isStale(cached.fetchedAt, maxAgeMinutes)
+        : cached.drawDate >= expectedLatestDrawDate(gameId)
+      if (upToDate || isThrottled(gameId)) {
+        return { draw: cached, fromCache: true }
+      }
     }
   }
 
+  lastUpstreamAttempt.set(gameId, Date.now())
   const fresh = await fetchLatestFromApi(gameId)
   if (fresh.length > 0) {
     await upsertDraws(gameId, fresh)
@@ -94,6 +105,33 @@ export async function getRecentDraws(gameId: GameId, limit: number): Promise<Dra
 }
 
 // ---------- internal helpers ----------
+
+/** 慢彩種開獎日（JS getDay：0=週日）與開獎時刻（台北時間）。 */
+const SLOW_DRAW_DAYS: Record<Exclude<GameId, 'bingo_bingo'>, number[]> = {
+  lotto539: [1, 2, 3, 4, 5, 6],
+  lotto649: [2, 5],
+  super_lotto638: [1, 4]
+}
+const SLOW_DRAW_MINUTE_OF_DAY = 20 * 60 + 30
+
+/** 最近一個「應該已經開獎」的日期 YYYY-MM-DD（台北時間）。 */
+function expectedLatestDrawDate(gameId: Exclude<GameId, 'bingo_bingo'>, now = new Date()): string {
+  const days = SLOW_DRAW_DAYS[gameId]
+  // 把「台北現在」當成 UTC 欄位來算，避開主機時區
+  const taipei = new Date(now.getTime() + 8 * 60 * 60 * 1000)
+  const minuteOfDay = taipei.getUTCHours() * 60 + taipei.getUTCMinutes()
+  if (minuteOfDay < SLOW_DRAW_MINUTE_OF_DAY) taipei.setUTCDate(taipei.getUTCDate() - 1)
+  while (!days.includes(taipei.getUTCDay())) taipei.setUTCDate(taipei.getUTCDate() - 1)
+  return taipei.toISOString().slice(0, 10)
+}
+
+const UPSTREAM_THROTTLE_MS = 60 * 1000
+const lastUpstreamAttempt = new Map<GameId, number>()
+
+function isThrottled(gameId: GameId): boolean {
+  const last = lastUpstreamAttempt.get(gameId)
+  return last != null && Date.now() - last < UPSTREAM_THROTTLE_MS
+}
 
 function isStale(fetchedAtIso: string, maxAgeMinutes: number): boolean {
   const ageMs = Date.now() - new Date(fetchedAtIso).getTime()

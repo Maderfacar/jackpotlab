@@ -12,8 +12,8 @@ export default defineEventHandler(async (event): Promise<DrawQueryResponse> => {
   const rawLimit = typeof query.limit === 'string' ? Number.parseInt(query.limit, 10) : 50
   const limit = Number.isFinite(rawLimit) ? Math.max(1, Math.min(5000, rawLimit)) : 50
 
-  // 讀 Firestore 前先觸發 getLatestDraw —— 內建 5 分鐘 cache、過期會 fetch upstream + upsert 整批今日資料。
-  // 這樣 /recent 回給前端的「最新 N 期」最多 lag 5 分鐘、不再依賴 cron 健康。
+  // 讀 Firestore 前先觸發 getLatestDraw —— 慢彩種只在「該開的那期還沒存到」時才打上游，
+  // 賓果則是 5 分鐘 cache。這樣官方 API 晚於 cron 時段才更新時，有人開網站就會補抓。
   // upstream 失敗時不擋整個 /recent，仍回 Firestore 既有資料。
   try {
     await getLatestDraw(gameId)
