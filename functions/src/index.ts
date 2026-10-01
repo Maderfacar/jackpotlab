@@ -41,12 +41,17 @@ export const scrapeBingoNightly = onSchedule({
 })
 
 /**
- * 今彩 539 — 每日 20:30 開獎，20:00 - 23:55 每 5 分鐘 retry。
- * scrapeAndStore 內含「LatestResult + byPeriod」雙路徑，已存最新一期就 upsert 不會出錯。
- * 比原本「20:35 / 20:45 / 21:00 三次」靠譜：官方 API 慢一兩個小時還能自己補抓。
+ * 慢彩種排程（2026-10-01 使用者拍板）：
+ *   三個彩種官方公告都是 20:30 開獎、週日不開。
+ *   從 20:30 起每 2 分鐘抓、連續半小時（20:30 - 20:58，共 15 次），不再拖到 23:55。
+ *   scrapeAndStore 內含「LatestResult + byPeriod」雙路徑，已存最新一期就 upsert 不會出錯。
+ */
+
+/**
+ * 今彩 539 — 週一至六 20:30 開獎。
  */
 export const scrape539 = onSchedule({
-  schedule: '*/5 20-23 * * *',
+  schedule: '30-58/2 20 * * 1-6',
   timeZone: 'Asia/Taipei'
 }, async () => {
   const outcome = await scrapeAndStore('lotto539')
@@ -54,10 +59,10 @@ export const scrape539 = onSchedule({
 })
 
 /**
- * 大樂透 — 週二、五 21:30 開獎，週二、五 21:00 - 23:55 每 5 分鐘 retry。
+ * 大樂透 — 週二、五 20:30 開獎。
  */
 export const scrapeLotto649 = onSchedule({
-  schedule: '*/5 21-23 * * 2,5',
+  schedule: '30-58/2 20 * * 2,5',
   timeZone: 'Asia/Taipei'
 }, async () => {
   const outcome = await scrapeAndStore('lotto649')
@@ -65,10 +70,10 @@ export const scrapeLotto649 = onSchedule({
 })
 
 /**
- * 威力彩 — 週一、四 22:00 開獎，週一、四 22:00 - 23:55 每 5 分鐘 retry。
+ * 威力彩 — 週一、四 20:30 開獎。
  */
 export const scrapeSuperLotto = onSchedule({
-  schedule: '*/5 22-23 * * 1,4',
+  schedule: '30-58/2 20 * * 1,4',
   timeZone: 'Asia/Taipei'
 }, async () => {
   const outcome = await scrapeAndStore('super_lotto638')
