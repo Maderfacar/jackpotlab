@@ -44,7 +44,10 @@ export const scrapeBingoNightly = onSchedule({
  * 慢彩種排程（2026-10-01 使用者拍板）：
  *   三個彩種官方公告都是 20:30 開獎、週日不開。
  *   從 20:30 起每 2 分鐘抓、連續半小時（20:30 - 20:58，共 15 次），不再拖到 23:55。
- *   scrapeAndStore 內含「LatestResult + byPeriod」雙路徑，已存最新一期就 upsert 不會出錯。
+ *   官方 LatestResult 常晚 1 小時以上，所以依序試：官方完整 → 官方 LastNumber → 第三方
+ *   （pilio + i539 兩家一致），20:35 左右就能先有初步獎號（見 fast-sources.ts）。
+ *   已存到當期官方完整版後，後續每輪只讀 1 次 Firestore、不打上游。
+ *   官方完整版（含獎金分配）由使用者開站時的補抓、或下一個開獎日的 cron 補上。
  */
 
 /**

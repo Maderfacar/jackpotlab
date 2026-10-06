@@ -5,6 +5,13 @@ import {
   normalizeBingo,
   normalizeSuperLotto
 } from '../../shared/lotto/normalize'
+import {
+  expectedLatestDrawDate,
+  fetchOfficialLastNumber,
+  fetchThirdParty,
+  type FastDraw,
+  type SlowGameId
+} from '../../shared/lotto/fast-sources'
 import type { DrawResult } from '../../shared/lotto/types'
 import { getByDate, getLatest, getRecent, upsertDraws } from './draw-store'
 import { taiwanLottery } from './taiwan-lottery'
@@ -35,10 +42,10 @@ function normalizeOne(gameId: GameId, raw: Record<string, unknown>, queryDate?: 
  *
  * maxAgeMinutes: 超過這個年齡視為過期，現抓一次。預設 5 分鐘（只用於賓果）。
  *
- * 慢彩種（539/大樂透/威力彩）不看年齡，改看「該開的那期有沒有到」：
- *   已存最新一期的開獎日 < 最近一個應開獎日（開獎日 20:30 後算當天）→ 現抓。
- *   這樣 cron 那半小時內官方 API 還沒更新時，之後有人開網站就會補抓；
- *   已經是最新就完全不打上游。同一彩種 60 秒內最多打一次上游。
+ * 慢彩種（539/大樂透/威力彩）不看年齡，改看「該開的那期有沒有到、是不是官方完整版」：
+ *   已存最新一期的開獎日 < 最近一個應開獎日，或還是初步結果 → 現抓。
+ *   現抓順序：官方完整（LatestResult/byPeriod）→ 官方 LastNumber → 第三方（pilio+i539 一致）。
+ *   已經是官方完整的最新一期就完全不打上游。同一彩種 60 秒內最多打一次上游。
  */
 export async function getLatestDraw(
   gameId: GameId,
@@ -47,20 +54,20 @@ export async function getLatestDraw(
   const maxAgeMinutes = options.maxAgeMinutes ?? 5
   const forceFresh = options.forceFresh ?? false
 
-  if (!forceFresh) {
-    const cached = await getLatest(gameId)
-    if (cached) {
-      const upToDate = gameId === 'bingo_bingo'
-        ? !isStale(cached.fetchedAt, maxAgeMinutes)
-        : cached.drawDate >= expectedLatestDrawDate(gameId)
-      if (upToDate || isThrottled(gameId)) {
-        return { draw: cached, fromCache: true }
-      }
+  const cached = await getLatest(gameId)
+  if (!forceFresh && cached) {
+    const upToDate = gameId === 'bingo_bingo'
+      ? !isStale(cached.fetchedAt, maxAgeMinutes)
+      : cached.drawDate >= expectedLatestDrawDate(gameId) && !cached.provisional
+    if (upToDate || isThrottled(gameId)) {
+      return { draw: cached, fromCache: true }
     }
   }
 
   lastUpstreamAttempt.set(gameId, Date.now())
-  const fresh = await fetchLatestFromApi(gameId)
+  const fresh = gameId === 'bingo_bingo'
+    ? await fetchLatestFromApi(gameId)
+    : await fetchSlowLatest(gameId, cached)
   if (fresh.length > 0) {
     await upsertDraws(gameId, fresh)
   }
@@ -68,7 +75,37 @@ export async function getLatestDraw(
     (acc, cur) => (acc == null || cur.drawTerm > acc.drawTerm ? cur : acc),
     null
   )
-  return { draw: top, fromCache: false }
+  return { draw: top != null && (cached == null || top.drawTerm >= cached.drawTerm) ? top : cached, fromCache: false }
+}
+
+/**
+ * 慢彩種：官方完整 → 官方 LastNumber → 第三方，拿到「應開獎日」那期就停。
+ * 已存的初步結果只會被更可靠的等級取代（見 draw-store upsertDraws）。
+ */
+async function fetchSlowLatest(gameId: SlowGameId, cached: DrawResult | null): Promise<DrawResult[]> {
+  const expected = expectedLatestDrawDate(gameId)
+
+  const full = await fetchLatestFromApi(gameId).catch(() => [] as DrawResult[])
+  if (full.some(d => d.drawDate >= expected)) return full
+
+  const haveExpected = cached != null && cached.drawDate >= expected
+  if (haveExpected && cached?.provisional === 'numbers') return full
+
+  const official = await fetchOfficialLastNumber(gameId, expected).catch(() => null)
+  if (official) return [...full, fromFast(official)]
+  if (haveExpected || cached == null) return full
+
+  const thirdParty = await fetchThirdParty(gameId, expected, cached.drawTerm, cached.drawDate).catch(() => null)
+  return thirdParty ? [...full, fromFast(thirdParty)] : full
+}
+
+function fromFast(fast: FastDraw): DrawResult {
+  return {
+    ...fast,
+    extras: {},
+    fetchedAt: new Date().toISOString(),
+    schemaVersion: 1
+  }
 }
 
 /**
@@ -105,25 +142,6 @@ export async function getRecentDraws(gameId: GameId, limit: number): Promise<Dra
 }
 
 // ---------- internal helpers ----------
-
-/** 慢彩種開獎日（JS getDay：0=週日）與開獎時刻（台北時間）。 */
-const SLOW_DRAW_DAYS: Record<Exclude<GameId, 'bingo_bingo'>, number[]> = {
-  lotto539: [1, 2, 3, 4, 5, 6],
-  lotto649: [2, 5],
-  super_lotto638: [1, 4]
-}
-const SLOW_DRAW_MINUTE_OF_DAY = 20 * 60 + 30
-
-/** 最近一個「應該已經開獎」的日期 YYYY-MM-DD（台北時間）。 */
-function expectedLatestDrawDate(gameId: Exclude<GameId, 'bingo_bingo'>, now = new Date()): string {
-  const days = SLOW_DRAW_DAYS[gameId]
-  // 把「台北現在」當成 UTC 欄位來算，避開主機時區
-  const taipei = new Date(now.getTime() + 8 * 60 * 60 * 1000)
-  const minuteOfDay = taipei.getUTCHours() * 60 + taipei.getUTCMinutes()
-  if (minuteOfDay < SLOW_DRAW_MINUTE_OF_DAY) taipei.setUTCDate(taipei.getUTCDate() - 1)
-  while (!days.includes(taipei.getUTCDay())) taipei.setUTCDate(taipei.getUTCDate() - 1)
-  return taipei.toISOString().slice(0, 10)
-}
 
 const UPSTREAM_THROTTLE_MS = 60 * 1000
 const lastUpstreamAttempt = new Map<GameId, number>()
@@ -175,13 +193,16 @@ async function fetchLatestFromApi(gameId: GameId): Promise<DrawResult[]> {
     // LatestResult 掛掉不阻止 byPeriod fallback
   }
 
-  // byPeriod 用 Firestore latest mirror 的 drawTerm + 1 主動查
+  // byPeriod 用 Firestore latest mirror 的 drawTerm + 1 主動查；
+  // 若 latest 還是初步結果，就查同一期拿官方完整版
   const cachedLatest = await getLatest(slowGameId)
   const fromLatestResult = candidates[0]?.drawTerm ?? null
-  const needByPeriod = cachedLatest != null
-    && (fromLatestResult == null || fromLatestResult <= cachedLatest.drawTerm)
-  if (needByPeriod && cachedLatest != null) {
-    const candidateTerm = cachedLatest.drawTerm + 1
+  const candidateTerm = cachedLatest == null
+    ? null
+    : cachedLatest.provisional ? cachedLatest.drawTerm : cachedLatest.drawTerm + 1
+  const needByPeriod = candidateTerm != null
+    && (fromLatestResult == null || fromLatestResult < candidateTerm)
+  if (needByPeriod && candidateTerm != null) {
     try {
       const raw = await fetchByPeriod(slowGameId, candidateTerm)
       if (raw && typeof raw === 'object') {

@@ -689,6 +689,14 @@ function toggleRecord(period: number, issue: string): void {
                 >
                   {{ bingoDrawTime(result.drawTerm) }}
                 </span>
+                <UBadge
+                  v-if="result.provisional"
+                  color="warning"
+                  variant="subtle"
+                  size="sm"
+                >
+                  {{ result.provisional === 'thirdparty' ? '初步結果・待官方確認' : '官方號碼・獎金待公布' }}
+                </UBadge>
               </div>
               <div
                 v-if="isBingo"
@@ -744,7 +752,14 @@ function toggleRecord(period: number, issue: string): void {
               <div class="mt-2 space-y-2">
                 <div>
                   <span class="text-muted">開出順序：</span>
-                  <span class="font-mono">{{ result.drawOrder.join(' → ') }}</span>
+                  <span
+                    v-if="result.provisional === 'thirdparty'"
+                    class="font-mono"
+                  >待官方公布</span>
+                  <span
+                    v-else
+                    class="font-mono"
+                  >{{ result.drawOrder.join(' → ') }}</span>
                 </div>
                 <div v-if="isBingo">
                   <span class="text-muted">尾數：</span>

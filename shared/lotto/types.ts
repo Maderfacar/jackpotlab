@@ -22,6 +22,12 @@ export interface DrawResult {
   source: string
   fetchedAt: string
   schemaVersion: number
+  /**
+   * 初步結果（官方完整資料還沒出來前先顯示）：
+   *   'thirdparty' — 第三方網站（兩家一致）；'numbers' — 官方 LastNumber、缺獎金分配。
+   * 官方完整紀錄沒有這個欄位，寫入時會整筆覆蓋掉初步結果。
+   */
+  provisional?: 'thirdparty' | 'numbers'
 }
 
 export interface DrawQueryResponse {

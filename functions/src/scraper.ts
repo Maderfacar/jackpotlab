@@ -1,5 +1,12 @@
 import { getFirestore, Timestamp } from 'firebase-admin/firestore'
 import { GAMES, type GameId } from './games.js'
+import {
+  expectedLatestDrawDate,
+  fetchOfficialLastNumber,
+  fetchThirdParty,
+  type FastDraw,
+  type SlowGameId
+} from './fast-sources.js'
 
 const API_BASE = 'https://api.taiwanlottery.com/TLCAPIWeB/Lottery'
 
@@ -20,6 +27,8 @@ interface DrawResult {
   source: string
   fetchedAt: Timestamp
   schemaVersion: number
+  /** 初步結果：'thirdparty' 第三方兩家一致、'numbers' 官方 LastNumber（缺獎金）。官方完整紀錄沒有此欄位。 */
+  provisional?: 'thirdparty' | 'numbers'
 }
 
 interface ApiEnvelope {
@@ -161,13 +170,18 @@ async function fetchSlowByPeriod(
  * 用來算「下一期 = drawTerm + 1」當 byPeriod 查詢的 candidate。
  */
 async function getCurrentLatestTerm(gameId: GameId): Promise<number | null> {
+  return (await getCurrentLatest(gameId))?.drawTerm ?? null
+}
+
+async function getCurrentLatest(gameId: GameId): Promise<Pick<DrawResult, 'drawTerm' | 'drawDate' | 'provisional'> | null> {
   const snap = await getFirestore()
     .collection('draws').doc(gameId)
     .collection('latest').doc('current')
     .get()
   if (!snap.exists) return null
   const data = snap.data()
-  return typeof data?.drawTerm === 'number' ? data.drawTerm : null
+  if (typeof data?.drawTerm !== 'number') return null
+  return { drawTerm: data.drawTerm, drawDate: data.drawDate as string, provisional: data.provisional }
 }
 
 /**
@@ -202,13 +216,16 @@ async function fetchSlowGameLatestDraws(
     // LatestResult 掛掉不阻止 byPeriod fallback
   }
 
-  // Path 2: byPeriod 算下一期主動查（只在 LatestResult 沒給更新一期時）
-  const currentLatestTerm = await getCurrentLatestTerm(slowGameId)
+  // Path 2: byPeriod 算下一期主動查（只在 LatestResult 沒給更新一期時）；
+  // latest 還是初步結果時查同一期拿官方完整版
+  const current = await getCurrentLatest(slowGameId)
   const fromLatestResult = candidates[0]?.drawTerm ?? null
-  const needByPeriod = currentLatestTerm != null
-    && (fromLatestResult == null || fromLatestResult <= currentLatestTerm)
-  if (needByPeriod && currentLatestTerm != null) {
-    const candidateTerm = currentLatestTerm + 1
+  const candidateTerm = current == null
+    ? null
+    : current.provisional ? current.drawTerm : current.drawTerm + 1
+  const needByPeriod = candidateTerm != null
+    && (fromLatestResult == null || fromLatestResult < candidateTerm)
+  if (needByPeriod && candidateTerm != null) {
     try {
       const raw = await fetchSlowByPeriod(slowGameId, candidateTerm)
       if (raw) {
@@ -224,6 +241,32 @@ async function fetchSlowGameLatestDraws(
 
   if (candidates.length === 0) return []
   return [candidates.reduce((a, b) => (b.drawTerm > a.drawTerm ? b : a))]
+}
+
+/**
+ * 慢彩種完整流程：官方完整 → 官方 LastNumber → 第三方（pilio+i539 一致），
+ * 拿到「應開獎日」那期就停。已是官方完整的最新一期 → 不打上游（每輪只 1 讀）。
+ */
+async function fetchSlowWithFastSources(slowGameId: SlowGameId): Promise<DrawResult[]> {
+  const expected = expectedLatestDrawDate(slowGameId)
+  const current = await getCurrentLatest(slowGameId)
+  const haveExpected = current != null && current.drawDate >= expected
+  if (haveExpected && !current?.provisional) return []
+
+  const full = await fetchSlowGameLatestDraws(slowGameId)
+  if (full.some(d => d.drawDate >= expected)) return full
+  if (haveExpected && current?.provisional === 'numbers') return full
+
+  const official = await fetchOfficialLastNumber(slowGameId, expected).catch(() => null)
+  if (official) return [...full, fromFast(official)]
+  if (haveExpected || current == null) return full
+
+  const thirdParty = await fetchThirdParty(slowGameId, expected, current.drawTerm, current.drawDate).catch(() => null)
+  return thirdParty ? [...full, fromFast(thirdParty)] : full
+}
+
+function fromFast(fast: FastDraw): DrawResult {
+  return { ...fast, extras: {}, fetchedAt: nowTs(), schemaVersion: 1 }
 }
 
 function todayInTaipei(): string {
@@ -287,20 +330,41 @@ async function writeDrawsBatch(draws: DrawResult[]): Promise<void> {
   const batch = db.batch()
   const col = db.collection('draws').doc(gameId).collection('results')
   for (const d of draws) {
+    if (d.provisional) continue
     batch.set(col.doc(d.drawTerm.toString()), d)
   }
   await batch.commit()
 
-  // latest 只在新批次最高期 > 現存時更新（避免被 backfill 舊批次蓋過）
+  // 初步結果不可蓋掉已存在的更可靠紀錄（cron 與開站補抓可能同時寫）
+  for (const d of draws.filter(x => x.provisional)) {
+    const ref = col.doc(d.drawTerm.toString())
+    await db.runTransaction(async (t) => {
+      const snap = await t.get(ref)
+      if (snap.exists && rank(snap.data() as DrawResult) > rank(d)) return
+      t.set(ref, d)
+    })
+  }
+
+  // latest 只在新批次最高期 > 現存時更新（避免被 backfill 舊批次蓋過）；
+  // 同一期只允許往更可靠的等級升級（第三方 → 官方號碼 → 官方完整）
   const top = draws.reduce((a, b) => (a.drawTerm > b.drawTerm ? a : b))
   const latestRef = db.collection('draws').doc(gameId).collection('latest').doc('current')
   await db.runTransaction(async (t) => {
     const snap = await t.get(latestRef)
-    const existing = snap.exists ? ((snap.data()!.drawTerm as number) ?? 0) : 0
-    if (top.drawTerm > existing) {
+    const existing = snap.exists ? (snap.data() as DrawResult) : null
+    const existingTerm = existing?.drawTerm ?? 0
+    const upgradesSameTerm = existing != null && top.drawTerm === existingTerm && rank(top) > rank(existing)
+    if (top.drawTerm > existingTerm || upgradesSameTerm) {
       t.set(latestRef, top)
     }
   })
+}
+
+/** 資料可靠度：官方完整 2 > 官方號碼 1 > 第三方 0。 */
+function rank(d: Pick<DrawResult, 'provisional'>): number {
+  if (d.provisional === 'thirdparty') return 0
+  if (d.provisional === 'numbers') return 1
+  return 2
 }
 
 async function writeHeartbeat(gameId: GameId, payload: Record<string, unknown>): Promise<void> {
@@ -340,7 +404,7 @@ export async function scrapeAndStore(gameId: GameId): Promise<ScrapeOutcome> {
       const latest = await getCurrentLatestTerm('bingo_bingo')
       draws = latest == null ? all : all.filter(d => d.drawTerm > latest)
     } else {
-      draws = await fetchSlowGameLatestDraws(gameId)
+      draws = await fetchSlowWithFastSources(gameId)
     }
 
     await writeDrawsBatch(draws)

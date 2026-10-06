@@ -44,10 +44,17 @@ function fromStored(stored: StoredDrawResult): DrawResult {
   }
 }
 
+/** 資料可靠度：官方完整 2 > 官方號碼 1 > 第三方 0。 */
+function rank(draw: Pick<DrawResult, 'provisional'>): number {
+  if (draw.provisional === 'thirdparty') return 0
+  if (draw.provisional === 'numbers') return 1
+  return 2
+}
+
 /**
  * 寫入一批開獎紀錄。drawTerm 重複的會被覆蓋。
  * latest/current 只在這次 batch 的最高期 > 現存 latest 時才更新（避免 backfill
- * 把舊 batch 的「該批最高」蓋過真正的最新）。
+ * 把舊 batch 的「該批最高」蓋過真正的最新）；同一期則只允許初步結果升級成官方。
  */
 export async function upsertDraws(gameId: GameId, draws: DrawResult[]): Promise<void> {
   if (draws.length === 0) return
@@ -57,12 +64,24 @@ export async function upsertDraws(gameId: GameId, draws: DrawResult[]): Promise<
   const batch = firestore.batch()
   const resultsCol = firestore.collection(COLLECTION).doc(gameId).collection(RESULTS_SUBCOLLECTION)
 
+  const provisional = draws.filter(d => d.provisional)
   for (const draw of draws) {
+    if (draw.provisional) continue
     const ref = resultsCol.doc(resultDocId(draw.drawTerm))
     batch.set(ref, toStored(draw))
   }
 
   await batch.commit()
+
+  // 初步結果不可蓋掉已存在的官方完整紀錄（cron 與開站補抓可能同時寫）
+  for (const draw of provisional) {
+    const ref = resultsCol.doc(resultDocId(draw.drawTerm))
+    await firestore.runTransaction(async (t) => {
+      const snap = await t.get(ref)
+      if (snap.exists && rank(snap.data() as StoredDrawResult) > rank(draw)) return
+      t.set(ref, toStored(draw))
+    })
+  }
 
   const highestInBatch = draws.reduce((a, b) => (a.drawTerm > b.drawTerm ? a : b))
   const latestRef = firestore
@@ -71,10 +90,13 @@ export async function upsertDraws(gameId: GameId, draws: DrawResult[]): Promise<
 
   await firestore.runTransaction(async (t) => {
     const snap = await t.get(latestRef)
-    const existingDrawTerm = snap.exists
-      ? ((snap.data() as StoredDrawResult).drawTerm as number)
-      : 0
-    if (highestInBatch.drawTerm > existingDrawTerm) {
+    const existing = snap.exists ? (snap.data() as StoredDrawResult) : null
+    const existingDrawTerm = existing?.drawTerm ?? 0
+    // 同一期：只允許往更可靠的等級升級（第三方 → 官方號碼 → 官方完整）
+    const upgradesSameTerm = existing != null
+      && highestInBatch.drawTerm === existingDrawTerm
+      && rank(highestInBatch) > rank(existing)
+    if (highestInBatch.drawTerm > existingDrawTerm || upgradesSameTerm) {
       t.set(latestRef, toStored(highestInBatch))
     }
   })
