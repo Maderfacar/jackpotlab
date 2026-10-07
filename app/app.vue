@@ -30,6 +30,7 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
+  { label: '規律驗證', icon: 'i-lucide-flask-conical', to: '/verify' },
   { label: '訊號', icon: 'i-lucide-lightbulb', to: '/signals' },
   { label: '賓果訊號', icon: 'i-lucide-grid-3x3', to: '/bingo-signals' },
   { label: '開獎號碼', icon: 'i-lucide-list-checks', to: '/draws' },
