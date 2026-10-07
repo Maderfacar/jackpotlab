@@ -99,6 +99,13 @@ export const GAMES: Record<GameId, GameMeta> = {
   }
 }
 
+/**
+ * 賓果即時更新總開關（2026-10-07 使用者拍板關閉：Firebase 月預算 $5 爆掉）。
+ * false：網站不再自動輪詢、不再現抓台彩寫 Firestore，只讀已存資料；
+ *        Cloud Functions 的賓果排程也一併停用（functions/src/index.ts）。
+ */
+export const BINGO_LIVE_ENABLED = false
+
 export function isGameId(value: unknown): value is GameId {
   return typeof value === 'string' && (GAME_IDS as readonly string[]).includes(value)
 }

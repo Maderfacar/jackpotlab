@@ -1,4 +1,4 @@
-import { GAMES, type GameId } from '../../shared/lotto/games'
+import { BINGO_LIVE_ENABLED, GAMES, type GameId } from '../../shared/lotto/games'
 import {
   normalize539,
   normalize649,
@@ -55,6 +55,10 @@ export async function getLatestDraw(
   const forceFresh = options.forceFresh ?? false
 
   const cached = await getLatest(gameId)
+  // 賓果關閉時只讀已存資料，不打上游、不寫 Firestore
+  if (gameId === 'bingo_bingo' && !BINGO_LIVE_ENABLED && !forceFresh) {
+    return { draw: cached, fromCache: true }
+  }
   if (!forceFresh && cached) {
     const upToDate = gameId === 'bingo_bingo'
       ? !isStale(cached.fetchedAt, maxAgeMinutes)
@@ -123,6 +127,10 @@ export async function getDrawsByDate(
 
   if (!forceFresh) {
     const cached = await getByDate(gameId, drawDate)
+    // 賓果關閉時只讀已存資料（原本當天每次都重抓整天再整批重寫，是費用主因）
+    if (gameId === 'bingo_bingo' && !BINGO_LIVE_ENABLED) {
+      return { draws: cached, fromCache: true }
+    }
     if (cached.length > 0 && isCacheCompleteFor(gameId, cached, drawDate)) {
       return { draws: cached, fromCache: true }
     }

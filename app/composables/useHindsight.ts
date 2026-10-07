@@ -15,7 +15,7 @@
  * 全部運算客戶端跑、不寫 Firebase（[[project-brain-design-decisions]] 記憶層級）。
  */
 
-import { GAMES, type GameId } from '~~/shared/lotto/games'
+import { BINGO_LIVE_ENABLED, GAMES, type GameId } from '~~/shared/lotto/games'
 import type { DrawQueryResponse, DrawResult } from '~~/shared/lotto/types'
 import {
   type AnalysisDrawInput,
@@ -255,7 +255,7 @@ export function useHindsight(gameId: Ref<GameId> | ComputedRef<GameId>): UseHind
 
   function setupPolling(g: GameId) {
     stopPolling()
-    if (g !== 'bingo_bingo' || typeof window === 'undefined') return
+    if (!BINGO_LIVE_ENABLED || g !== 'bingo_bingo' || typeof window === 'undefined') return
     pollTimer = setInterval(async () => {
       if (loading.value) return
       try {

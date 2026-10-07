@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { GAMES, GAME_IDS, type GameId } from '~~/shared/lotto/games'
+import { BINGO_LIVE_ENABLED, GAMES, GAME_IDS, type GameId } from '~~/shared/lotto/games'
 import type { DrawResult, DrawQueryResponse } from '~~/shared/lotto/types'
 import {
   type AnalysisState, type AnalysisDrawInput,
@@ -106,7 +106,7 @@ const hiddenCount = computed(() => Math.max(0, allResults.value.length - visible
 const loading = computed(() => drawsQuery.status.value === 'pending')
 const error = computed(() => drawsQuery.error.value)
 const fromCache = computed(() => drawsQuery.data.value?.fromCache)
-const isLive = computed(() => isBingo.value && !isByDateMode.value)
+const isLive = computed(() => BINGO_LIVE_ENABLED && isBingo.value && !isByDateMode.value)
 const lastFetchedAt = computed<string | null>(() => allResults.value[0]?.fetchedAt ?? null)
 
 async function refresh() {
