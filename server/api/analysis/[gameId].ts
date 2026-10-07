@@ -1,5 +1,5 @@
 /**
- * GET /api/analysis/:gameId — 隔期狀態 + 獎號關聯 JSON 匯出（給 LLM / 程式讀）。
+ * GET|HEAD /api/analysis/:gameId — 隔期狀態 + 獎號關聯 JSON 匯出（給 LLM / 程式讀）。
  *
  * 與 /draws 頁完全同一支演算法（app/utils/analysis.ts 的 hydrateFromDraws），
  * 每次請求時以最新開獎資料即時計算 — 固定網址、滾動視窗。
@@ -41,6 +41,9 @@ const FIELD_GUIDE = {
 } as const
 
 export default defineEventHandler(async (event) => {
+  // GET + HEAD 都要接：ChatGPT 等網頁讀取器會先送 HEAD 探測類型，
+  // 原本只有 .get.ts → HEAD 回 404 JSON，LLM 誤以為整份資料是「1 行 JSON」（2026-10-08）
+  assertMethod(event, ['GET', 'HEAD'])
   const gameId = getRouterParam(event, 'gameId')
   if (!isGameId(gameId)) {
     throw createError({ statusCode: 400, statusMessage: `Unknown gameId: ${gameId}` })
