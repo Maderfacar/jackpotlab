@@ -3,8 +3,8 @@ useSeoMeta({ title: '規律驗證' })
 
 const tab = ref<'dependence' | 'uniform'>('dependence')
 const tabs = [
-  { label: '持續性與相關性（第 2–4 組）', value: 'dependence' },
-  { label: '短期均勻（第 1 組）', value: 'uniform' }
+  { label: '持續性・相關性', value: 'dependence' },
+  { label: '短期均勻', value: 'uniform' }
 ]
 </script>
 
