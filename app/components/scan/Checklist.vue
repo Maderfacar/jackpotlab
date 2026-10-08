@@ -46,7 +46,7 @@ const rows = computed<Row[]>(() => {
     tag: '配置',
     title: '本期五顆的隔期配置',
     now: `0～5：${c.low} ${ck.low ? '✓' : '✗'} · 6～9：${c.mid} ${ck.mid ? '✓' : '✗'} · 10 以上：${c.high} ${ck.high ? '✓' : '✗'}`,
-    lookup: { text: '歷史上三項同時符合（2～3 / 1～2 / 0～1）', rate: b.normRates.all },
+    lookup: { text: '三項同時符合（2～3 / 1～2 / 0～1）', rate: b.normRates.all },
     anchor: '#board'
   })
 
