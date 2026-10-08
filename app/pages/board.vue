@@ -348,15 +348,16 @@ function toggleFocus(x: number) {
                 >
                   {{ pad2(x) }}
                 </th>
+                <th class="spacer" />
                 <th
                   v-for="d in TAILS"
                   :key="`t${d}`"
                   class="col-tail"
-                  :class="d === 0 ? 'gap-left' : ''"
                 >
                   尾{{ d }}
                 </th>
-                <th class="col-gaps gap-left">
+                <th class="spacer" />
+                <th class="col-gaps">
                   五顆隔期
                 </th>
                 <th class="col-sum">
@@ -376,9 +377,10 @@ function toggleFocus(x: number) {
                 >
                   {{ currentGap[x] ?? '—' }}
                 </th>
+                <th class="spacer" />
                 <th
-                  colspan="12"
-                  class="gap-left text-left text-[10px] font-normal text-muted"
+                  colspan="13"
+                  class="text-left text-[10px] font-normal text-muted"
                 >
                   ← 現在每個號碼隔了幾期沒開（0 = 最新一期剛開）
                 </th>
@@ -404,7 +406,7 @@ function toggleFocus(x: number) {
                 >
                   <span
                     v-if="r.drawn.has(x)"
-                    class="ball size-[22px] text-[11px]"
+                    class="ball size-[21px] text-[10px]"
                     :class="r.drawn.get(x)!.gap === 0 ? 'ball-repeat' : ''"
                   >{{ pad2(x) }}</span>
                   <span
@@ -412,16 +414,17 @@ function toggleFocus(x: number) {
                     class="font-mono text-[10px]"
                   >{{ r.miss[x] }}</span>
                 </td>
+                <td class="spacer" />
                 <td
                   v-for="d in TAILS"
                   :key="`t${d}`"
                   class="tail-cell font-mono"
-                  :class="d === 0 ? 'gap-left' : ''"
                   :style="tailStyle(r.tails[d] ?? 0)"
                 >
                   {{ r.tails[d] ? r.tails[d] : '' }}
                 </td>
-                <td class="col-gaps gap-left font-mono">
+                <td class="spacer" />
+                <td class="col-gaps font-mono">
                   {{ r.gaps }}
                 </td>
                 <td class="col-sum font-mono">
@@ -524,16 +527,15 @@ function toggleFocus(x: number) {
 .board thead .sticky-left {
   z-index: 4;
 }
-.col-issue { min-width: 78px; }
-.col-num { width: 24px; min-width: 24px; text-align: center; }
-.col-tail { width: 22px; min-width: 22px; text-align: center; font-size: 10px; }
-.col-gaps { min-width: 104px; text-align: left; padding: 0 6px; white-space: nowrap; }
-.col-sum { min-width: 32px; text-align: right; padding-right: 8px; }
-.gap-left { padding-left: 10px; }
-.board td.gap-left, .board th.gap-left { border-left: 8px solid var(--ui-bg); }
+.col-issue { min-width: 72px; }
+.col-num { width: 22px; min-width: 22px; text-align: center; font-size: 11px; }
+.col-tail { width: 20px; min-width: 20px; text-align: center; font-size: 10px; }
+.col-gaps { min-width: 86px; text-align: left; padding: 0 4px; white-space: nowrap; font-size: 11px; }
+.col-sum { min-width: 28px; text-align: right; padding-right: 8px; }
+.spacer { width: 4px; min-width: 4px; padding: 0 !important; background: transparent !important; }
 
 .heat-cell {
-  width: 24px;
+  width: 22px;
   height: 24px;
   text-align: center;
   border-radius: 4px;
@@ -547,7 +549,7 @@ function toggleFocus(x: number) {
 .board th.is-focus { color: var(--ui-text); font-weight: 700; }
 
 .tail-cell {
-  width: 22px;
+  width: 20px;
   height: 24px;
   text-align: center;
   border-radius: 4px;
