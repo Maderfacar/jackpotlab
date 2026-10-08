@@ -3,8 +3,8 @@ useSeoMeta({ title: '規律驗證' })
 
 const tab = ref<'dependence' | 'uniform'>('dependence')
 const tabs = [
-  { label: '持續性・相關性', value: 'dependence' },
-  { label: '短期均勻', value: 'uniform' }
+  { label: '順序有沒有規律', value: 'dependence' },
+  { label: '短期是否平均', value: 'uniform' }
 ]
 </script>
 
@@ -15,7 +15,7 @@ const tabs = [
         規律驗證
       </h1>
       <p class="text-sm text-muted">
-        今彩 539 · 只用真實開獎號碼與其衍生參數（隔期／現值／位置），檢查偏差是否持續、前後期是否相關
+        今彩 539 · 用真實開獎紀錄，檢查號碼裡有沒有藏著規律
       </p>
     </div>
 

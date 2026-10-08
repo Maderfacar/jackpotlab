@@ -21,6 +21,8 @@ const pct = (a: number, b: number) => (b > 0 ? `${((a / b) * 100).toFixed(1)}%` 
 const range = (x: { startTerm: number, startDate: string, endTerm: number, endDate: string }) =>
   `${x.startTerm} ～ ${x.endTerm}`
 const dates = (x: { startDate: string, endDate: string }) => `${x.startDate} ～ ${x.endDate}`
+
+const evenSizes = computed(() => (result.value?.sizes ?? []).filter(s => s.idealCount > 0).map(s => s.size))
 </script>
 
 <template>
@@ -54,11 +56,34 @@ const dates = (x: { startDate: string, endDate: string }) => `${x.startDate} ～
     </div>
 
     <UCard>
-      <div class="space-y-1.5 text-sm">
-        <p><span class="font-semibold">視窗</span>：連續 W 期，從第一期逐期往後滑，統計每個視窗內 1～39 號各出現幾次。</p>
-        <p><span class="font-semibold">差距</span>：視窗內出現最多的號碼次數 − 出現最少的號碼次數。差距越小越均勻。</p>
-        <p><span class="font-semibold">理想均勻</span>：總球數平均分給 39 個號碼，每號只差 0 或 1 次（純算術）。</p>
-        <p><span class="font-semibold">段</span>：實際資料中最均勻的視窗，重疊的合併成一段；<span class="font-semibold">段間隔</span>看它是否以固定間隔反覆出現。</p>
+      <div class="space-y-3 text-sm">
+        <p class="text-base font-semibold">
+          這頁在問：連續幾期之內，39 個號碼有沒有剛好「平均分配」的時候？
+        </p>
+        <p>例如連續 8 期共開出 40 顆球，最平均的情況是 39 個號碼都出現、只有 1 個出現兩次。我們從第一期開始，用 5～40 期的長度一段一段往後檢查。</p>
+        <p
+          v-if="result"
+          class="rounded-md bg-elevated p-3"
+        >
+          <span class="font-semibold">結果：</span>
+          <template v-if="evenSizes.length === 0">
+            {{ result.drawCount }} 期中，不管連續幾期（5～40 期），都<span class="font-semibold">沒有任何一段</span>做到 39 個號碼平均分配。下表是每種長度「最接近平均」的程度。
+          </template>
+          <template v-else>
+            連續 {{ evenSizes.join('、') }} 期時，有出現 39 個號碼平均分配的區段（見下表「達到理想」）。
+          </template>
+        </p>
+        <details class="text-xs text-muted">
+          <summary class="cursor-pointer select-none">
+            表格名詞
+          </summary>
+          <div class="mt-2 space-y-1">
+            <p><span class="font-semibold">差距</span>：這一段裡，開最多次的號碼和開最少次的號碼差幾次。差距越小越平均。</p>
+            <p><span class="font-semibold">理想</span>：完全平均時每個號碼該開幾次（只差 0 或 1 次）。</p>
+            <p><span class="font-semibold">段</span>：最平均的區段；重疊的算同一段。<span class="font-semibold">段間隔</span>：兩段之間隔了幾期，用來看是不是固定間隔出現。</p>
+            <p><span class="font-semibold">全號覆蓋</span>：從某期開始，要連續幾期才能讓 39 個號碼全部至少開過一次。</p>
+          </div>
+        </details>
       </div>
     </UCard>
 
