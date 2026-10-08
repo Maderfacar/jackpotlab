@@ -6,7 +6,7 @@
  *   - 走勢格：列 = 每一期（新在上）、欄 = 1～39 號。開出 = 橘色球；沒開 = 藍色深淺表示已連續幾期沒開。
  *   - 號碼欄正上方「目前隔期」= 現在每個號碼隔了幾期沒開（就是隔期狀態表的 slot 編號）。
  *   - 每顆球的隔期 / 現值 / 位置 x-y 來自 API history（與 /draws 頁同一套演算法）。
- *   - 右側 10 欄 = 尾數 0～9 各開出幾顆；再右邊 = 五顆（小→大）各一欄：上 = 隔期、下 = 值（藍底同遺漏色階），最後是隔期和。
+ *   - 右側 10 欄 = 尾數 0～9 各開出幾顆；再右邊 = 五顆（小→大）各一欄：上 = 隔期、中 = 值（藍底同遺漏色階）、下 = 位置 x-y（可關），最後是隔期和。
  * 顏色：藍（sequential，遺漏期數）+ 橘（開出），已用 dataviz validator 驗證亮 / 暗模式皆通過。
  */
 interface HistoryEntry {
@@ -52,6 +52,7 @@ const rowOptions = [
   { label: '近 200 期', value: 200 }
 ]
 const showMissNumbers = ref(false)
+const showPos = ref(true)
 const focusNumber = ref<number | null>(null)
 
 interface BallInfo {
@@ -297,6 +298,10 @@ function toggleFocus(x: number) {
           <USwitch v-model="showMissNumbers" />
           格子內顯示沒開期數
         </label>
+        <label class="flex items-center gap-2 text-sm">
+          <USwitch v-model="showPos" />
+          五顆欄顯示位置
+        </label>
         <UButton
           v-if="focusNumber"
           size="sm"
@@ -403,7 +408,7 @@ function toggleFocus(x: number) {
                   colspan="5"
                   class="col-balls text-[10px] font-normal"
                 >
-                  上 隔期・下 值
+                  {{ showPos ? '上隔期・中值・下位置' : '上 隔期・下 值' }}
                 </th>
                 <th />
               </tr>
@@ -459,6 +464,10 @@ function toggleFocus(x: number) {
                     class="gv-val"
                     :style="valueStyle(b.value)"
                   >{{ b.value ?? '' }}</span>
+                  <span
+                    v-if="showPos"
+                    class="gv-pos"
+                  >{{ b.pos ?? '' }}</span>
                 </td>
                 <td class="col-sum font-mono">
                   {{ r.gapSum || '—' }}
@@ -472,6 +481,7 @@ function toggleFocus(x: number) {
       <p class="text-xs text-muted">
         尾數欄：該期 5 顆號碼中，個位數為 0～9 的各有幾顆（橘色越深越多）。
         五顆欄：依號碼由小到大，每顆一欄。上面的數字是隔期（隔了幾期才開出）；下面的數字是值（它來源那一格當時已連續幾期沒被開中），藍底越深 = 越久沒被開中（{{ HEAT_CAP }} 期以上最深）。
+        最下面是位置 x-y：x = 來源那期當時還剩幾顆沒被開走，y = 這顆在裡面排第幾小（可用「五顆欄顯示位置」開關）。
         資料：<a
           href="/api/analysis/lotto539"
           target="_blank"
@@ -608,6 +618,14 @@ function toggleFocus(x: number) {
   line-height: 11px;
   color: var(--ui-text-highlighted);
   background: color-mix(in oklab, var(--heat) var(--mix, 0%), var(--ui-bg));
+}
+.gv-pos {
+  display: block;
+  margin-top: 2px;
+  font-size: 10px;
+  line-height: 11px;
+  letter-spacing: -0.02em;
+  color: var(--ui-text-toned);
 }
 .board td.gv-cell:hover { outline: 2px solid var(--ui-text); outline-offset: -2px; }
 .gv-focus { box-shadow: inset 0 0 0 2px var(--drawn); }
