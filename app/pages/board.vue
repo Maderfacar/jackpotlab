@@ -6,7 +6,7 @@
  *   - 走勢格：列 = 每一期（新在上）、欄 = 1～39 號。開出 = 橘色球；沒開 = 藍色深淺表示已連續幾期沒開。
  *   - 號碼欄正上方「目前隔期」= 現在每個號碼隔了幾期沒開（就是隔期狀態表的 slot 編號）。
  *   - 每顆球的隔期 / 現值 / 位置 x-y 來自 API history（與 /draws 頁同一套演算法）。
- *   - 右側 10 欄 = 尾數 0～9 各開出幾顆；再右邊 = 五顆的隔期與隔期和。
+ *   - 右側 10 欄 = 尾數 0～9 各開出幾顆；再右邊 = 五顆（小→大）各一欄：上 = 隔期、下 = 值（藍底同遺漏色階），最後是隔期和。
  * 顏色：藍（sequential，遺漏期數）+ 橘（開出），已用 dataviz validator 驗證亮 / 暗模式皆通過。
  */
 interface HistoryEntry {
@@ -59,6 +59,9 @@ interface BallInfo {
   value: number | null
   pos: string | null
 }
+interface BallCell extends BallInfo {
+  x: number
+}
 interface Row {
   index: number
   issue: string
@@ -67,7 +70,8 @@ interface Row {
   /** 號碼 → 這一期結束時已連續幾期沒開（開出 = 0；從未出現 = null） */
   miss: (number | null)[]
   tails: number[]
-  gaps: string
+  /** 五顆依號碼由小到大，各自的隔期 / 值 */
+  balls: BallCell[]
   gapSum: number | ''
   prevIssue: Map<number, string | null>
 }
@@ -102,7 +106,7 @@ const allRows = computed<Row[]>(() => {
       drawn,
       miss: [null, ...miss],
       tails: h.tails,
-      gaps: h.periods ? h.periods.split(',').map(g => (g === '' ? '—' : g)).join(' ') : '—',
+      balls: prizes.map(x => ({ x, ...drawn.get(x)! })),
       gapSum: h.sum ?? '',
       prevIssue
     }
@@ -125,6 +129,13 @@ function heatStyle(miss: number | null) {
   if (miss == null || miss === 0) return {}
   const f = Math.min(miss, HEAT_CAP) / HEAT_CAP
   return { '--mix': `${Math.round(8 + f * 72)}%` }
+}
+
+/** 五顆欄的「值」底色：同一個藍，但最深只到 60%，讓上面的字在亮 / 暗模式都讀得清楚 */
+function valueStyle(v: number | null) {
+  if (v == null || v === 0) return {}
+  const f = Math.min(v, HEAT_CAP) / HEAT_CAP
+  return { '--mix': `${Math.round(8 + f * 52)}%` }
 }
 
 function tailStyle(c: number) {
@@ -357,8 +368,11 @@ function toggleFocus(x: number) {
                   尾{{ d }}
                 </th>
                 <th class="spacer" />
-                <th class="col-gaps">
-                  五顆隔期
+                <th
+                  colspan="5"
+                  class="col-balls"
+                >
+                  五顆（小→大）
                 </th>
                 <th class="col-sum">
                   和
@@ -379,11 +393,19 @@ function toggleFocus(x: number) {
                 </th>
                 <th class="spacer" />
                 <th
-                  colspan="13"
+                  colspan="10"
                   class="text-left text-[10px] font-normal text-muted"
                 >
-                  ← 現在每個號碼隔了幾期沒開（0 = 最新一期剛開）
+                  ← 各號現在隔了幾期沒開
                 </th>
+                <th class="spacer" />
+                <th
+                  colspan="5"
+                  class="col-balls text-[10px] font-normal"
+                >
+                  上 隔期・下 值
+                </th>
+                <th />
               </tr>
             </thead>
             <tbody>
@@ -424,8 +446,19 @@ function toggleFocus(x: number) {
                   {{ r.tails[d] ? r.tails[d] : '' }}
                 </td>
                 <td class="spacer" />
-                <td class="col-gaps font-mono">
-                  {{ r.gaps }}
+                <td
+                  v-for="b in r.balls"
+                  :key="`b${b.x}`"
+                  class="gv-cell font-mono"
+                  :class="focusNumber === b.x ? 'gv-focus' : ''"
+                  @mouseenter="hovered = { row: r, x: b.x }"
+                  @click="pinned = { row: r, x: b.x }"
+                >
+                  <span class="gv-gap">{{ b.gap ?? '—' }}</span>
+                  <span
+                    class="gv-val"
+                    :style="valueStyle(b.value)"
+                  >{{ b.value ?? '' }}</span>
                 </td>
                 <td class="col-sum font-mono">
                   {{ r.gapSum || '—' }}
@@ -437,7 +470,8 @@ function toggleFocus(x: number) {
       </UCard>
 
       <p class="text-xs text-muted">
-        尾數欄：該期 5 顆號碼中，個位數為 0～9 的各有幾顆（橘色越深越多）。五顆隔期：依號碼由小到大，每顆隔了幾期才開出。
+        尾數欄：該期 5 顆號碼中，個位數為 0～9 的各有幾顆（橘色越深越多）。
+        五顆欄：依號碼由小到大，每顆一欄。上面的數字是隔期（隔了幾期才開出）；下面的數字是值（它來源那一格當時已連續幾期沒被開中），藍底越深 = 越久沒被開中（{{ HEAT_CAP }} 期以上最深）。
         資料：<a
           href="/api/analysis/lotto539"
           target="_blank"
@@ -528,14 +562,14 @@ function toggleFocus(x: number) {
   z-index: 4;
 }
 .col-issue { min-width: 72px; }
-.col-num { width: 22px; min-width: 22px; text-align: center; font-size: 11px; }
+.col-num { width: 21px; min-width: 21px; text-align: center; font-size: 11px; }
 .col-tail { width: 20px; min-width: 20px; text-align: center; font-size: 10px; }
-.col-gaps { min-width: 86px; text-align: left; padding: 0 4px; white-space: nowrap; font-size: 11px; }
+.col-balls { text-align: center; font-size: 11px; }
 .col-sum { min-width: 28px; text-align: right; padding-right: 8px; }
 .spacer { width: 4px; min-width: 4px; padding: 0 !important; background: transparent !important; }
 
 .heat-cell {
-  width: 22px;
+  width: 21px;
   height: 24px;
   text-align: center;
   border-radius: 4px;
@@ -547,6 +581,36 @@ function toggleFocus(x: number) {
 .sep { box-shadow: inset -1px 0 0 var(--ui-border); }
 .is-focus { box-shadow: inset 2px 0 0 var(--drawn), inset -2px 0 0 var(--drawn); }
 .board th.is-focus { color: var(--ui-text); font-weight: 700; }
+
+.gv-cell {
+  width: 22px;
+  min-width: 22px;
+  height: 24px;
+  padding: 1px 0 0;
+  background: var(--ui-bg-elevated);
+  text-align: center;
+  vertical-align: middle;
+  line-height: 1;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.gv-gap {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ui-text-highlighted);
+}
+.gv-val {
+  display: block;
+  margin: 1px 2px 0;
+  border-radius: 3px;
+  font-size: 10px;
+  line-height: 11px;
+  color: var(--ui-text-highlighted);
+  background: color-mix(in oklab, var(--heat) var(--mix, 0%), var(--ui-bg));
+}
+.board td.gv-cell:hover { outline: 2px solid var(--ui-text); outline-offset: -2px; }
+.gv-focus { box-shadow: inset 0 0 0 2px var(--drawn); }
 
 .tail-cell {
   width: 20px;
