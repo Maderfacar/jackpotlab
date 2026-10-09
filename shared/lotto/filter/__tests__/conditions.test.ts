@@ -76,6 +76,23 @@ describe('checkCondition', () => {
     assert.equal(ok(cond('zoneNot', [2, 1, 2])), false)
   })
 
+  it('1-9 / 10-19 / 20-29 / 30-39 各有 a～b 顆（樣本 2 / 0 / 1 / 2 顆）', () => {
+    assert.equal(ok(cond('decadeCount', [2, 2, 0, 0, 1, 1, 2, 2])), true)
+    assert.equal(ok(cond('decadeCount', [0, 5, 0, 5, 1, 5, 0, 5])), true)
+    assert.equal(ok(cond('decadeCount', [0, 1, 0, 5, 0, 5, 0, 5])), false)
+    assert.equal(ok(cond('decadeCount', [0, 5, 1, 5, 0, 5, 0, 5])), false)
+  })
+
+  it('第 1～5 顆各自的隔期 / 值 / y 介於 a～b（由小到大排）', () => {
+    // 樣本隔期 0 0 9 2 10、值 1 1 11 3 0、y 1 2 1 4 1
+    assert.equal(ok(cond('ballGap', [0, 0, 0, 0, 9, 9, 2, 2, 10, 10])), true)
+    assert.equal(ok(cond('ballGap', [0, 5, 0, 5, 0, 5, 0, 59, 0, 59])), false)
+    assert.equal(ok(cond('ballValue', [1, 1, 1, 1, 11, 11, 3, 3, 0, 0])), true)
+    assert.equal(ok(cond('ballValue', [0, 999, 0, 999, 0, 999, 0, 999, 1, 999])), false)
+    assert.equal(ok(cond('ballY', [1, 1, 2, 2, 1, 1, 4, 4, 1, 1])), true)
+    assert.equal(ok(cond('ballY', [1, 5, 1, 5, 1, 5, 1, 3, 1, 5])), false)
+  })
+
   it('和上一期同尾數「尾數」：03、07 對上期尾 3、7 → 2 個', () => {
     assert.equal(ok(cond('sameTailMax', [2])), true)
     assert.equal(ok(cond('sameTailMax', [1])), false)

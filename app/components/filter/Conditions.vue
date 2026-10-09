@@ -111,7 +111,8 @@ const enabledCount = computed(() => conds.value.filter(c => c.enabled).length)
                 v-for="(seg, si) in KIND_SPEC[c.kind]"
                 :key="si"
               >
-                <span v-if="typeof seg === 'string'">{{ seg }}</span>
+                <br v-if="seg === '\n'">
+                <span v-else-if="typeof seg === 'string'">{{ seg }}</span>
                 <input
                   v-else
                   type="number"

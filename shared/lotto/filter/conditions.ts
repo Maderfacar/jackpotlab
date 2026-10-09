@@ -28,10 +28,10 @@ export function numberInfo(state: BoardState): Map<number, NumInfo> {
 }
 
 export type ConditionKind
-  = | 'numSum' | 'rangeCount' | 'minBelow' | 'zoneNot' | 'evenCount' | 'exclude'
-    | 'config' | 'gapSum' | 'posGap'
-    | 'valueAboveCount' | 'valueCount'
-    | 'firstY' | 'yCount' | 'noY'
+  = | 'numSum' | 'rangeCount' | 'decadeCount' | 'minBelow' | 'zoneNot' | 'evenCount' | 'exclude'
+    | 'config' | 'gapSum' | 'posGap' | 'ballGap'
+    | 'valueAboveCount' | 'valueCount' | 'ballValue'
+    | 'firstY' | 'yCount' | 'noY' | 'ballY'
     | 'tailCount' | 'sameTailMax'
 
 export interface Condition {
@@ -54,14 +54,26 @@ export const GROUPS: { key: GroupKey, title: string }[] = [
   { key: 'tail', title: '尾數' }
 ]
 
-/** 句子片段：字串照印、{ i } 是第 i 個數字參數的輸入格 */
+/** 句子片段：字串照印（'\n' = 換行）、{ i } 是第 i 個數字參數的輸入格 */
 export type Segment = string | { i: number, min: number, max: number }
 
 const n5 = (i: number) => ({ i, min: 0, max: 5 })
 
+/** 1-9 / 10-19 / 20-29 / 30-39 各有 a～b 顆 */
+const DECADES: [number, number][] = [[1, 9], [10, 19], [20, 29], [30, 39]]
+
+/** 第 1～5 顆各一組 a～b（由小到大排），參數依序 [第1顆 a, b, 第2顆 a, b, …] */
+function perBall(max: number): Segment[] {
+  return [0, 1, 2, 3, 4].flatMap(k => [
+    ...(k === 0 ? [] : ['\n']),
+    `第 ${k + 1} 顆`, { i: k * 2, min: 0, max }, '～', { i: k * 2 + 1, min: 0, max }
+  ])
+}
+
 export const KIND_SPEC: Record<ConditionKind, Segment[]> = {
   numSum: ['五顆獎號總和介於', { i: 0, min: 15, max: 185 }, '～', { i: 1, min: 15, max: 185 }],
   rangeCount: ['號碼', { i: 0, min: 1, max: 39 }, '～', { i: 1, min: 1, max: 39 }, '有', n5(2), '～', n5(3), '顆'],
+  decadeCount: ['號碼各段的顆數', ...DECADES.flatMap(([lo, hi], k) => ['\n', `${lo}-${hi} 有`, n5(k * 2), '～', n5(k * 2 + 1), '顆'])],
   minBelow: ['最小號碼小於', { i: 0, min: 1, max: 40 }],
   zoneNot: ['區間分佈不能是 1-13 有', n5(0), '顆、14-27 有', n5(1), '顆、28-39 有', n5(2), '顆'],
   evenCount: ['雙數有', n5(0), '～', n5(1), '顆'],
@@ -69,11 +81,14 @@ export const KIND_SPEC: Record<ConditionKind, Segment[]> = {
   config: ['隔期 0～5 選', n5(0), '顆、6～9 選', n5(1), '顆、10 以上選', n5(2), '顆'],
   gapSum: ['五顆隔期和介於', { i: 0, min: 0, max: 300 }, '～', { i: 1, min: 0, max: 300 }],
   posGap: ['由小到大第', { i: 0, min: 1, max: 5 }, '顆的隔期介於', { i: 1, min: 0, max: 99 }, '～', { i: 2, min: 0, max: 99 }],
+  ballGap: ['由小到大，每顆的隔期介於', '\n', ...perBall(59)],
   valueAboveCount: ['值大於', { i: 0, min: 0, max: 999 }, '的有', n5(1), '～', n5(2), '顆'],
   valueCount: ['值 =', { i: 0, min: 0, max: 999 }, '的有', n5(1), '～', n5(2), '顆'],
+  ballValue: ['由小到大，每顆的值介於', '\n', ...perBall(999)],
   firstY: ['最小號碼的 y =', { i: 0, min: 1, max: 5 }],
   yCount: ['y =', { i: 0, min: 1, max: 5 }, '的有', n5(1), '～', n5(2), '顆'],
   noY: ['不能有 y =', { i: 0, min: 1, max: 5 }],
+  ballY: ['由小到大，每顆的 y 介於', '\n', ...perBall(5)],
   tailCount: ['尾數', { i: 0, min: 0, max: 9 }, '的號碼有', n5(1), '～', n5(2), '顆'],
   sameTailMax: ['和上一期相同的尾數最多', n5(0), '個（數尾數）']
 }
@@ -82,6 +97,7 @@ export const KIND_SPEC: Record<ConditionKind, Segment[]> = {
 export const KIND_META: Record<ConditionKind, { group: GroupKey, repeatable?: number[] }> = {
   numSum: { group: 'number' },
   rangeCount: { group: 'number', repeatable: [1, 9, 0, 0] },
+  decadeCount: { group: 'number' },
   minBelow: { group: 'number' },
   zoneNot: { group: 'number', repeatable: [2, 2, 1] },
   evenCount: { group: 'number' },
@@ -89,33 +105,42 @@ export const KIND_META: Record<ConditionKind, { group: GroupKey, repeatable?: nu
   config: { group: 'gap' },
   gapSum: { group: 'gap' },
   posGap: { group: 'gap', repeatable: [1, 0, 5] },
+  ballGap: { group: 'gap' },
   valueAboveCount: { group: 'value' },
   valueCount: { group: 'value', repeatable: [2, 0, 5] },
+  ballValue: { group: 'value' },
   firstY: { group: 'position' },
   yCount: { group: 'position', repeatable: [2, 0, 5] },
   noY: { group: 'position', repeatable: [4] },
+  ballY: { group: 'position' },
   tailCount: { group: 'tail', repeatable: [1, 0, 5] },
   sameTailMax: { group: 'tail' }
 }
 
-/** 2026-10-09 使用者在對話裡逐條加上的條件（第 115000244 期開完的盤面篩出 70 組）；獎號總和預設不勾 */
+/**
+ * 2026-10-09 使用者在對話裡逐條加上的條件（第 115000244 期開完的盤面篩出 70 組）；獎號總和預設不勾。
+ * 2026-10-10：「號碼 20～29 有 1～5 顆」改成四段各有幾顆、「第 2 顆隔期 0～5」併入每顆隔期（結果不變）；
+ * 每顆的值 / y 預設不限、不勾。
+ */
 export const DEFAULT_CONDITIONS: Condition[] = [
   { id: 'numSum', kind: 'numSum', enabled: false, p: [15, 185] },
-  { id: 'range20', kind: 'rangeCount', enabled: true, p: [20, 29, 1, 5] },
+  { id: 'decade', kind: 'decadeCount', enabled: true, p: [0, 5, 0, 5, 1, 5, 0, 5] },
   { id: 'minBelow', kind: 'minBelow', enabled: true, p: [10] },
   { id: 'zoneNot', kind: 'zoneNot', enabled: true, p: [2, 2, 1] },
   { id: 'even', kind: 'evenCount', enabled: true, p: [3, 5] },
   { id: 'exclude', kind: 'exclude', enabled: true, p: [], nums: [7] },
   { id: 'config', kind: 'config', enabled: true, p: [3, 1, 1] },
   { id: 'gapSum', kind: 'gapSum', enabled: true, p: [11, 29] },
-  { id: 'pos2Gap', kind: 'posGap', enabled: true, p: [2, 0, 5] },
+  { id: 'ballGap', kind: 'ballGap', enabled: true, p: [0, 59, 0, 5, 0, 59, 0, 59, 0, 59] },
   { id: 'valueAbove', kind: 'valueAboveCount', enabled: true, p: [10, 1, 5] },
   { id: 'value0', kind: 'valueCount', enabled: true, p: [0, 1, 2] },
   { id: 'value1', kind: 'valueCount', enabled: true, p: [1, 1, 2] },
+  { id: 'ballValue', kind: 'ballValue', enabled: false, p: [0, 999, 0, 999, 0, 999, 0, 999, 0, 999] },
   { id: 'firstY', kind: 'firstY', enabled: true, p: [1] },
   { id: 'y4', kind: 'yCount', enabled: true, p: [4, 1, 5] },
   { id: 'y1', kind: 'yCount', enabled: true, p: [1, 2, 5] },
   { id: 'noY5', kind: 'noY', enabled: true, p: [5] },
+  { id: 'ballY', kind: 'ballY', enabled: false, p: [1, 5, 1, 5, 1, 5, 1, 5, 1, 5] },
   { id: 'tail7', kind: 'tailCount', enabled: true, p: [7, 1, 1] },
   { id: 'sameTail', kind: 'sameTailMax', enabled: true, p: [2] }
 ]
@@ -132,6 +157,9 @@ export function sortByGroup(conds: Condition[]): Condition[] {
 const count = <T>(arr: T[], f: (x: T) => boolean): number => arr.reduce((a, x) => a + (f(x) ? 1 : 0), 0)
 const p = (c: Condition, i: number): number => c.p[i] ?? 0
 const between = (v: number, lo: number, hi: number): boolean => v >= lo && v <= hi
+/** 第 1～5 顆的某個欄位各自落在 [p(2k), p(2k+1)] */
+const eachBall = (c: Condition, combo: NumInfo[], f: (x: NumInfo) => number): boolean =>
+  combo.every((x, k) => between(f(x), p(c, k * 2), p(c, k * 2 + 1)))
 
 /** 單一條件對一組（已由小到大排、含隔期 / 值 / 位置）是否成立 */
 export function checkCondition(c: Condition, combo: NumInfo[], prevNums: number[]): boolean {
@@ -140,6 +168,8 @@ export function checkCondition(c: Condition, combo: NumInfo[], prevNums: number[
       return between(combo.reduce((a, x) => a + x.n, 0), p(c, 0), p(c, 1))
     case 'rangeCount':
       return between(count(combo, x => between(x.n, p(c, 0), p(c, 1))), p(c, 2), p(c, 3))
+    case 'decadeCount':
+      return DECADES.every(([lo, hi], k) => between(count(combo, x => between(x.n, lo, hi)), p(c, k * 2), p(c, k * 2 + 1)))
     case 'minBelow':
       return (combo[0]?.n ?? 0) < p(c, 0)
     case 'zoneNot':
@@ -156,16 +186,22 @@ export function checkCondition(c: Condition, combo: NumInfo[], prevNums: number[
       const x = combo[p(c, 0) - 1]
       return x != null && between(x.gap, p(c, 1), p(c, 2))
     }
+    case 'ballGap':
+      return eachBall(c, combo, x => x.gap)
     case 'valueAboveCount':
       return between(count(combo, x => x.value > p(c, 0)), p(c, 1), p(c, 2))
     case 'valueCount':
       return between(count(combo, x => x.value === p(c, 0)), p(c, 1), p(c, 2))
+    case 'ballValue':
+      return eachBall(c, combo, x => x.value)
     case 'firstY':
       return combo[0]?.y === p(c, 0)
     case 'yCount':
       return between(count(combo, x => x.y === p(c, 0)), p(c, 1), p(c, 2))
     case 'noY':
       return !combo.some(x => x.y === p(c, 0))
+    case 'ballY':
+      return eachBall(c, combo, x => x.y)
     case 'tailCount':
       return between(count(combo, x => x.n % 10 === p(c, 0)), p(c, 1), p(c, 2))
     case 'sameTailMax': {
