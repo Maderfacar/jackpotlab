@@ -9,7 +9,7 @@
     "postinstall": "nuxt prepare",
     "lint": "eslint .",
     "typecheck": "nuxt typecheck",
-    "test": "node --import tsx --test app/hindsight/__tests__/*.test.ts shared/lotto/scan/__tests__/*.test.ts"
+    "test": "node --import tsx --test app/hindsight/__tests__/*.test.ts shared/lotto/scan/__tests__/*.test.ts shared/lotto/filter/__tests__/*.test.ts"
   },
   "dependencies": {
     "@iconify-json/lucide": "^1.2.111",
