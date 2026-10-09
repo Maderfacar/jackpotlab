@@ -5,7 +5,7 @@ import { strict as assert } from 'node:assert'
 import { describe, it } from 'node:test'
 
 import type { BoardState } from '../../scan/board-states'
-import { checkCondition, DEFAULT_CONDITIONS, failedConditions, numberInfo, runFilter, type Condition, type NumInfo } from '../conditions'
+import { checkCondition, DEFAULT_CONDITIONS, failedConditions, GROUPS, KIND_META, numberInfo, runFilter, sortByGroup, type Condition, type NumInfo } from '../conditions'
 
 const ni = (n: number, gap: number, value: number, x: number, y: number): NumInfo => ({ n, gap, value, x, y })
 const cond = (kind: Condition['kind'], p: number[], nums?: number[]): Condition => ({ id: kind, kind, enabled: true, p, nums })
@@ -37,15 +37,22 @@ describe('checkCondition', () => {
     assert.equal(ok(cond('gapSum', [11, 20])), false)
   })
 
-  it('值大於 V 的至少 N 顆（嚴格大於）', () => {
-    assert.equal(ok(cond('valueAbove', [10, 1])), true)
-    assert.equal(ok(cond('valueAbove', [11, 1])), false)
+  it('值大於 V 的有 a～b 顆（嚴格大於）', () => {
+    assert.equal(ok(cond('valueAboveCount', [10, 1, 5])), true)
+    assert.equal(ok(cond('valueAboveCount', [11, 1, 5])), false)
+    assert.equal(ok(cond('valueAboveCount', [10, 0, 0])), false)
   })
 
-  it('最小號碼的 y、y=K 至少 N 顆、不能有 y=K', () => {
+  it('獎號總和介於 a～b（03+07+21+33+39 = 103）', () => {
+    assert.equal(ok(cond('numSum', [103, 103])), true)
+    assert.equal(ok(cond('numSum', [104, 185])), false)
+  })
+
+  it('最小號碼的 y、y=K 有 a～b 顆、不能有 y=K', () => {
     assert.equal(ok(cond('firstY', [1])), true)
-    assert.equal(ok(cond('yAtLeast', [1, 3])), true)
-    assert.equal(ok(cond('yAtLeast', [1, 4])), false)
+    assert.equal(ok(cond('yCount', [1, 3, 5])), true)
+    assert.equal(ok(cond('yCount', [1, 4, 5])), false)
+    assert.equal(ok(cond('yCount', [1, 0, 2])), false)
     assert.equal(ok(cond('noY', [5])), true)
     assert.equal(ok(cond('noY', [4])), false)
   })
@@ -60,8 +67,11 @@ describe('checkCondition', () => {
   it('第 k 顆的隔期介於、號碼範圍至少 N 顆、區間分佈不能是', () => {
     assert.equal(ok(cond('posGap', [2, 0, 5])), true)
     assert.equal(ok(cond('posGap', [3, 0, 5])), false)
-    assert.equal(ok(cond('rangeAtLeast', [20, 29, 1])), true)
-    assert.equal(ok(cond('rangeAtLeast', [20, 29, 2])), false)
+    assert.equal(ok(cond('rangeCount', [20, 29, 1, 5])), true)
+    assert.equal(ok(cond('rangeCount', [20, 29, 2, 5])), false)
+    // 使用者問的「1～9 一顆都不要」：填 0～0
+    assert.equal(ok(cond('rangeCount', [1, 9, 0, 0])), false)
+    assert.equal(ok(cond('rangeCount', [10, 19, 0, 0])), true)
     assert.equal(ok(cond('zoneNot', [2, 2, 1])), true)
     assert.equal(ok(cond('zoneNot', [2, 1, 2])), false)
   })
@@ -77,15 +87,15 @@ describe('checkCondition', () => {
     assert.equal(ok(cond('valueCount', [1, 2, 2])), true)
     assert.equal(ok(cond('valueCount', [0, 1, 2])), true)
     assert.equal(ok(cond('valueCount', [3, 2, 5])), false)
-    assert.equal(ok(cond('evenAtLeast', [0])), true)
-    assert.equal(ok(cond('evenAtLeast', [1])), false)
+    assert.equal(ok(cond('evenCount', [0, 0])), true)
+    assert.equal(ok(cond('evenCount', [1, 5])), false)
     assert.equal(ok(cond('exclude', [], [7])), false)
     assert.equal(ok(cond('exclude', [], [8])), true)
   })
 
   it('failedConditions 只列啟用中、沒通過的條件', () => {
-    const conds = [cond('evenAtLeast', [1]), { ...cond('minBelow', [3]), enabled: false }, cond('noY', [5])]
-    assert.deepEqual(failedConditions(conds, sample, prev).map(c => c.kind), ['evenAtLeast'])
+    const conds = [cond('evenCount', [1, 5]), { ...cond('minBelow', [3]), enabled: false }, cond('noY', [5])]
+    assert.deepEqual(failedConditions(conds, sample, prev).map(c => c.kind), ['evenCount'])
   })
 })
 
@@ -115,5 +125,16 @@ describe('runFilter', () => {
     const sums = r.combos.map(c => c.reduce((s, x) => s + x.gap, 0))
     assert.deepEqual(sums, [...sums].sort((a, b) => a - b))
     assert.equal(r.total, 126)
+  })
+})
+
+describe('分類', () => {
+  it('每種條件都有類別；預設條件依類別排好時順序不亂', () => {
+    const groups = GROUPS.map(g => g.key)
+    for (const c of DEFAULT_CONDITIONS) assert.ok(groups.includes(KIND_META[c.kind].group))
+    const sorted = sortByGroup(DEFAULT_CONDITIONS)
+    const idx = sorted.map(c => groups.indexOf(KIND_META[c.kind].group))
+    assert.deepEqual(idx, [...idx].sort((a, b) => a - b))
+    assert.equal(sorted.length, DEFAULT_CONDITIONS.length)
   })
 })

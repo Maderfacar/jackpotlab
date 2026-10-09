@@ -2,12 +2,13 @@
 /**
  * 組合篩選（2026-10-09 使用者拍板）：用某一期開完的盤面，套使用者口述的條件篩下一期的 5 顆組合。
  *
- * - 條件可勾選、數字可直接改，存在這台裝置的瀏覽器（localStorage）；新條件由使用者口述、加在 DEFAULT_CONDITIONS。
+ * - 條件依類別分組、可勾選、數字可直接改，可重複的條件可再加一條；存在這台裝置的瀏覽器（localStorage）。
+ *   新種類的條件由使用者口述、加在 shared/lotto/filter/conditions.ts。
  * - 盤面照「隔期狀態」排法：還出現在剩下組合裡的號碼照常顯示並標出現幾組，一組都沒有的灰白。
  * - 可切換期別回看：標出下一期實際開出的號碼、它過了哪幾條；並統計歷史上「下一期實際開出」通過整組條件的期數。
  * 盤面重建與 /scan 共用 shared/lotto/scan/board-states（已核對與網站隔期狀態逐格一致）。
  */
-import { DEFAULT_CONDITIONS, failedConditions, numberInfo, runFilter, type Condition, type NumInfo } from '~~/shared/lotto/filter/conditions'
+import { DEFAULT_CONDITIONS, failedConditions, KIND_META, KIND_SPEC, numberInfo, runFilter, sortByGroup, type Condition, type NumInfo } from '~~/shared/lotto/filter/conditions'
 import { computeBoardStates } from '~~/shared/lotto/scan/board-states'
 import { WARMUP } from '~~/shared/lotto/scan/scan'
 
@@ -40,18 +41,29 @@ function step(delta: number) {
   picked.value = next === lastT.value ? null : next
 }
 
-// ---------- 條件（存在瀏覽器，新版預設會自動補進來） ----------
-const STORAGE_KEY = 'jackpotlab-filter-conditions-v1'
-const conds = ref<Condition[]>(DEFAULT_CONDITIONS.map(c => ({ ...c })))
+// ---------- 條件（存在瀏覽器；預設依 id 合併，使用者自己加的 u- 條件照存） ----------
+// v2：2026-10-09 「至少 N 顆」改成「有 a～b 顆」、加獎號總和與分組，舊版設定不沿用
+const STORAGE_KEY = 'jackpotlab-filter-conditions-v2'
+const defaults = () => sortByGroup(DEFAULT_CONDITIONS.map(c => ({ ...c, p: [...c.p], nums: c.nums ? [...c.nums] : undefined })))
+const conds = ref<Condition[]>(defaults())
+
+function restore(raw: unknown): Condition[] | null {
+  if (!Array.isArray(raw)) return null
+  const saved = raw.filter((x): x is Condition => !!x && typeof x.id === 'string' && typeof x.kind === 'string' && x.kind in KIND_SPEC && Array.isArray(x.p))
+  const cleanP = (src: number[], fallback: number[]) => fallback.map((v, i) => (Number.isFinite(src[i]) ? src[i]! : v))
+  const merged = DEFAULT_CONDITIONS.map((d) => {
+    const s = saved.find(x => x.id === d.id && x.kind === d.kind)
+    return s ? { ...d, enabled: !!s.enabled, p: cleanP(s.p, d.p), nums: Array.isArray(s.nums) ? s.nums.filter(Number.isFinite) : d.nums } : { ...d }
+  })
+  const added = saved
+    .filter(x => x.id.startsWith('u-') && KIND_META[x.kind].repeatable)
+    .map(x => ({ id: x.id, kind: x.kind, enabled: !!x.enabled, p: cleanP(x.p, KIND_META[x.kind].repeatable!) }))
+  return sortByGroup([...merged, ...added])
+}
 onMounted(() => {
   try {
-    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? 'null') as Condition[] | null
-    if (Array.isArray(saved)) {
-      conds.value = DEFAULT_CONDITIONS.map((d) => {
-        const s = saved.find(x => x.id === d.id && x.kind === d.kind)
-        return s ? { ...d, enabled: !!s.enabled, p: d.p.map((v, i) => (Number.isFinite(s.p?.[i]) ? s.p[i]! : v)), nums: Array.isArray(s.nums) ? s.nums : d.nums } : { ...d }
-      })
-    }
+    const restored = restore(JSON.parse(localStorage.getItem(STORAGE_KEY) ?? 'null'))
+    if (restored) conds.value = restored
   } catch {
     // 讀不到就用預設
   }
@@ -64,7 +76,7 @@ watch(conds, (v) => {
   }
 }, { deep: true })
 function resetConds() {
-  conds.value = DEFAULT_CONDITIONS.map(c => ({ ...c }))
+  conds.value = defaults()
 }
 
 // ---------- 篩選 ----------
