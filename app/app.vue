@@ -33,9 +33,6 @@ const navItems: NavItem[] = [
   { label: '號碼走勢', icon: 'i-lucide-table-2', to: '/board' },
   { label: '我的查找', icon: 'i-lucide-scan-search', to: '/scan' },
   { label: '組合篩選', icon: 'i-lucide-filter', to: '/filter' },
-  { label: '規律驗證', icon: 'i-lucide-flask-conical', to: '/verify' },
-  { label: '訊號', icon: 'i-lucide-lightbulb', to: '/signals' },
-  { label: '賓果訊號', icon: 'i-lucide-grid-3x3', to: '/bingo-signals' },
   { label: '開獎號碼', icon: 'i-lucide-list-checks', to: '/draws' },
   { label: '系統健康', icon: 'i-lucide-activity', to: '/admin/health' }
 ]
