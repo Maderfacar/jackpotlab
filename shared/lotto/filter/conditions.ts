@@ -225,33 +225,212 @@ export interface FilterResult {
   truncated: boolean
 }
 
-/** 列舉 1~39 選 5 的全部組合，套用啟用中的條件 */
+/**
+ * 列舉時用的快速判斷：每條條件先把數字參數取出來，編成兩個函式
+ *   - full(5 顆)：和 checkCondition 同義（測試拿暴力列舉 + checkCondition 逐一比對）
+ *   - prefix(前 d 顆)：確定後面怎麼補都不會過才回 false（只用「只會越加越多」的量、剩下空位補不補得到下限、已固定的第幾顆）
+ */
+interface Compiled {
+  full: (combo: NumInfo[]) => boolean
+  prefix: (pre: NumInfo[]) => boolean
+}
+
+function countIn(arr: NumInfo[], f: (x: NumInfo) => boolean): number {
+  let k = 0
+  for (let i = 0; i < arr.length; i++) if (f(arr[i]!)) k++
+  return k
+}
+
+/** 符合 f 的顆數介於 lo～hi */
+function countRule(f: (x: NumInfo) => boolean, lo: number, hi: number): Compiled {
+  return {
+    full: (combo) => {
+      const k = countIn(combo, f)
+      return k >= lo && k <= hi
+    },
+    prefix: (pre) => {
+      const k = countIn(pre, f)
+      return k <= hi && k + 5 - pre.length >= lo
+    }
+  }
+}
+
+/** 幾類各自的顆數介於 lo～hi；前幾顆時各類還差的顆數加起來要放得進剩下的空位 */
+function bucketRule(buckets: { f: (x: NumInfo) => boolean, lo: number, hi: number }[]): Compiled {
+  return {
+    full: combo => buckets.every((b) => {
+      const k = countIn(combo, b.f)
+      return k >= b.lo && k <= b.hi
+    }),
+    prefix: (pre) => {
+      let short = 0
+      for (const b of buckets) {
+        const k = countIn(pre, b.f)
+        if (k > b.hi) return false
+        short += Math.max(0, b.lo - k)
+      }
+      return short <= 5 - pre.length
+    }
+  }
+}
+
+/** 欄位總和介於 lo～hi（欄位都 ≥ 0，前幾顆只看上限） */
+function sumRule(f: (x: NumInfo) => number, lo: number, hi: number): Compiled {
+  const sum = (arr: NumInfo[]) => {
+    let s = 0
+    for (let i = 0; i < arr.length; i++) s += f(arr[i]!)
+    return s
+  }
+  return {
+    full: (combo) => {
+      const s = sum(combo)
+      return s >= lo && s <= hi
+    },
+    prefix: pre => sum(pre) <= hi
+  }
+}
+
+/** 第 1～5 顆各自的欄位介於 [lo_k, hi_k]；前幾顆只要看最後加進來那顆 */
+function eachBallRule(c: Condition, f: (x: NumInfo) => number): Compiled {
+  const lo = [0, 1, 2, 3, 4].map(k => p(c, k * 2))
+  const hi = [0, 1, 2, 3, 4].map(k => p(c, k * 2 + 1))
+  return {
+    full: combo => combo.every((x, k) => between(f(x), lo[k]!, hi[k]!)),
+    prefix: (pre) => {
+      const k = pre.length - 1
+      return between(f(pre[k]!), lo[k]!, hi[k]!)
+    }
+  }
+}
+
+/** 和上一期相同的尾數（數尾數）最多 max 個 */
+function sameTailRule(prevNums: number[], max: number): Compiled {
+  const prevTail = new Array<boolean>(10).fill(false)
+  prevNums.forEach((n) => {
+    prevTail[n % 10] = true
+  })
+  const ok = (arr: NumInfo[]) => {
+    let mask = 0
+    for (let i = 0; i < arr.length; i++) {
+      const d = arr[i]!.n % 10
+      if (prevTail[d]) mask |= 1 << d
+    }
+    let k = 0
+    for (; mask; mask &= mask - 1) k++
+    return k <= max
+  }
+  return { full: ok, prefix: ok }
+}
+
+/** 只看最小那顆（第 1 顆）的條件：前幾顆時也能直接判斷 */
+function firstBallRule(ok: (x: NumInfo) => boolean): Compiled {
+  const f = (arr: NumInfo[]) => ok(arr[0]!)
+  return { full: f, prefix: f }
+}
+
+function compile(c: Condition, prevNums: number[]): Compiled {
+  const v = p(c, 0)
+  switch (c.kind) {
+    case 'numSum':
+      return sumRule(x => x.n, p(c, 0), p(c, 1))
+    case 'gapSum':
+      return sumRule(x => x.gap, p(c, 0), p(c, 1))
+    case 'rangeCount': {
+      const b = p(c, 1)
+      return countRule(x => x.n >= v && x.n <= b, p(c, 2), p(c, 3))
+    }
+    case 'decadeCount':
+      return bucketRule(DECADES.map(([a, b], k) => ({ f: (x: NumInfo) => x.n >= a && x.n <= b, lo: p(c, k * 2), hi: p(c, k * 2 + 1) })))
+    case 'config':
+      return bucketRule([
+        { f: x => x.gap <= 5, lo: p(c, 0), hi: p(c, 0) },
+        { f: x => x.gap >= 6 && x.gap <= 9, lo: p(c, 1), hi: p(c, 1) },
+        { f: x => x.gap >= 10, lo: p(c, 2), hi: p(c, 2) }
+      ])
+    case 'minBelow':
+      return firstBallRule(x => x.n < v)
+    case 'firstY':
+      return firstBallRule(x => x.y === v)
+    case 'evenCount':
+      return countRule(x => x.n % 2 === 0, p(c, 0), p(c, 1))
+    case 'valueAboveCount':
+      return countRule(x => x.value > v, p(c, 1), p(c, 2))
+    case 'valueCount':
+      return countRule(x => x.value === v, p(c, 1), p(c, 2))
+    case 'yCount':
+      return countRule(x => x.y === v, p(c, 1), p(c, 2))
+    case 'tailCount':
+      return countRule(x => x.n % 10 === v, p(c, 1), p(c, 2))
+    case 'posGap': {
+      const idx = v - 1
+      const lo = p(c, 1)
+      const hi = p(c, 2)
+      return {
+        full: combo => combo[idx] != null && between(combo[idx]!.gap, lo, hi),
+        prefix: pre => pre[idx] == null || between(pre[idx]!.gap, lo, hi)
+      }
+    }
+    case 'ballGap':
+      return eachBallRule(c, x => x.gap)
+    case 'ballValue':
+      return eachBallRule(c, x => x.value)
+    case 'ballY':
+      return eachBallRule(c, x => x.y)
+    case 'sameTailMax':
+      return sameTailRule(prevNums, v)
+    default:
+      // zoneNot 等只能等 5 顆到齊再判斷
+      return { full: combo => checkCondition(c, combo, prevNums), prefix: () => true }
+  }
+}
+
+/** 通常最嚴、最便宜的先查，早點剪掉 */
+const CHECK_ORDER: ConditionKind[] = ['firstY', 'minBelow', 'ballGap', 'config', 'ballY', 'ballValue', 'posGap', 'gapSum', 'numSum', 'decadeCount']
+const rank = (c: Condition): number => {
+  const i = CHECK_ORDER.indexOf(c.kind)
+  return i < 0 ? CHECK_ORDER.length : i
+}
+
+const comb4 = (n: number): number => (n < 4 ? 0 : (n * (n - 1) * (n - 2) * (n - 3)) / 24)
+const comb5 = (n: number): number => (n < 5 ? 0 : (n * (n - 1) * (n - 2) * (n - 3) * (n - 4)) / 120)
+
+/** 列舉 1~39 選 5 的全部組合，套用啟用中的條件（前幾顆就不可能過的分支直接剪掉） */
 export function runFilter(conds: Condition[], info: Map<number, NumInfo>, prevNums: number[], keep = 5000): FilterResult {
   const active = conds.filter(c => c.enabled)
   const noY = active.filter(c => c.kind === 'noY').map(c => p(c, 0))
   const excluded = new Set(active.filter(c => c.kind === 'exclude').flatMap(c => c.nums ?? []))
   // 單顆就能判斷的先排掉，少跑很多組合
   const pool = [...info.values()].filter(x => !excluded.has(x.n) && !noY.includes(x.y)).sort((a, b) => a.n - b.n)
-  const comboConds = active.filter(c => c.kind !== 'noY' && c.kind !== 'exclude')
+  const rules = active
+    .filter(c => c.kind !== 'noY' && c.kind !== 'exclude')
+    .sort((a, b) => rank(a) - rank(b))
+    .map(c => compile(c, prevNums))
+  const m = pool.length
+  const noRules = rules.length === 0
   const counts = new Array<number>(40).fill(0)
   const combos: NumInfo[][] = []
-  let total = 0
-  const m = pool.length
-  for (let a = 0; a < m; a++) {
-    for (let b = a + 1; b < m; b++) {
-      for (let c = b + 1; c < m; c++) {
-        for (let d = c + 1; d < m; d++) {
-          for (let e = d + 1; e < m; e++) {
-            const combo = [pool[a]!, pool[b]!, pool[c]!, pool[d]!, pool[e]!]
-            if (!comboConds.every(k => checkCondition(k, combo, prevNums))) continue
-            total++
-            combo.forEach(x => counts[x.n]!++)
-            if (combos.length < keep) combos.push(combo)
-          }
-        }
+  // 沒有要逐組判斷的條件：組數與每顆出現次數直接用組合數算，清單只列前 keep 組
+  let total = noRules ? comb5(m) : 0
+  if (noRules) pool.forEach(x => (counts[x.n] = comb4(m - 1)))
+
+  const pre: NumInfo[] = []
+  const walk = (start: number): void => {
+    for (let i = start; i <= m - (5 - pre.length); i++) {
+      if (noRules && combos.length >= keep) return
+      pre.push(pool[i]!)
+      if (pre.length < 5) {
+        if (rules.every(r => r.prefix(pre))) walk(i + 1)
+      } else if (noRules) {
+        combos.push([...pre])
+      } else if (rules.every(r => r.full(pre))) {
+        total++
+        for (const x of pre) counts[x.n]!++
+        if (combos.length < keep) combos.push([...pre])
       }
+      pre.pop()
     }
   }
+  walk(0)
   const gs = (x: NumInfo[]) => x.reduce((s, y) => s + y.gap, 0)
   const truncated = total > keep
   return { total, counts, combos: truncated ? combos : [...combos].sort((x, y) => gs(x) - gs(y)), truncated }

@@ -155,3 +155,79 @@ describe('分類', () => {
     assert.equal(sorted.length, DEFAULT_CONDITIONS.length)
   })
 })
+
+describe('runFilter 剪枝與暴力列舉結果一致', () => {
+  // 固定種子的亂數，讓測試可重現
+  let seed = 20261010
+  const rnd = (n: number) => {
+    seed = (seed * 1103515245 + 12345) % 2147483648
+    // 取高位元（線性同餘的低位元週期很短）
+    return Math.floor(seed / 65536) % n
+  }
+  const brute = (conds: Condition[], info: Map<number, NumInfo>, prevNums: number[]) => {
+    const pool = [...info.values()].sort((a, b) => a.n - b.n)
+    const counts = new Array<number>(40).fill(0)
+    let total = 0
+    for (let a = 0; a < pool.length; a++)
+      for (let b = a + 1; b < pool.length; b++)
+        for (let c = b + 1; c < pool.length; c++)
+          for (let d = c + 1; d < pool.length; d++)
+            for (let e = d + 1; e < pool.length; e++) {
+              const combo = [pool[a]!, pool[b]!, pool[c]!, pool[d]!, pool[e]!]
+              if (failedConditions(conds, combo, prevNums).length) continue
+              total++
+              combo.forEach(x => counts[x.n]!++)
+            }
+    return { total, counts }
+  }
+  const randomParams = (kind: Condition['kind']): number[] => {
+    // 偏寬的範圍，讓多數回合還有組合可以比
+    const span = (max: number) => {
+      const half = Math.floor(max / 2)
+      return [rnd(half + 1), max - rnd(half + 1)]
+    }
+    switch (kind) {
+      case 'numSum': return [30 + rnd(40), 110 + rnd(70)]
+      case 'gapSum': return [rnd(20), 30 + rnd(60)]
+      case 'decadeCount': return [...span(3), ...span(3), ...span(3), ...span(3)]
+      case 'ballGap': return Array.from({ length: 5 }, () => span(24)).flat()
+      case 'ballValue': return Array.from({ length: 5 }, () => span(14)).flat()
+      case 'ballY': return Array.from({ length: 5 }, () => span(5)).flat()
+      case 'config': {
+        const a = 1 + rnd(3)
+        const b = rnd(6 - a)
+        return [a, b, 5 - a - b]
+      }
+      case 'minBelow': return [5 + rnd(20)]
+      case 'firstY': return [1 + rnd(3)]
+      case 'posGap': return [1 + rnd(5), ...span(24)]
+      case 'sameTailMax': return [rnd(4)]
+      case 'zoneNot': return [rnd(3), rnd(3), rnd(3)]
+      case 'rangeCount': return [1 + rnd(20), 20 + rnd(20), ...span(4)]
+      case 'valueAboveCount':
+      case 'valueCount':
+      case 'yCount':
+      case 'tailCount': return [kind === 'yCount' ? 1 + rnd(5) : rnd(10), ...span(4)]
+      case 'evenCount': return span(5)
+      default: return [1 + rnd(5)]
+    }
+  }
+  const kinds = (Object.keys(KIND_META) as Condition['kind'][]).filter(k => k !== 'exclude')
+
+  it('隨機盤面 × 隨機條件 40 次：組數與每個號碼出現次數都相同', () => {
+    let nonEmpty = 0
+    for (let round = 0; round < 40; round++) {
+      const nums = Array.from({ length: 39 }, (_, i) => i + 1).filter(() => rnd(10) < 8)
+      const info = new Map<number, NumInfo>(nums.map(n => [n, ni(n, rnd(25), rnd(15), 1 + rnd(5), 1 + rnd(5))] as const))
+      const conds: Condition[] = kinds.filter(() => rnd(3) === 0).map(k => ({ id: k, kind: k, enabled: true, p: randomParams(k) }))
+      const prevNums = [1 + rnd(39), 1 + rnd(39), 1 + rnd(39)]
+      const fast = runFilter(conds, info, prevNums, 0)
+      const slow = brute(conds, info, prevNums)
+      assert.equal(fast.total, slow.total, `round ${round}`)
+      assert.deepEqual(fast.counts, slow.counts, `round ${round}`)
+      if (slow.total > 0) nonEmpty++
+    }
+    // 確保不是每次都 0 組（那樣比對沒意義）
+    assert.ok(nonEmpty >= 10, `只有 ${nonEmpty} 次有剩組合`)
+  })
+})
