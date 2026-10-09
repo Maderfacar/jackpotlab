@@ -93,7 +93,7 @@ const open = ref(false)
       :ui="{ body: 'p-0 sm:p-0' }"
     >
       <div class="overflow-x-auto">
-        <table class="w-full text-sm">
+        <table class="w-full text-sm [&_th]:whitespace-nowrap [&_td]:whitespace-nowrap">
           <thead class="bg-elevated text-xs tracking-wider text-muted">
             <tr>
               <th class="px-2 py-2 text-left sm:px-3">
@@ -141,16 +141,16 @@ const open = ref(false)
                 >—</span>
                 <div
                   v-else
-                  class="flex flex-wrap gap-1.5"
+                  class="flex flex-wrap gap-1 whitespace-normal sm:gap-1.5"
                 >
                   <div
                     v-for="(n, i) in row.nums"
                     :key="n"
-                    class="flex w-9 flex-col items-center"
+                    class="flex w-8 flex-col items-center sm:w-9"
                     :title="`${pad(n)}：隔 ${row.gap}・值 ${row.value}・位 ${row.nums.length}-${i + 1}・出現在 ${result?.counts[n] ?? 0} 組`"
                   >
                     <span
-                      class="gf-ball size-8 text-xs"
+                      class="gf-ball size-7 text-xs sm:size-8"
                       :class="isHit(n) ? 'gf-hit' : ''"
                     >{{ pad(n) }}</span>
                     <span class="font-mono text-[10px] leading-4 text-muted">{{ row.nums.length }}-{{ i + 1 }}</span>
