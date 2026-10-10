@@ -1,5 +1,5 @@
 /**
- * 組合篩選的條件清單（/filter 與 /gapfilter 共用同一份設定）：存在這台裝置的瀏覽器 localStorage。
+ * /gapfilter 的條件清單：存在這台裝置的瀏覽器 localStorage。
  * 預設依 id 合併，使用者自己加的 u- 條件照存。
  */
 import { DEFAULT_CONDITIONS, KIND_META, KIND_SPEC, sortByGroup, type Condition } from '~~/shared/lotto/filter/conditions'
