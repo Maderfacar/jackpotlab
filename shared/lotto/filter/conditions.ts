@@ -93,15 +93,18 @@ export const KIND_SPEC: Record<ConditionKind, Segment[]> = {
   sameTailMax: ['和上一期相同的尾數最多', n5(0), '個（數尾數）']
 }
 
-/** 每種條件屬於哪一類、能不能再加一條（再加時的預設數字） */
-export const KIND_META: Record<ConditionKind, { group: GroupKey, repeatable?: number[] }> = {
+/**
+ * 每種條件屬於哪一類、能不能再加一條（再加時的預設數字）；
+ * periodSpecific = 指定號碼 / 尾數這類只針對某一期盤面的設定，回測可選擇略過（2026-10-10 使用者拍板）
+ */
+export const KIND_META: Record<ConditionKind, { group: GroupKey, repeatable?: number[], periodSpecific?: true }> = {
   numSum: { group: 'number' },
   rangeCount: { group: 'number', repeatable: [1, 9, 0, 0] },
   decadeCount: { group: 'number' },
   minBelow: { group: 'number' },
   zoneNot: { group: 'number', repeatable: [2, 2, 1] },
   evenCount: { group: 'number' },
-  exclude: { group: 'number' },
+  exclude: { group: 'number', periodSpecific: true },
   config: { group: 'gap' },
   gapSum: { group: 'gap' },
   posGap: { group: 'gap', repeatable: [1, 0, 5] },
@@ -113,7 +116,7 @@ export const KIND_META: Record<ConditionKind, { group: GroupKey, repeatable?: nu
   yCount: { group: 'position', repeatable: [2, 0, 5] },
   noY: { group: 'position', repeatable: [4] },
   ballY: { group: 'position' },
-  tailCount: { group: 'tail', repeatable: [1, 0, 5] },
+  tailCount: { group: 'tail', repeatable: [1, 0, 5], periodSpecific: true },
   sameTailMax: { group: 'tail' }
 }
 
@@ -144,6 +147,9 @@ export const DEFAULT_CONDITIONS: Condition[] = [
   { id: 'tail7', kind: 'tailCount', enabled: true, p: [7, 1, 1] },
   { id: 'sameTail', kind: 'sameTailMax', enabled: true, p: [2] }
 ]
+
+/** 拿掉只針對某一期的條件（排除號碼、指定尾數），留下通用規則 */
+export const generalOnly = (conds: Condition[]): Condition[] => conds.filter(c => !KIND_META[c.kind].periodSpecific)
 
 /** 依類別排好（同類保持原本先後），頁面編號照這個順序 */
 export function sortByGroup(conds: Condition[]): Condition[] {

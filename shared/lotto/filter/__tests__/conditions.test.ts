@@ -5,7 +5,7 @@ import { strict as assert } from 'node:assert'
 import { describe, it } from 'node:test'
 
 import type { BoardState } from '../../scan/board-states'
-import { checkCondition, DEFAULT_CONDITIONS, failedConditions, GROUPS, KIND_META, numberInfo, runFilter, sortByGroup, type Condition, type NumInfo } from '../conditions'
+import { checkCondition, DEFAULT_CONDITIONS, failedConditions, generalOnly, GROUPS, KIND_META, numberInfo, runFilter, sortByGroup, type Condition, type NumInfo } from '../conditions'
 
 const ni = (n: number, gap: number, value: number, x: number, y: number): NumInfo => ({ n, gap, value, x, y })
 const cond = (kind: Condition['kind'], p: number[], nums?: number[]): Condition => ({ id: kind, kind, enabled: true, p, nums })
@@ -229,5 +229,15 @@ describe('runFilter 剪枝與暴力列舉結果一致', () => {
     }
     // 確保不是每次都 0 組（那樣比對沒意義）
     assert.ok(nonEmpty >= 10, `只有 ${nonEmpty} 次有剩組合`)
+  })
+})
+
+describe('只針對單期的條件', () => {
+  it('排除號碼、指定尾數有幾顆 = 只針對某一期的設定；其他是通用規則', () => {
+    const specific = (Object.keys(KIND_META) as Condition['kind'][]).filter(k => KIND_META[k].periodSpecific)
+    assert.deepEqual(specific.sort(), ['exclude', 'tailCount'])
+    assert.deepEqual(generalOnly(DEFAULT_CONDITIONS).map(c => c.id).includes('exclude'), false)
+    assert.deepEqual(generalOnly(DEFAULT_CONDITIONS).map(c => c.id).includes('tail7'), false)
+    assert.equal(generalOnly(DEFAULT_CONDITIONS).length, DEFAULT_CONDITIONS.length - 2)
   })
 })

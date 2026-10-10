@@ -5,7 +5,8 @@ import { strict as assert } from 'node:assert'
 import { describe, it } from 'node:test'
 
 import type { BoardState } from '../../scan/board-states'
-import { addPeriod, emptyAcc } from '../backtest'
+import { addPeriod, emptyAcc, passHistory } from '../backtest'
+import type { Condition } from '../conditions'
 import { comb, DEFAULT_PONG, hitRange, hitsProb, pongCount, returnRate, scenarios, settle, toColumns } from '../pong'
 
 describe('碰數', () => {
@@ -115,5 +116,22 @@ describe('回測 addPeriod', () => {
     assert.ok(Math.abs(acc.kExpected.reduce((a, b) => a + b, 0) - 1) < 1e-12)
     const twice = addPeriod(acc, [], state, [1, 2, 3, 4, 5], [10, 11, 12, 13, 14], st)
     assert.deepEqual([twice.periods, twice.cost[0], twice.payout[0], twice.kDist[0]], [2, 56, 71, 1])
+  })
+})
+
+describe('歷史全過 passHistory', () => {
+  it('每期把下一期實際開出的 5 顆套條件；不在盤面上的期別不算', () => {
+    const slots: number[][] = Array.from({ length: 60 }, () => [])
+    slots[0] = [1, 2, 3, 4, 5]
+    slots[1] = [6, 7, 8, 9, 10]
+    const state: BoardState = { slots, values: new Array<number>(60).fill(0) }
+    const draws = [[11, 12, 13, 14, 15], [1, 2, 3, 6, 7], [1, 2, 3, 4, 5], [1, 2, 3, 4, 30]]
+    const states = [state, state, state, state]
+    const even2: Condition = { id: 'e', kind: 'evenCount', enabled: true, p: [2, 2] }
+    // s=0 → 下一期 1 2 3 6 7（雙數 2、6 = 2 顆 ✓）；s=1 → 1 2 3 4 5（雙數 2 顆 ✓）；s=2 → 含 30 不在盤面，不算
+    const r = passHistory([even2], states, draws, 0)
+    assert.deepEqual([r.n, r.hit, r.hitAt], [2, 2, [1, 2]])
+    const r2 = passHistory([{ ...even2, p: [3, 5] }], states, draws, 0)
+    assert.deepEqual([r2.n, r2.hit], [2, 0])
   })
 })

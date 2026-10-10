@@ -5,10 +5,12 @@
  *
  * - 條件（useFilterConditions）平常收成右下角浮動按鈕，點開才蓋住畫面。
  * - 碰數小工具（連碰 / 立柱、投入、賺賠表、歷史回測）也收成浮動按鈕。
- * - 可以切回過去某一期開完的盤面：下一期實際開出的號碼加框，碰數工具算出實際中幾碰。
+ * - 可以切回過去某一期開完的盤面：下一期實際開出的號碼加框、條件旁標 ✓ / ✗，碰數工具算出實際中幾碰。
+ * - 條件面板上方標「歷史上下一期實際開出、全部條件都通過」的期數（條件越多越容易把真正開出的組合篩掉）。
  * - 盤面用 shared/lotto/scan/board-states 重建（已核對與網站隔期狀態逐格一致）。
  */
-import { numberInfo, runFilter } from '~~/shared/lotto/filter/conditions'
+import { passHistory } from '~~/shared/lotto/filter/backtest'
+import { failedConditions, numberInfo, runFilter, type NumInfo } from '~~/shared/lotto/filter/conditions'
 import { computeBoardStates } from '~~/shared/lotto/scan/board-states'
 import { WARMUP } from '~~/shared/lotto/scan/scan'
 
@@ -59,6 +61,19 @@ const orange = computed(() => (result.value?.counts ?? []).flatMap((c, n) => (c 
 const hitCount = computed(() => orange.value.length)
 const enabledCount = computed(() => conds.value.filter(c => c.enabled).length)
 const orangeDrawn = computed(() => (actual.value ? actual.value.nums.filter(isHit).length : 0))
+
+/** 回看時：下一期實際開出的 5 顆各條件有沒有過（有號碼不在盤面上就不判斷） */
+const actualPass = computed<Record<string, boolean> | null>(() => {
+  if (!actual.value || !state.value) return null
+  const info = numberInfo(state.value)
+  const combo = actual.value.nums.map(n => info.get(n)).filter((x): x is NumInfo => !!x)
+  if (combo.length !== 5) return null
+  const failed = new Set(failedConditions(conds.value, combo, draws.value[t.value] ?? []).map(c => c.id))
+  return Object.fromEntries(conds.value.map(c => [c.id, !failed.has(c.id)]))
+})
+const actualFailedCount = computed(() => (actualPass.value ? conds.value.filter(c => c.enabled && !actualPass.value![c.id]).length : 0))
+/** 歷史上下一期實際開出、全部條件都通過的期數 */
+const historyPass = computed(() => passHistory(conds.value, states.value, draws.value, WARMUP))
 
 const { settings: pong, resetPong } = usePongSettings()
 
@@ -157,7 +172,19 @@ const pongOpen = ref(false)
         class="w-full text-sm"
       >
         下一期（{{ actual.issue }}）實際開出 <b class="font-mono">{{ actual.nums.map(pad).join(' ') }}</b>（表上加框）：
-        橘色號碼中 <b class="font-mono">{{ orangeDrawn }}</b> 顆
+        橘色號碼中 <b class="font-mono">{{ orangeDrawn }}</b> 顆・
+        <span
+          v-if="!actualPass"
+          class="text-muted"
+        >有號碼超過 60 期沒開，條件不判斷</span>
+        <span
+          v-else-if="actualFailedCount === 0"
+          class="font-medium text-success"
+        >條件全部通過</span>
+        <span
+          v-else
+          class="font-medium text-error"
+        >有 {{ actualFailedCount }} 條沒通過（條件旁標 ✗）</span>
       </p>
     </div>
 
@@ -276,13 +303,21 @@ const pongOpen = ref(false)
     <USlideover
       v-model:open="open"
       title="勾選條件"
-      :description="`已勾 ${enabledCount} 條・剩 ${result?.total.toLocaleString() ?? 0} 組・符合的號碼 ${hitCount} 個`"
+      :description="`已勾 ${enabledCount} 條・剩 ${result?.total.toLocaleString() ?? 0} 組・符合的號碼 ${hitCount} 個・歷史全過 ${historyPass.hit} / ${historyPass.n} 期`"
       :ui="{ body: 'p-0 sm:p-0' }"
     >
       <template #body>
+        <p class="border-b border-default px-4 py-2 text-xs text-muted">
+          歷史上下一期實際開出的號碼，全部條件都通過的有 <b class="font-mono text-toned">{{ historyPass.hit }}</b> / {{ historyPass.n }} 期<template v-if="historyPass.hit">
+            ：{{ historyPass.hitAt.map(i => history[i]?.issue).join('、') }}
+          </template>。
+          數字越小，代表這組條件越常把真正開出的組合篩掉。<template v-if="actual">
+            回看中：條件旁標出第 {{ actual.issue }} 期實際開出的號碼有沒有過。
+          </template>
+        </p>
         <FilterConditions
           v-model="conds"
-          :actual-pass="null"
+          :actual-pass="actualPass"
           :ui="{ root: 'rounded-none ring-0 shadow-none' }"
           @reset="resetConds"
         />

@@ -4,7 +4,7 @@
  * 一期一期累加（不可變），頁面可以分批跑、不卡畫面。
  */
 import type { BoardState } from '../scan/board-states'
-import { numberInfo, runFilter, type Condition } from './conditions'
+import { failedConditions, numberInfo, runFilter, type Condition, type NumInfo } from './conditions'
 import { hitsProb, settle, STARS, type PongSettings } from './pong'
 
 export interface BacktestAcc {
@@ -41,4 +41,21 @@ export function addPeriod(acc: BacktestAcc, conds: Condition[], state: BoardStat
     cost: acc.cost.map((v, i) => v + r.stars[i]!.cost),
     payout: acc.payout.map((v, i) => v + r.stars[i]!.payout)
   }
+}
+
+/**
+ * 歷史上「下一期實際開出的 5 顆」有幾期全部條件都通過（不用列舉組合，很快）。
+ * hitAt = 通過的那幾期（下一期）的索引。下一期有號碼不在盤面上（超過 60 期沒開）的期別不算。
+ */
+export function passHistory(conds: Condition[], states: BoardState[], draws: number[][], from: number): { n: number, hit: number, hitAt: number[] } {
+  let n = 0
+  const hitAt: number[] = []
+  for (let s = from; s < draws.length - 1; s++) {
+    const info = numberInfo(states[s]!)
+    const combo = draws[s + 1]!.map(x => info.get(x)).filter((x): x is NumInfo => !!x)
+    if (combo.length !== 5) continue
+    n++
+    if (failedConditions(conds, combo, draws[s]!).length === 0) hitAt.push(s + 1)
+  }
+  return { n, hit: hitAt.length, hitAt }
 }

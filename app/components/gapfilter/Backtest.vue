@@ -2,9 +2,10 @@
 /**
  * 歷史回測：每一期開完的盤面套目前的條件，把橘色號碼當連碰選號，用下一期實際開出的號碼結算，
  * 累計投入 / 拿回，並和「隨機選同樣顆數」比較中幾顆。分批跑（每批幾期就讓畫面喘口氣），條件或金額一改就作廢重跑。
+ * 預設略過只針對某一期的條件（排除號碼、指定尾數），因為那是看著某一期盤面定的，套到每一期沒意義（2026-10-10 使用者拍板）。
  */
 import { addPeriod, emptyAcc, type BacktestAcc } from '~~/shared/lotto/filter/backtest'
-import type { Condition } from '~~/shared/lotto/filter/conditions'
+import { generalOnly, sortByGroup, type Condition } from '~~/shared/lotto/filter/conditions'
 import { STARS, type PongSettings } from '~~/shared/lotto/filter/pong'
 import type { BoardState } from '~~/shared/lotto/scan/board-states'
 
@@ -20,6 +21,16 @@ const props = defineProps<{
 const STAR_LABEL = ['二星', '三星', '四星']
 const BATCH = 8
 
+const skipSpecific = ref(true)
+const used = computed(() => (skipSpecific.value ? generalOnly(props.conds) : props.conds))
+/** 被略過的條件（照面板上的編號） */
+const skipped = computed(() => {
+  if (!skipSpecific.value) return []
+  const order = sortByGroup(props.conds)
+  const keep = new Set(used.value.map(c => c.id))
+  return order.flatMap((c, i) => (c.enabled && !keep.has(c.id) ? [i + 1] : []))
+})
+
 const acc = shallowRef<BacktestAcc | null>(null)
 const done = ref(0)
 const running = ref(false)
@@ -32,7 +43,7 @@ function stop() {
   running.value = false
 }
 // 條件、金額、資料一改，舊結果就不對了
-watch(() => [props.conds, props.settings.stake, props.settings.odds, props.settings.returnStake, props.draws], () => {
+watch(() => [props.conds, skipSpecific.value, props.settings.stake, props.settings.odds, props.settings.returnStake, props.draws], () => {
   stop()
   acc.value = null
   done.value = 0
@@ -44,7 +55,7 @@ async function run() {
   running.value = true
   done.value = 0
   // 跑的過程中用當下的快照，不受中途改動影響（改動會直接作廢這次）
-  const conds = props.conds.map(c => ({ ...c, p: [...c.p], nums: c.nums ? [...c.nums] : undefined }))
+  const conds = used.value.map(c => ({ ...c, p: [...c.p], nums: c.nums ? [...c.nums] : undefined }))
   const st = { ...props.settings, stake: [...props.settings.stake], odds: [...props.settings.odds] }
   let a = emptyAcc()
   for (let s = props.from; s < props.draws.length - 1; s++) {
@@ -91,6 +102,22 @@ const atLeast = (arr: number[], k: number) => arr.slice(k).reduce((x, y) => x + 
     </div>
     <p class="text-xs text-muted">
       過去 {{ totalPeriods }} 期，每期照<b>目前的條件</b>把當期的橘色號碼拿來<b>連碰</b>，用上面的每碰金額與賠率、下一期實際開出的號碼結算。
+    </p>
+    <UCheckbox
+      v-model="skipSpecific"
+      :disabled="running"
+      label="略過只針對單期的條件（排除號碼、指定尾數）"
+    />
+    <p
+      v-if="skipSpecific"
+      class="text-xs text-muted"
+    >
+      <template v-if="skipped.length">
+        這次回測不套用第 {{ skipped.join('、') }} 條。
+      </template>
+      <template v-else>
+        目前勾選的條件裡沒有這類設定。
+      </template>
     </p>
 
     <UProgress
