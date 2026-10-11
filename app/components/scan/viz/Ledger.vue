@@ -28,7 +28,7 @@ const fmt = (v: number) => `${v > 0 ? '+' : ''}${Math.abs(v) >= 10 ? Math.round(
 <template>
   <div class="space-y-1">
     <div class="flex items-baseline justify-between text-[11px] text-muted">
-      <span>存摺：最近 {{ points.length }} 期，比平常多開就往上、少開就往下，一路累加</span>
+      <span>存摺：最近 {{ points.length }} 期，左邊舊、右邊新；比平常多開就往上、少開就往下，一路累加</span>
       <span>
         現在
         <b
@@ -91,6 +91,10 @@ const fmt = (v: number) => `${v > 0 ? '+' : ''}${Math.abs(v) >= 10 ? Math.round(
         fill="transparent"
       ><title>第 {{ p.issue }} 期：{{ fmt(p.total) }}{{ unit ?? '' }}</title></rect>
     </svg>
+    <div class="flex justify-between text-[10px] text-muted">
+      <span>← {{ points.length }} 期前（第 {{ points[0]?.issue }} 期）</span>
+      <span>最新（第 {{ points.at(-1)?.issue }} 期）→</span>
+    </div>
   </div>
 </template>
 
