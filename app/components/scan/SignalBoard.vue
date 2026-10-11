@@ -141,6 +141,7 @@ const emit = defineEmits<{ toggle: [key: PickKey], jump: [key: PointKey] }>()
             :hit="tile.hSummary.hit"
             :n="tile.hSummary.n"
             :base="tile.hSummary.base"
+            hist
           />
           <UButton
             v-if="canPick && tile.hNow.lit"

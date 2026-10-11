@@ -11,6 +11,8 @@ import type { Row } from '~~/shared/lotto/scan/points/rows'
 import type { Evals, PointSummary } from '~~/shared/lotto/scan/points/stats'
 
 const RECENT_DRAWS = 12
+/** 兩邊「比平常多幾」相差這麼多以上才算贏，以內算差不多（可能只是運氣） */
+const WIN_GAP = 3
 
 const props = defineProps<{
   picks: Record<string, PickKey[]>
@@ -41,7 +43,7 @@ const board = computed(() => POINT_META.map((m) => {
   const edge = (s: PointSummary) => (s.n && s.base != null ? Math.round((s.hit / s.n - s.base) * 100) : null)
   const em = m.claim === '—' ? null : edge(mine)
   const eh = edge(hist)
-  const winner = em == null || eh == null ? null : em > eh ? 'mine' : eh > em ? 'hist' : 'tie'
+  const winner = em == null || eh == null ? null : em - eh >= WIN_GAP ? 'mine' : eh - em >= WIN_GAP ? 'hist' : 'tie'
   return { meta: m, mine, hist, em, eh, winner }
 }))
 
@@ -159,11 +161,11 @@ const mineScore = computed(() => {
               :class="b.eh >= 3 ? 'ps-up' : b.eh <= -3 ? 'ps-down' : 'text-muted'"
             >{{ b.eh > 0 ? '+' : '' }}{{ b.eh }}</span>
           </span>
-          <span class="text-right text-xs font-semibold">{{ b.winner === 'mine' ? '你的看法' : b.winner === 'hist' ? '歷史挑' : b.winner === 'tie' ? '平手' : '—' }}</span>
+          <span class="text-right text-xs font-semibold">{{ b.winner === 'mine' ? '你的看法' : b.winner === 'hist' ? '歷史挑' : b.winner === 'tie' ? '差不多' : '—' }}</span>
         </div>
       </div>
       <p class="mt-3 text-[11px] text-muted">
-        +8 ＝每 100 次比平常多中 8 次。差 2、3 以內算差不多，可能只是運氣。
+        +8 ＝每 100 次比平常多中 8 次。兩邊相差不到 3 算「差不多」，可能只是運氣。
       </p>
     </UCard>
 

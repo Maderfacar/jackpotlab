@@ -89,6 +89,7 @@ const mineDefined = computed(() => meta.value.claim !== '—')
           :hit="hSummary.hit"
           :n="hSummary.n"
           :base="hSummary.base"
+          hist
         />
       </div>
     </div>
