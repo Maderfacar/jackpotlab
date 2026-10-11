@@ -24,7 +24,7 @@ function cellStyle(cur: number | null, mean: number | null) {
   >
     <div class="space-y-1">
       <div class="text-xs text-muted">
-        每顆（號碼小→大）的 y 分佈，顏色越深越常見；橘框 = 這期
+        5 顆號碼由小到大排，每一顆的 y 通常是多少：顏色越深＝越常見，橘框＝這期
       </div>
       <ScanVizHeat
         :rows="heatRows"
@@ -34,7 +34,7 @@ function cellStyle(cur: number | null, mean: number | null) {
     </div>
     <div class="space-y-1">
       <div class="text-xs text-muted">
-        每顆的 y=1～5 現在隔幾期沒出現 ／ 平均隔幾期（超過平均變橘）
+        每一顆的 y=1、y=2……各自已經隔幾期沒出現／平常大約隔幾期（比平常久就變橘）
       </div>
       <div class="overflow-x-auto">
         <table class="w-full min-w-[420px] border-separate border-spacing-0.5 text-center font-mono text-[11px]">
@@ -81,7 +81,7 @@ function cellStyle(cur: number | null, mean: number | null) {
     <template #side>
       <div class="space-y-1">
         <div class="text-xs text-muted">
-          最近 30 期第 1、2 顆的 y（1 = 實心）
+          最近 30 期，第 1、2 顆是不是 y=1（實心＝是）
         </div>
         <ScanVizStrip
           :rows="d.positions.slice(0, 2).map(p => ({ key: String(p.p), label: `第 ${p.p + 1} 顆`, cells: p.recent.map(y => (y === 1 ? 'on' : 'off') as 'on' | 'off'), titles: p.recent.map(y => `y=${y ?? '—'}`) }))"

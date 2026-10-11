@@ -18,8 +18,8 @@ const f1 = (v: number | null) => (v == null ? '—' : v.toFixed(1))
   <div class="space-y-1">
     <div class="grid grid-cols-[4.5rem_minmax(0,1fr)_auto] gap-x-2 text-[10px] text-muted">
       <span />
-      <span>現在隔幾期（細線 = 平均）</span>
-      <span class="text-right">隔・平均・最長</span>
+      <span>條＝現在隔幾期沒出現，黑線＝平常大約隔幾期，變橘＝比平常久</span>
+      <span class="text-right">現在・平常・最久</span>
     </div>
     <div
       v-for="it in items"

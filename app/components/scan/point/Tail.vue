@@ -34,13 +34,13 @@ const stripRows = computed(() => d.value.tails.map(x => ({
   >
     <div class="space-y-1">
       <div class="text-xs text-muted">
-        0～9 各隔幾期沒開；「下期 x%／平常 y%」= 歷史上隔這麼久時下一期開出的比例，和這個尾數自己平常的比例；比平常低最多的當排除（粗體）
+        每個尾數已經隔幾期沒開。右邊「下期 x%／平常 y%」：20 年來隔這麼久的時候，下一期有開出的比例，跟它自己平常的比例比。比平常低最多的那個就是排除的尾數（粗體）
       </div>
       <ScanVizDue :items="dueItems" />
     </div>
     <div class="space-y-1">
       <div class="text-xs text-muted">
-        最近 30 期哪幾期有開（右邊最新）
+        最近 30 期，每個尾數哪幾期有開出（實心＝有，右邊最新）
       </div>
       <ScanVizStrip
         :rows="stripRows"
@@ -51,11 +51,11 @@ const stripRows = computed(() => d.value.tails.map(x => ({
     </div>
     <template #side>
       <div class="flex items-baseline gap-2">
-        <span class="text-xs text-muted">這期排除</span>
+        <span class="text-xs text-muted">這期排除的尾數</span>
         <span class="font-mono text-2xl font-semibold">{{ d.excluded == null ? '—' : `尾 ${d.excluded}` }}</span>
       </div>
       <div class="flex flex-wrap items-center gap-1">
-        <span class="text-xs text-muted">存摺看：</span>
+        <span class="text-xs text-muted">存摺要看哪個尾數：</span>
         <UButton
           v-for="x in 10"
           :key="x"

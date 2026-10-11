@@ -20,7 +20,7 @@ const emit = defineEmits<{ toggle: [key: PointKey], jump: [key: PointKey] }>()
         八點燈號
       </h2>
       <span class="text-xs text-muted">
-        {{ canPick ? '亮燈的點可以勾「我信」（存在這台裝置的瀏覽器），下一期開出後自動對答案' : hasNext ? '下一期已開出：✓ 成真、✗ 沒成真' : '' }}
+        {{ canPick ? '亮了的點，你相信就按「我信」（記在這台裝置），下一期開出後自動對答案' : hasNext ? '下一期已經開出：✓ 說中、✗ 沒說中' : '' }}
       </span>
     </div>
     <UAlert
@@ -54,7 +54,7 @@ const emit = defineEmits<{ toggle: [key: PointKey], jump: [key: PointKey] }>()
             class="sb-result"
             :class="tile.now.hit ? 'sb-ok' : 'sb-no'"
           >
-            <UIcon :name="tile.now.hit ? 'i-lucide-check' : 'i-lucide-x'" />{{ tile.now.hit ? '成真' : '沒成真' }}
+            <UIcon :name="tile.now.hit ? 'i-lucide-check' : 'i-lucide-x'" />{{ tile.now.hit ? '說中' : '沒說中' }}
           </span>
         </button>
 
@@ -83,7 +83,6 @@ const emit = defineEmits<{ toggle: [key: PointKey], jump: [key: PointKey] }>()
           :hit="tile.summary.hit"
           :n="tile.summary.n"
           :base="tile.summary.base"
-          compact
         />
 
         <UButton
@@ -95,13 +94,13 @@ const emit = defineEmits<{ toggle: [key: PointKey], jump: [key: PointKey] }>()
           block
           @click="emit('toggle', tile.meta.key)"
         >
-          {{ tile.picked ? '我信' : '勾我信' }}
+          {{ tile.picked ? '我信（再按取消）' : '我信' }}
         </UButton>
         <div
           v-else-if="tile.picked"
           class="text-xs font-medium text-primary"
         >
-          你勾了「我信」
+          你按了「我信」
         </div>
       </div>
     </div>
@@ -109,7 +108,7 @@ const emit = defineEmits<{ toggle: [key: PointKey], jump: [key: PointKey] }>()
       <span class="flex items-center gap-1"><span class="sb-lamp sb-lamp-on" />亮燈</span>
       <span class="flex items-center gap-1"><span class="sb-lamp sb-lamp-strong" />亮得強</span>
       <span class="flex items-center gap-1"><span class="sb-lamp" />沒亮</span>
-      <span>條：上 = 亮燈後成真比例，下 = 平常</span>
+      <span>兩條線：上＝20 年來亮了之後真的說中幾成，下＝不管亮不亮本來就有幾成。上面明顯比下面長，這一點才有用</span>
     </div>
   </section>
 </template>

@@ -25,7 +25,7 @@ const dirText = computed(() => (d.value.dir > 0 ? '變大' : d.value.dir < 0 ? '
   >
     <div class="space-y-1">
       <div class="flex flex-wrap items-baseline gap-x-3 text-xs text-muted">
-        <span>最近 {{ d.recent.length }} 期隔期和</span>
+        <span>最近 {{ d.recent.length }} 期的隔期和（跟上一期比）</span>
         <span class="flex items-center gap-1"><span
           class="gs-key"
           style="background: var(--viz-orange)"
@@ -42,22 +42,22 @@ const dirText = computed(() => (d.value.dir > 0 ? '變大' : d.value.dir < 0 ? '
     </div>
     <div class="space-y-1">
       <div class="text-xs text-muted">
-        跟前一期比、連幾次同方向之後 → 下一期反轉（現在連 <b class="text-highlighted">{{ d.current }}</b> 次{{ dirText }}；{{ GAPSUM_WATCH }} 次開始看、{{ GAPSUM_STRONG }} 次算連續）
+        隔期和連續幾次都變大（或都變小）之後，下一期反過來的比例（現在已經連 <b class="text-highlighted">{{ d.current }}</b> 次{{ dirText }}；連 {{ GAPSUM_WATCH }} 次開始看、連 {{ GAPSUM_STRONG }} 次算很強）
       </div>
       <ScanVizRuns
         :rows="runRows"
         :base="all.n ? all.hit / all.n : null"
-        what="下一期反轉"
+        what="下一期反過來"
       />
     </div>
     <template #side>
       <div class="flex items-baseline gap-2">
-        <span class="text-xs text-muted">這期隔期和</span>
+        <span class="text-xs text-muted">這期的隔期和</span>
         <span class="font-mono text-2xl font-semibold">{{ d.now }}</span>
         <span
           class="text-sm font-semibold"
           :class="d.strong ? 'gs-strong' : 'text-muted'"
-        >{{ dirText }} × {{ d.current }}</span>
+        >已連 {{ d.current }} 次{{ dirText }}</span>
       </div>
       <ScanVizLedger :points="d.ledger.points" />
     </template>

@@ -32,10 +32,11 @@ const meta = computed(() => metaOf(props.pointKey))
             v-if="now.lit && now.hit != null"
             class="text-xs font-semibold"
             :class="now.hit ? 'pc-ok' : 'pc-no'"
-          >{{ now.hit ? '✓ 成真' : '✗ 沒成真' }}</span>
+          >{{ now.hit ? '✓ 說中' : '✗ 沒說中' }}</span>
         </div>
         <p class="text-xs text-muted">
-          亮燈：{{ meta.when }} → {{ meta.claim }}
+          <b class="font-medium">什麼時候亮：</b>{{ meta.when }}<br>
+          <b class="font-medium">亮了代表：</b>{{ meta.claim }}
         </p>
       </div>
       <div class="w-full sm:w-64">

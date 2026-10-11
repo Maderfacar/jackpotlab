@@ -38,7 +38,7 @@ const base = computed(() => {
   >
     <div class="space-y-1">
       <div class="text-xs text-muted">
-        每顆（號碼小→大）從哪個隔期開出：每個隔期一格，顏色越深越常見；橘框 = 這期
+        5 顆號碼由小到大排，每一顆通常從哪個隔期開出來：一個隔期一格，顏色越深＝越常見，橘框＝這期
       </div>
       <ScanVizHeat
         :rows="heatRows"
@@ -47,7 +47,7 @@ const base = computed(() => {
     </div>
     <div class="space-y-2">
       <div class="flex flex-wrap items-center gap-1.5">
-        <span class="text-xs text-muted">看第幾顆：</span>
+        <span class="text-xs text-muted">要看第幾顆：</span>
         <UButton
           v-for="p in 5"
           :key="p"
@@ -63,7 +63,7 @@ const base = computed(() => {
         </UButton>
       </div>
       <div class="text-xs text-muted">
-        第 {{ pick + 1 }} 顆連幾期隔期 > 5 之後 → 下一期回到 0～5（現在連 <b class="text-highlighted">{{ d.runs[pick] }}</b> 期）
+        第 {{ pick + 1 }} 顆連續幾期都從隔期 6 以上開出之後，下一期回到 0～5 的比例（現在已經連 <b class="text-highlighted">{{ d.runs[pick] }}</b> 期）
       </div>
       <ScanVizRuns
         :rows="runRows"

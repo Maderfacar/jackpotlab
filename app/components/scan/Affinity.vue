@@ -28,7 +28,7 @@ const stripRows = computed(() => POINT_KEYS.map((k, i) => ({
 
 const mode = ref<'hit' | 'lit'>('hit')
 const modeItems = [
-  { label: '一起成真', value: 'hit' },
+  { label: '一起說中', value: 'hit' },
   { label: '一起亮', value: 'lit' }
 ]
 const cells = computed(() => props.matrix.map(row => row.map(c => (mode.value === 'lit'
@@ -42,17 +42,22 @@ const shade = (h: number, k: number) => `color-mix(in oklab, var(--viz-blue) ${M
 
 <template>
   <section class="space-y-4">
-    <h2 class="text-lg font-semibold">
-      相吸相斥
-    </h2>
+    <div class="space-y-1">
+      <h2 class="text-lg font-semibold">
+        相吸相斥
+      </h2>
+      <p class="text-sm text-muted">
+        八點不會每期都亮、也不會全部說中。這裡看哪幾點常常一起說中（相吸）、哪幾點很少一起說中（相斥）。
+      </p>
+    </div>
 
     <UCard>
       <div class="mb-2 flex flex-wrap items-baseline justify-between gap-2">
-        <span class="text-sm font-medium">亮燈條（最近 {{ issues.length }} 期，右邊最新）</span>
+        <span class="text-sm font-medium">最近 {{ issues.length }} 期，每一點有沒有亮、亮了有沒有說中（右邊最新）</span>
         <span class="flex flex-wrap gap-3 text-[11px] text-muted">
-          <span class="flex items-center gap-1"><span class="af-dot af-hit" />亮・成真</span>
-          <span class="flex items-center gap-1"><span class="af-dot af-miss" />亮・沒成真</span>
-          <span class="flex items-center gap-1"><span class="af-dot af-on" />亮・還沒對</span>
+          <span class="flex items-center gap-1"><span class="af-dot af-hit" />亮了，說中</span>
+          <span class="flex items-center gap-1"><span class="af-dot af-miss" />亮了，沒說中</span>
+          <span class="flex items-center gap-1"><span class="af-dot af-on" />亮了，下一期還沒開</span>
           <span class="flex items-center gap-1"><span class="af-dot af-off" />沒亮</span>
         </span>
       </div>
@@ -67,7 +72,7 @@ const shade = (h: number, k: number) => `color-mix(in oklab, var(--viz-blue) ${M
     <div class="grid gap-4 lg:grid-cols-2">
       <UCard>
         <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <span class="text-sm font-medium">兩點搭配</span>
+          <span class="text-sm font-medium">兩點一起看</span>
           <UTabs
             v-model="mode"
             :items="modeItems"
@@ -80,16 +85,16 @@ const shade = (h: number, k: number) => `color-mix(in oklab, var(--viz-blue) ${M
         <ScanVizMatrix
           :labels="labels"
           :cells="cells"
-          :what="mode === 'lit' ? '一起亮' : '兩點都亮時一起成真'"
+          :what="mode === 'lit' ? '一起亮' : '兩點都亮的時候一起說中'"
         />
         <p class="mt-2 text-[11px] text-muted">
-          數字 = 實際 ÷ 本來該有；1 = 沒關係，越大越常一起，越小越少一起。
+          格子裡的數字：1＝兩點沒什麼關係；1.4＝比平常多 4 成機會一起說中（紅）；0.7＝少 3 成（藍）。
         </p>
       </UCard>
 
       <UCard>
         <div class="mb-3 text-sm font-medium">
-          同一期亮幾點 → 下一期成真幾點
+          同一期亮了幾點 → 下一期說中幾點
         </div>
         <div class="space-y-2.5">
           <div
@@ -100,8 +105,8 @@ const shade = (h: number, k: number) => `color-mix(in oklab, var(--viz-blue) ${M
             <div class="flex items-baseline justify-between text-xs">
               <span><b>亮 {{ r.lit }} 點</b><span class="text-muted">（{{ r.n }} 期）</span></span>
               <span class="text-muted">
-                全部成真 <b class="font-mono text-highlighted">{{ pct(r.allTrue, r.n) }}%</b>
-                ・本來該有 <span class="font-mono">{{ pct(r.expected, r.n) }}%</span>
+                全部說中 <b class="font-mono text-highlighted">{{ pct(r.allTrue, r.n) }}%</b>
+                ・照機率本來就該有 <span class="font-mono">{{ pct(r.expected, r.n) }}%</span>
               </span>
             </div>
             <div class="af-stack">
@@ -110,13 +115,13 @@ const shade = (h: number, k: number) => `color-mix(in oklab, var(--viz-blue) ${M
                 :key="h"
                 class="af-seg"
                 :style="{ width: `${(c / r.n) * 100}%`, background: shade(h, r.lit) }"
-                :title="`成真 ${h} 點：${c} 期（${pct(c, r.n)}%）`"
+                :title="`說中 ${h} 點：${c} 期（${pct(c, r.n)}%）`"
               >{{ c / r.n >= 0.09 ? h : '' }}</span>
             </div>
           </div>
         </div>
         <p class="mt-3 text-[11px] text-muted">
-          色塊裡的數字 = 成真幾點，越深成真越多。「本來該有」= 各點成真率相乘：亮越多點，全部成真本來就越難。
+          色塊裡的數字＝說中幾點，顏色越深說中越多。就像擲硬幣：每一枚正面都常見，但好幾枚同時正面就很少——亮越多點，要全部說中本來就越難。
         </p>
       </UCard>
     </div>

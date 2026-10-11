@@ -17,7 +17,7 @@ const pct = (h: number, n: number) => (n ? `${Math.round((h / n) * 100)}%` : '�
 <template>
   <div class="space-y-1">
     <div class="flex justify-between text-[10px] text-muted">
-      <span>{{ what }}的比例（細線 = {{ baseLabel ?? '' }}平常{{ base == null ? '' : ` ${Math.round(base * 100)}%` }}）</span>
+      <span>條＝{{ what }}的比例，黑線＝{{ baseLabel ?? '' }}平常{{ base == null ? '' : ` ${Math.round(base * 100)}%` }}；淡色＝次數少</span>
       <span>次數</span>
     </div>
     <div
@@ -25,7 +25,7 @@ const pct = (h: number, n: number) => (n ? `${Math.round((h / n) * 100)}%` : '�
       :key="r.label"
       class="grid grid-cols-[4.5rem_minmax(0,1fr)_2.5rem_3rem] items-center gap-x-2"
       :class="r.n > 0 && r.n < SMALL_SAMPLE ? 'opacity-60' : ''"
-      :title="`${r.label}：${what} ${r.hit}/${r.n}${r.n < SMALL_SAMPLE ? '（樣本少）' : ''}`"
+      :title="`${r.label}：${what} ${r.hit}/${r.n}${r.n < SMALL_SAMPLE ? '（次數少，參考就好）' : ''}`"
     >
       <span
         class="text-xs"

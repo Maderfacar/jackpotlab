@@ -28,7 +28,7 @@ const fmt = (v: number) => `${v > 0 ? '+' : ''}${Math.abs(v) >= 10 ? Math.round(
 <template>
   <div class="space-y-1">
     <div class="flex items-baseline justify-between text-[11px] text-muted">
-      <span>存摺（近 {{ points.length }} 期）</span>
+      <span>存摺：最近 {{ points.length }} 期，比平常多開就往上、少開就往下，一路累加</span>
       <span>
         現在
         <b

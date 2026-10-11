@@ -72,7 +72,7 @@ const allTrue = computed(() => allTrueTable(evals.value, t.value))
 const rangeText = computed(() => {
   if (!ready.value) return ''
   const first = rows.value[WARMUP]!
-  return `統計：第 ${first.issue}～${draw.value.issue} 期，共 ${t.value - WARMUP + 1} 期（${first.date} 起，已剔除最前面 ${WARMUP} 期暖機）`
+  return `用了 ${(t.value - WARMUP + 1).toLocaleString()} 期（${first.date}～${draw.value.date}）；最前面 ${WARMUP} 期表格還沒填滿，不算`
 })
 
 function jump(key: PointKey) {
@@ -87,7 +87,8 @@ function jump(key: PointKey) {
         我的查找 · 今彩 539
       </h1>
       <p class="text-sm text-muted">
-        八點燈號：亮燈 = 條件成立；下一期開出後對答案。全部用 2007 年起的歷史次數，不是預測。
+        每期開完，看你的八個觀察點哪幾個「亮了」——亮了就是那個情況這期出現了，下一期開出來再對答案。
+        所有數字都是 2007 年到現在實際開過的次數，不是預測。
       </p>
     </div>
 
@@ -175,7 +176,7 @@ function jump(key: PointKey) {
         <ScanDrawCard
           v-if="nextDraw"
           :draw="nextDraw"
-          label="下一期實際開出（對照用，統計不含這期以後）"
+          label="下一期實際開出（只拿來對答案，不算進統計）"
           highlight
         />
       </div>
@@ -259,8 +260,8 @@ function jump(key: PointKey) {
       />
 
       <p class="text-xs text-muted">
-        「平常」= 同樣的對象不看亮燈、本來發生的比例；次數少於 30 標「樣本少」。
-        存檔到第 {{ data.fileLast }} 期，之後的期數即時從資料庫讀。
+        「平常」＝不管有沒有亮燈，這件事本來就會發生的比例。次數不到 30 次的會標「次數少」，參考就好。
+        過去的開獎存在網站裡（到第 {{ data.fileLast }} 期），之後的新期數才去資料庫讀。
       </p>
     </template>
   </div>

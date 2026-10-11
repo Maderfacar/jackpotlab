@@ -27,13 +27,13 @@ const mean = computed(() => (total.value ? d.value.dist.reduce((a, c, k) => a + 
     <div class="grid gap-4 sm:grid-cols-2">
       <div class="space-y-1">
         <div class="text-xs text-muted">
-          20 年來一期從 0~5 開幾顆（這期 <b class="text-highlighted">{{ d.now }}</b> 顆）
+          20 年來，每期 5 顆裡有幾顆是從隔期 0~5 開出來的（這期 <b class="text-highlighted">{{ d.now }}</b> 顆）
         </div>
         <ScanVizBars :items="d.dist.map((v, k) => ({ label: `${k} 顆`, value: v, highlight: k === d.now }))" />
       </div>
       <div class="space-y-1">
         <div class="text-xs text-muted">
-          最近 {{ d.recent.length }} 期（細線 = 平均 {{ mean.toFixed(1) }}）
+          最近 {{ d.recent.length }} 期，每期從 0~5 開幾顆（橫線＝平常大約 {{ mean.toFixed(1) }} 顆）
         </div>
         <ScanVizSeries
           :items="d.recent.map(r => ({ issue: r.issue, value: r.value }))"
@@ -44,27 +44,27 @@ const mean = computed(() => (total.value ? d.value.dist.reduce((a, c, k) => a + 
     </div>
     <div class="space-y-1">
       <div class="text-xs text-muted">
-        每期都開 3～4 顆、連幾期之後 → 下一期 0~5 只開 0～2 顆（現在連 <b class="text-highlighted">{{ d.current }}</b> 期，連 {{ LOW_RUN }} 期亮燈）
+        0~5 每期都開 3～4 顆、連續幾期之後，下一期只開 0～2 顆的比例（現在已經連 <b class="text-highlighted">{{ d.current }}</b> 期；連到 {{ LOW_RUN }} 期就亮燈）
       </div>
       <ScanVizRuns
         :rows="runRows"
         :base="baseLe2"
-        what="下一期 0～2 顆"
+        what="下一期只開 0～2 顆"
       />
       <div class="text-[11px] text-muted">
-        連 {{ LOW_RUN }} 期以上，下一期或下下期有一期 0～2 顆：
+        放寬成「接下來兩期內」：連 {{ LOW_RUN }} 期以上之後，下一期或下下期有一期只開 0～2 顆的比例：
         <b class="font-mono text-highlighted">{{ d.within2.n ? Math.round(d.within2.hit / d.within2.n * 100) : 0 }}%</b>（{{ d.within2.hit }}/{{ d.within2.n }}）
       </div>
     </div>
     <template #side>
       <div class="flex items-baseline gap-2">
-        <span class="text-xs text-muted">0~5 桶子現在裝</span>
+        <span class="text-xs text-muted">隔期 0~5 這幾個桶子現在一共裝了</span>
         <span class="font-mono text-2xl font-semibold">{{ d.boardLow }}</span>
         <span class="text-xs text-muted">顆號碼</span>
       </div>
       <div class="space-y-1">
         <div class="text-xs text-muted">
-          「0~5 開 k 顆」各隔幾期沒出現
+          「0~5 開出 0 顆、1 顆……5 顆」這幾種情況，各自已經隔幾期沒出現
         </div>
         <ScanVizDue :items="d.each.map(e => ({ label: `開 ${e.k} 顆`, stats: e.stats, highlight: e.k === d.now }))" />
       </div>

@@ -28,13 +28,13 @@ const dueItems = computed(() => d.value.levels.map(l => ({
   >
     <div class="space-y-1">
       <div class="text-xs text-muted">
-        每個值各隔幾期沒開出（超過平均變橘；隔到平均 {{ VALUE_DUE }} 倍以上 = 亮燈）
+        每個值已經隔幾期沒開出來（隔得比平常久就變橘；隔到平常的 {{ VALUE_DUE }} 倍以上就亮燈，右邊會寫幾倍）
       </div>
       <ScanVizDue :items="dueItems" />
     </div>
     <div class="space-y-1">
       <div class="text-xs text-muted">
-        5 顆的搭配（小 = 值 0～1、中 = 2～9、大 = 10 以上），最常見的 10 種；這期 <b class="text-highlighted">{{ comboLabel(d.nowCombo) }}</b>
+        5 顆的值怎麼搭配：小＝值 0～1、中＝值 2～9、大＝值 10 以上。下面是 20 年來最常見的 10 種，這期是 <b class="text-highlighted">{{ comboLabel(d.nowCombo) }}</b>
       </div>
       <ScanVizBars
         :items="topCombos"

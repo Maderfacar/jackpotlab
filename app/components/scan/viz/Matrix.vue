@@ -50,7 +50,7 @@ const grid = computed(() => props.cells.map(row => row.map(c => ({ ...c, r: rati
           class="viz-mcell"
           :class="[i === j ? 'viz-diag' : '', c.r == null && i !== j ? 'viz-thin' : '']"
           :style="{ background: i === j ? undefined : color(c.r) }"
-          :title="i === j ? `${labels[i]}：自己` : `${labels[i]} × ${labels[j]}：${what} ${c.actual} 次，本來該有 ${c.expected.toFixed(1)} 次${c.r == null ? '（太少，不比）' : `，比值 ${fmt(c.r)}`}`"
+          :title="i === j ? `${labels[i]}：自己` : `${labels[i]} × ${labels[j]}：${what} ${c.actual} 次，照機率本來該有 ${c.expected.toFixed(1)} 次${c.r == null ? '（次數太少，不比）' : `，是平常的 ${fmt(c.r)} 倍`}`"
         >{{ i === j ? '' : fmt(c.r) }}</span>
       </template>
     </div>
@@ -58,16 +58,16 @@ const grid = computed(() => props.cells.map(row => row.map(c => ({ ...c, r: rati
       <span class="flex items-center gap-1"><span
         class="viz-key"
         style="background: var(--viz-red)"
-      />相吸（常一起）</span>
+      />常一起說中</span>
       <span class="flex items-center gap-1"><span
         class="viz-key"
         style="background: var(--viz-mid)"
-      />沒關係</span>
+      />沒什麼關係</span>
       <span class="flex items-center gap-1"><span
         class="viz-key"
         style="background: var(--viz-blue)"
-      />相斥（很少一起）</span>
-      <span class="flex items-center gap-1"><span class="viz-key viz-thin" />次數太少</span>
+      />很少一起說中</span>
+      <span class="flex items-center gap-1"><span class="viz-key viz-thin" />次數太少，不比</span>
     </div>
   </div>
 </template>

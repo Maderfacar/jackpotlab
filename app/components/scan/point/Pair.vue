@@ -8,8 +8,8 @@ import type { PointSummary } from '~~/shared/lotto/scan/points/stats'
 const props = defineProps<{ rows: Row[], t: number, now: PointEval, summary: PointSummary }>()
 const d = computed(() => pairDetail(props.rows, props.t))
 const outcome = computed(() => [
-  { label: '連莊', value: d.value.repeat, title: `下一期開出同一顆（連莊）：${d.value.repeat} 次` },
-  { label: '不連莊', value: d.value.other, title: `下一期開出同尾別的號：${d.value.other} 次` },
+  { label: '連莊', value: d.value.repeat, title: `下一期又開出同一顆號碼：${d.value.repeat} 次` },
+  { label: '不連莊', value: d.value.other, title: `下一期開出同尾數的別顆號碼：${d.value.other} 次` },
   { label: '兩種都有', value: d.value.both, title: `兩種都有：${d.value.both} 次` },
   { label: '沒開', value: d.value.none, title: `下一期沒開出這個尾數：${d.value.none} 次` }
 ])
@@ -24,7 +24,7 @@ const nextText: Record<string, string> = { repeat: '連莊', other: '不連莊',
   >
     <div class="space-y-1">
       <div class="text-xs text-muted">
-        20 年來同尾對（共 {{ d.total }} 組，一期可能有兩組）的下一期
+        20 年來每次出現同尾（共 {{ d.total }} 組，一期可能有兩組），下一期怎麼變
       </div>
       <ScanVizBars
         :items="outcome"
@@ -32,12 +32,12 @@ const nextText: Record<string, string> = { repeat: '連莊', other: '不連莊',
         :height="96"
       />
       <div class="text-[11px] text-muted">
-        下一期沒開時，下下期補開：<b class="font-mono text-highlighted">{{ d.skip.n ? Math.round(d.skip.hit / d.skip.n * 100) : 0 }}%</b>（{{ d.skip.hit }}/{{ d.skip.n }}）
+        下一期沒開出這個尾數的，再下一期補開出來的比例：<b class="font-mono text-highlighted">{{ d.skip.n ? Math.round(d.skip.hit / d.skip.n * 100) : 0 }}%</b>（{{ d.skip.hit }}/{{ d.skip.n }}）
       </div>
     </div>
     <div class="space-y-1">
       <div class="text-xs text-muted">
-        前 10 期的同尾對：下一期有帶出同尾 <b class="text-highlighted">{{ d.last10Hit }}/{{ d.last10N }}</b>
+        你的看法：回頭看前 10 期出現過的同尾，下一期有帶出同一個尾數的 <b class="text-highlighted">{{ d.last10Hit }}/{{ d.last10N }}</b> 次
       </div>
       <div
         v-if="d.last10.length"
@@ -78,7 +78,7 @@ const nextText: Record<string, string> = { repeat: '連莊', other: '不連莊',
               :n="n"
               size="sm"
             />
-            <span class="text-xs text-muted">連莊 ／ 不連莊</span>
+            <span class="text-xs text-muted">連莊（同一顆）／ 不連莊（同尾別顆）</span>
             <ScanBall
               v-for="n in p.others"
               :key="n"

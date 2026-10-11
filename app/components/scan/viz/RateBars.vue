@@ -7,8 +7,6 @@ const props = defineProps<{
   n: number
   /** 平常比例 0～1；null = 算不出來 */
   base: number | null
-  /** 精簡版（燈板用）：只畫條，不寫字頭 */
-  compact?: boolean
 }>()
 
 const rate = computed(() => (props.n ? props.hit / props.n : null))
@@ -19,10 +17,7 @@ const diff = computed(() => (rate.value == null || props.base == null ? null : M
 <template>
   <div class="space-y-1">
     <div class="flex items-center gap-2">
-      <span
-        v-if="!compact"
-        class="w-14 shrink-0 text-[11px] text-muted"
-      >亮燈後</span>
+      <span class="w-16 shrink-0 text-[11px] text-muted">亮了說中</span>
       <div class="viz-track">
         <div
           class="viz-bar viz-bar-main"
@@ -32,10 +27,7 @@ const diff = computed(() => (rate.value == null || props.base == null ? null : M
       <span class="w-10 shrink-0 text-right font-mono text-xs font-semibold text-highlighted">{{ pct(rate) }}</span>
     </div>
     <div class="flex items-center gap-2">
-      <span
-        v-if="!compact"
-        class="w-14 shrink-0 text-[11px] text-muted"
-      >平常</span>
+      <span class="w-16 shrink-0 text-[11px] text-muted">平常就有</span>
       <div class="viz-track">
         <div
           class="viz-bar viz-bar-base"
@@ -47,17 +39,17 @@ const diff = computed(() => (rate.value == null || props.base == null ? null : M
     <div class="flex flex-wrap items-center gap-x-2 text-[11px] text-muted">
       <span
         v-if="diff != null"
-        class="font-mono font-semibold"
+        class="font-semibold"
         :class="diff >= 3 ? 'viz-up' : diff <= -3 ? 'viz-down' : ''"
-      >{{ diff > 0 ? '+' : '' }}{{ diff }}</span>
-      <span>{{ n }} 次</span>
+      >{{ diff >= 3 ? `比平常多 ${diff}%` : diff <= -3 ? `比平常少 ${-diff}%` : '跟平常差不多' }}</span>
+      <span>亮過 {{ n.toLocaleString() }} 次</span>
       <UBadge
         v-if="n > 0 && n < SMALL_SAMPLE"
         color="warning"
         variant="subtle"
         size="sm"
       >
-        樣本少
+        次數少
       </UBadge>
     </div>
   </div>
