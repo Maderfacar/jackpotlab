@@ -1,0 +1,1301 @@
+{
+ "issue": "115000246",
+ "date": "2026-10-10",
+ "prizes": "14,21,23,32,34",
+ "gap": [
+  {
+   "key": "0",
+   "current": 0,
+   "avgs": [
+    {
+     "label": "5",
+     "avg": 1,
+     "above": false
+    },
+    {
+     "label": "10",
+     "avg": 0.6,
+     "above": false
+    },
+    {
+     "label": "15",
+     "avg": 0.6,
+     "above": false
+    },
+    {
+     "label": "歷史",
+     "avg": 0.9213703099510604,
+     "above": false
+    }
+   ],
+   "recent": [
+    2,
+    1,
+    0,
+    0,
+    2,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    2
+   ]
+  },
+  {
+   "key": "1",
+   "current": 3,
+   "avgs": [
+    {
+     "label": "5",
+     "avg": 0.8,
+     "above": true
+    },
+    {
+     "label": "10",
+     "avg": 1.5,
+     "above": true
+    },
+    {
+     "label": "15",
+     "avg": 1.4666666666666666,
+     "above": true
+    },
+    {
+     "label": "歷史",
+     "avg": 1.1119885139985644,
+     "above": true
+    }
+   ],
+   "recent": [
+    0,
+    1,
+    1,
+    1,
+    1,
+    2,
+    7,
+    0,
+    1,
+    1,
+    3,
+    2,
+    0,
+    2,
+    0
+   ]
+  },
+  {
+   "key": "2",
+   "current": 0,
+   "avgs": [
+    {
+     "label": "5",
+     "avg": 1,
+     "above": false
+    },
+    {
+     "label": "10",
+     "avg": 1.2,
+     "above": false
+    },
+    {
+     "label": "15",
+     "avg": 0.9333333333333333,
+     "above": false
+    },
+    {
+     "label": "歷史",
+     "avg": 1.4200575421290589,
+     "above": false
+    }
+   ],
+   "recent": [
+    0,
+    3,
+    0,
+    0,
+    2,
+    0,
+    1,
+    2,
+    3,
+    1,
+    1,
+    0,
+    0,
+    0,
+    1
+   ]
+  },
+  {
+   "key": "3",
+   "current": 1,
+   "avgs": [
+    {
+     "label": "5",
+     "avg": 3.2,
+     "above": false
+    },
+    {
+     "label": "10",
+     "avg": 3.1,
+     "above": false
+    },
+    {
+     "label": "15",
+     "avg": 2.3333333333333335,
+     "above": false
+    },
+    {
+     "label": "歷史",
+     "avg": 1.733519034354689,
+     "above": false
+    }
+   ],
+   "recent": [
+    3,
+    3,
+    2,
+    3,
+    5,
+    3,
+    3,
+    1,
+    4,
+    4,
+    1,
+    0,
+    0,
+    3,
+    0
+   ]
+  },
+  {
+   "key": "4",
+   "current": 2,
+   "avgs": [
+    {
+     "label": "5",
+     "avg": 2,
+     "above": false
+    },
+    {
+     "label": "10",
+     "avg": 1.9,
+     "above": true
+    },
+    {
+     "label": "15",
+     "avg": 2.066666666666667,
+     "above": false
+    },
+    {
+     "label": "歷史",
+     "avg": 2.0795395081109365,
+     "above": false
+    }
+   ],
+   "recent": [
+    1,
+    2,
+    3,
+    4,
+    0,
+    1,
+    6,
+    1,
+    1,
+    0,
+    1,
+    0,
+    8,
+    0,
+    3
+   ]
+  },
+  {
+   "key": "5",
+   "current": 2,
+   "avgs": [
+    {
+     "label": "5",
+     "avg": 1.8,
+     "above": true
+    },
+    {
+     "label": "10",
+     "avg": 1.8,
+     "above": true
+    },
+    {
+     "label": "15",
+     "avg": 1.4666666666666666,
+     "above": true
+    },
+    {
+     "label": "歷史",
+     "avg": 2.3573059360730593,
+     "above": false
+    }
+   ],
+   "recent": [
+    1,
+    4,
+    2,
+    0,
+    2,
+    1,
+    2,
+    3,
+    2,
+    1,
+    2,
+    0,
+    0,
+    1,
+    1
+   ]
+  },
+  {
+   "key": "6",
+   "current": 0,
+   "avgs": [
+    {
+     "label": "5",
+     "avg": 2.4,
+     "above": false
+    },
+    {
+     "label": "10",
+     "avg": 1.5,
+     "above": false
+    },
+    {
+     "label": "15",
+     "avg": 1.8666666666666667,
+     "above": false
+    },
+    {
+     "label": "歷史",
+     "avg": 2.8641732283464565,
+     "above": false
+    }
+   ],
+   "recent": [
+    1,
+    5,
+    2,
+    2,
+    2,
+    0,
+    2,
+    0,
+    1,
+    0,
+    6,
+    0,
+    3,
+    0,
+    4
+   ]
+  },
+  {
+   "key": "7",
+   "current": 2,
+   "avgs": [
+    {
+     "label": "5",
+     "avg": 4,
+     "above": false
+    },
+    {
+     "label": "10",
+     "avg": 4.6,
+     "above": false
+    },
+    {
+     "label": "15",
+     "avg": 4.666666666666667,
+     "above": false
+    },
+    {
+     "label": "歷史",
+     "avg": 3.4177310293012773,
+     "above": false
+    }
+   ],
+   "recent": [
+    0,
+    2,
+    11,
+    2,
+    5,
+    12,
+    2,
+    5,
+    3,
+    4,
+    10,
+    0,
+    1,
+    9,
+    4
+   ]
+  },
+  {
+   "key": "8",
+   "current": 3,
+   "avgs": [
+    {
+     "label": "5",
+     "avg": 2,
+     "above": true
+    },
+    {
+     "label": "10",
+     "avg": 2.3,
+     "above": true
+    },
+    {
+     "label": "15",
+     "avg": 3,
+     "above": false
+    },
+    {
+     "label": "歷史",
+     "avg": 3.886949293433084,
+     "above": false
+    }
+   ],
+   "recent": [
+    1,
+    2,
+    0,
+    7,
+    0,
+    0,
+    3,
+    3,
+    1,
+    6,
+    9,
+    7,
+    0,
+    0,
+    6
+   ]
+  },
+  {
+   "key": "9",
+   "current": 1,
+   "avgs": [
+    {
+     "label": "5",
+     "avg": 5.4,
+     "above": false
+    },
+    {
+     "label": "10",
+     "avg": 3.9,
+     "above": false
+    },
+    {
+     "label": "15",
+     "avg": 3.8,
+     "above": false
+    },
+    {
+     "label": "歷史",
+     "avg": 4.769607843137255,
+     "above": false
+    }
+   ],
+   "recent": [
+    11,
+    11,
+    3,
+    2,
+    0,
+    8,
+    4,
+    0,
+    0,
+    0,
+    3,
+    0,
+    3,
+    7,
+    5
+   ]
+  },
+  {
+   "key": "10",
+   "current": 0,
+   "avgs": [
+    {
+     "label": "5",
+     "avg": 2,
+     "above": false
+    },
+    {
+     "label": "10",
+     "avg": 5.8,
+     "above": false
+    },
+    {
+     "label": "15",
+     "avg": 5.8,
+     "above": false
+    },
+    {
+     "label": "歷史",
+     "avg": 5.98220640569395,
+     "above": false
+    }
+   ],
+   "recent": [
+    1,
+    2,
+    2,
+    3,
+    2,
+    4,
+    14,
+    2,
+    2,
+    26,
+    2,
+    16,
+    8,
+    3,
+    0
+   ]
+  },
+  {
+   "key": "11",
+   "current": 1,
+   "avgs": [
+    {
+     "label": "5",
+     "avg": 1,
+     "above": false
+    },
+    {
+     "label": "10",
+     "avg": 3.5,
+     "above": false
+    },
+    {
+     "label": "15",
+     "avg": 5.133333333333334,
+     "above": false
+    },
+    {
+     "label": "歷史",
+     "avg": 6.264524103831891,
+     "above": false
+    }
+   ],
+   "recent": [
+    4,
+    0,
+    1,
+    0,
+    0,
+    9,
+    1,
+    5,
+    15,
+    0,
+    0,
+    10,
+    1,
+    27,
+    4
+   ]
+  },
+  {
+   "key": "12",
+   "current": 14,
+   "avgs": [
+    {
+     "label": "5",
+     "avg": 15,
+     "above": false
+    },
+    {
+     "label": "10",
+     "avg": 10.5,
+     "above": true
+    },
+    {
+     "label": "15",
+     "avg": 9,
+     "above": true
+    },
+    {
+     "label": "歷史",
+     "avg": 7.680534918276375,
+     "above": true
+    }
+   ],
+   "recent": [
+    19,
+    9,
+    11,
+    20,
+    16,
+    7,
+    0,
+    10,
+    7,
+    6,
+    19,
+    1,
+    4,
+    6,
+    0
+   ]
+  },
+  {
+   "key": "13",
+   "current": 28,
+   "avgs": [
+    {
+     "label": "5",
+     "avg": 7.2,
+     "above": true
+    },
+    {
+     "label": "10",
+     "avg": 9,
+     "above": true
+    },
+    {
+     "label": "15",
+     "avg": 12.8,
+     "above": true
+    },
+    {
+     "label": "歷史",
+     "avg": 8.962585034013605,
+     "above": true
+    }
+   ],
+   "recent": [
+    7,
+    5,
+    0,
+    15,
+    9,
+    12,
+    4,
+    26,
+    10,
+    2,
+    5,
+    0,
+    36,
+    0,
+    61
+   ]
+  },
+  {
+   "key": "14",
+   "current": 8,
+   "avgs": [
+    {
+     "label": "5",
+     "avg": 7.8,
+     "above": true
+    },
+    {
+     "label": "10",
+     "avg": 6.2,
+     "above": true
+    },
+    {
+     "label": "15",
+     "avg": 7.666666666666667,
+     "above": true
+    },
+    {
+     "label": "歷史",
+     "avg": 9.87732342007435,
+     "above": false
+    }
+   ],
+   "recent": [
+    6,
+    1,
+    29,
+    0,
+    3,
+    7,
+    0,
+    0,
+    3,
+    13,
+    40,
+    3,
+    0,
+    6,
+    4
+   ]
+  },
+  {
+   "key": "15",
+   "current": 30,
+   "avgs": [
+    {
+     "label": "5",
+     "avg": 11.6,
+     "above": true
+    },
+    {
+     "label": "10",
+     "avg": 10.9,
+     "above": true
+    },
+    {
+     "label": "15",
+     "avg": 10.4,
+     "above": true
+    },
+    {
+     "label": "歷史",
+     "avg": 11.933481152993348,
+     "above": true
+    }
+   ],
+   "recent": [
+    8,
+    22,
+    15,
+    3,
+    10,
+    0,
+    22,
+    6,
+    20,
+    3,
+    4,
+    3,
+    16,
+    2,
+    22
+   ]
+  },
+  {
+   "key": "16",
+   "current": 3,
+   "avgs": [
+    {
+     "label": "5",
+     "avg": 29.6,
+     "above": false
+    },
+    {
+     "label": "10",
+     "avg": 21.8,
+     "above": false
+    },
+    {
+     "label": "15",
+     "avg": 17.066666666666666,
+     "above": false
+    },
+    {
+     "label": "歷史",
+     "avg": 12.779859484777518,
+     "above": false
+    }
+   ],
+   "recent": [
+    6,
+    91,
+    43,
+    7,
+    1,
+    2,
+    24,
+    27,
+    10,
+    7,
+    9,
+    5,
+    10,
+    3,
+    11
+   ]
+  },
+  {
+   "key": "17",
+   "current": 14,
+   "avgs": [
+    {
+     "label": "5",
+     "avg": 12,
+     "above": true
+    },
+    {
+     "label": "10",
+     "avg": 9.6,
+     "above": true
+    },
+    {
+     "label": "15",
+     "avg": 8.733333333333333,
+     "above": true
+    },
+    {
+     "label": "歷史",
+     "avg": 15.59322033898305,
+     "above": false
+    }
+   ],
+   "recent": [
+    0,
+    10,
+    11,
+    28,
+    11,
+    11,
+    6,
+    6,
+    6,
+    7,
+    5,
+    8,
+    4,
+    8,
+    10
+   ]
+  },
+  {
+   "key": "18",
+   "current": 25,
+   "avgs": [
+    {
+     "label": "5",
+     "avg": 23.2,
+     "above": true
+    },
+    {
+     "label": "10",
+     "avg": 17.9,
+     "above": true
+    },
+    {
+     "label": "15",
+     "avg": 16.666666666666668,
+     "above": true
+    },
+    {
+     "label": "歷史",
+     "avg": 17.733118971061092,
+     "above": true
+    }
+   ],
+   "recent": [
+    47,
+    27,
+    3,
+    30,
+    9,
+    0,
+    9,
+    17,
+    10,
+    27,
+    6,
+    24,
+    3,
+    22,
+    16
+   ]
+  },
+  {
+   "key": "19",
+   "current": 4,
+   "avgs": [
+    {
+     "label": "5",
+     "avg": 10.2,
+     "above": false
+    },
+    {
+     "label": "10",
+     "avg": 18.1,
+     "above": false
+    },
+    {
+     "label": "15",
+     "avg": 17.533333333333335,
+     "above": false
+    },
+    {
+     "label": "歷史",
+     "avg": 21.105263157894736,
+     "above": false
+    }
+   ],
+   "recent": [
+    28,
+    7,
+    5,
+    3,
+    8,
+    4,
+    0,
+    95,
+    22,
+    9,
+    9,
+    2,
+    14,
+    43,
+    14
+   ]
+  }
+ ],
+ "value": [
+  {
+   "key": "第 1 顆",
+   "current": 0,
+   "avgs": [
+    {
+     "label": "5",
+     "avg": 2,
+     "above": false
+    },
+    {
+     "label": "10",
+     "avg": 3.6,
+     "above": false
+    },
+    {
+     "label": "15",
+     "avg": 4.066666666666666,
+     "above": false
+    },
+    {
+     "label": "歷史",
+     "avg": 9.671309665364362,
+     "above": false
+    }
+   ],
+   "recent": [
+    4,
+    1,
+    0,
+    2,
+    3,
+    11,
+    2,
+    6,
+    7,
+    0,
+    4,
+    0,
+    2,
+    19,
+    0
+   ]
+  },
+  {
+   "key": "第 2 顆",
+   "current": 1,
+   "avgs": [
+    {
+     "label": "5",
+     "avg": 12,
+     "above": false
+    },
+    {
+     "label": "10",
+     "avg": 6.6,
+     "above": false
+    },
+    {
+     "label": "15",
+     "avg": 5.4,
+     "above": false
+    },
+    {
+     "label": "歷史",
+     "avg": 9.189942235813795,
+     "above": false
+    }
+   ],
+   "recent": [
+    21,
+    5,
+    6,
+    28,
+    0,
+    1,
+    1,
+    3,
+    0,
+    1,
+    1,
+    2,
+    11,
+    0,
+    1
+   ]
+  },
+  {
+   "key": "第 3 顆",
+   "current": 2,
+   "avgs": [
+    {
+     "label": "5",
+     "avg": 2.4,
+     "above": false
+    },
+    {
+     "label": "10",
+     "avg": 12,
+     "above": false
+    },
+    {
+     "label": "15",
+     "avg": 14.666666666666666,
+     "above": false
+    },
+    {
+     "label": "歷史",
+     "avg": 12.4381049414162,
+     "above": false
+    }
+   ],
+   "recent": [
+    3,
+    2,
+    1,
+    4,
+    2,
+    0,
+    3,
+    2,
+    102,
+    1,
+    94,
+    0,
+    2,
+    0,
+    4
+   ]
+  },
+  {
+   "key": "第 4 顆",
+   "current": 1,
+   "avgs": [
+    {
+     "label": "5",
+     "avg": 2.6,
+     "above": false
+    },
+    {
+     "label": "10",
+     "avg": 1.9,
+     "above": false
+    },
+    {
+     "label": "15",
+     "avg": 2.4,
+     "above": false
+    },
+    {
+     "label": "歷史",
+     "avg": 11.260574146424325,
+     "above": false
+    }
+   ],
+   "recent": [
+    11,
+    0,
+    1,
+    1,
+    0,
+    0,
+    3,
+    1,
+    2,
+    0,
+    2,
+    3,
+    0,
+    2,
+    10
+   ]
+  },
+  {
+   "key": "第 5 顆",
+   "current": 1,
+   "avgs": [
+    {
+     "label": "5",
+     "avg": 1.8,
+     "above": false
+    },
+    {
+     "label": "10",
+     "avg": 10.4,
+     "above": false
+    },
+    {
+     "label": "15",
+     "avg": 9.866666666666667,
+     "above": false
+    },
+    {
+     "label": "歷史",
+     "avg": 10.178868693731951,
+     "above": false
+    }
+   ],
+   "recent": [
+    3,
+    1,
+    2,
+    1,
+    2,
+    0,
+    2,
+    0,
+    2,
+    91,
+    9,
+    2,
+    26,
+    0,
+    7
+   ]
+  }
+ ],
+ "y": [
+  {
+   "key": "第 1 顆",
+   "current": 3,
+   "avgs": [
+    {
+     "label": "5",
+     "avg": 1.8,
+     "above": true
+    },
+    {
+     "label": "10",
+     "avg": 1.5,
+     "above": true
+    },
+    {
+     "label": "15",
+     "avg": 1.4666666666666666,
+     "above": true
+    },
+    {
+     "label": "歷史",
+     "avg": 1.307626974689995,
+     "above": true
+    }
+   ],
+   "recent": [
+    1,
+    2,
+    2,
+    3,
+    1,
+    1,
+    2,
+    1,
+    1,
+    1,
+    1,
+    2,
+    2,
+    1,
+    1
+   ]
+  },
+  {
+   "key": "第 2 顆",
+   "current": 1,
+   "avgs": [
+    {
+     "label": "5",
+     "avg": 1,
+     "above": false
+    },
+    {
+     "label": "10",
+     "avg": 1.3,
+     "above": false
+    },
+    {
+     "label": "15",
+     "avg": 1.5333333333333334,
+     "above": false
+    },
+    {
+     "label": "歷史",
+     "avg": 1.6746517159361196,
+     "above": false
+    }
+   ],
+   "recent": [
+    1,
+    1,
+    1,
+    1,
+    1,
+    4,
+    1,
+    1,
+    1,
+    1,
+    3,
+    3,
+    2,
+    1,
+    1
+   ]
+  },
+  {
+   "key": "第 3 顆",
+   "current": 2,
+   "avgs": [
+    {
+     "label": "5",
+     "avg": 1.4,
+     "above": true
+    },
+    {
+     "label": "10",
+     "avg": 1.4,
+     "above": true
+    },
+    {
+     "label": "15",
+     "avg": 1.5333333333333334,
+     "above": true
+    },
+    {
+     "label": "歷史",
+     "avg": 2.050263202581083,
+     "above": false
+    }
+   ],
+   "recent": [
+    1,
+    1,
+    1,
+    3,
+    1,
+    1,
+    2,
+    2,
+    1,
+    1,
+    1,
+    4,
+    2,
+    1,
+    1
+   ]
+  },
+  {
+   "key": "第 4 顆",
+   "current": 2,
+   "avgs": [
+    {
+     "label": "5",
+     "avg": 2,
+     "above": false
+    },
+    {
+     "label": "10",
+     "avg": 2.7,
+     "above": false
+    },
+    {
+     "label": "15",
+     "avg": 2.6666666666666665,
+     "above": false
+    },
+    {
+     "label": "歷史",
+     "avg": 2.4183794802106338,
+     "above": false
+    }
+   ],
+   "recent": [
+    2,
+    2,
+    1,
+    2,
+    3,
+    5,
+    3,
+    5,
+    2,
+    2,
+    2,
+    3,
+    5,
+    2,
+    1
+   ]
+  },
+  {
+   "key": "第 5 顆",
+   "current": 3,
+   "avgs": [
+    {
+     "label": "5",
+     "avg": 2.4,
+     "above": true
+    },
+    {
+     "label": "10",
+     "avg": 2.9,
+     "above": true
+    },
+    {
+     "label": "15",
+     "avg": 2.8666666666666667,
+     "above": true
+    },
+    {
+     "label": "歷史",
+     "avg": 2.771530490912179,
+     "above": true
+    }
+   ],
+   "recent": [
+    4,
+    3,
+    1,
+    3,
+    1,
+    5,
+    5,
+    3,
+    3,
+    1,
+    2,
+    3,
+    1,
+    5,
+    3
+   ]
+  }
+ ]
+}
