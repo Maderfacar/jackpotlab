@@ -290,7 +290,6 @@ export function evaluatePoints(rows: Row[]): Record<PointKey, PointEval[]> {
         base: lit ? 1 - bestOwn : null
       })
     }
-
   }
   return out
 }
