@@ -311,3 +311,45 @@ export function tailDetail(rows: Row[], t: number) {
 /** 第 8 點存摺：尾數 pick 有沒有開 */
 export const tailLedger = (rows: Row[], t: number, pick: number) =>
   ledger(rows, t, LEDGER_SIZE, r => (hasTail(r.nums, pick) ? 1 : 0))
+
+/**
+ * 第 8 點「你的看法」細節：每次出現同尾時，前面已經連續幾次「同尾之後下一期都帶出同尾」，
+ * 這次下一期「不開這個尾數」的比例（連 0、1、2…6 次以上分開看），和平常不開的比例。
+ */
+export function tailStreakDetail(rows: Row[], t: number) {
+  const prefix = Array.from({ length: 10 }, () => [0])
+  rows.forEach((r, s) => {
+    for (let d = 0; d < 10; d++) prefix[d]!.push(prefix[d]![s]! + (hasTail(r.nums, d) ? 1 : 0))
+  })
+  /** 第 s 期以前（含）這些尾數「任一有開」的比例 */
+  const seenRate = (tails: number[], s: number) => {
+    if (tails.length === 1) return prefix[tails[0]!]![s + 1]! / (s + 1)
+    let k = 0
+    for (let q = 0; q <= s; q++) if (tails.some(d => hasTail(rows[q]!.nums, d))) k++
+    return k / (s + 1)
+  }
+  const rowsOut = Array.from({ length: 7 }, (_, k) => ({ k, hit: 0, n: 0, baseSum: 0 }))
+  const outcomes: boolean[] = []
+  for (let s = 0; s <= t; s++) {
+    if (s >= 1) {
+      const prev = pairTails(rows[s - 1]!.nums)
+      if (prev.length) outcomes.push(prev.some(d => hasTail(rows[s]!.nums, d)))
+    }
+    const tails = pairTails(rows[s]!.nums)
+    if (!tails.length) continue
+    let streak = 0
+    for (let i = outcomes.length - 1; i >= 0 && outcomes[i]; i--) streak++
+    if (s < WARMUP || s >= t) continue
+    const row = rowsOut[Math.min(streak, 6)]!
+    row.n++
+    if (!tails.some(d => hasTail(rows[s + 1]!.nums, d))) row.hit++
+    row.baseSum += 1 - seenRate(tails, s)
+  }
+  const n = rowsOut.reduce((a, r) => a + r.n, 0)
+  const base = n ? rowsOut.reduce((a, r) => a + r.baseSum, 0) / n : null
+  // 目前：最近連續幾次同尾都帶出同尾（只算下一期已開出的）
+  let current = 0
+  for (let i = outcomes.length - 1; i >= 0 && outcomes[i]; i--) current++
+  const nowTails = pairTails(rows[t]!.nums)
+  return { rows: rowsOut, base, current, nowTails }
+}

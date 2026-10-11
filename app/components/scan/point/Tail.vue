@@ -1,13 +1,24 @@
 <script setup lang="ts">
-/** ⑧ 尾數的隔期：0～9 各隔幾期、照現在隔期歷史上下一期開出幾成（最低 = 排除）、最近 30 期、存摺 */
-import { tailDetail, tailLedger } from '~~/shared/lotto/scan/points/details'
-import type { PointEval } from '~~/shared/lotto/scan/points/evaluate'
+/**
+ * ⑧ 剔除尾數
+ *   你的看法：同尾之後連續幾次都帶出同尾 → 這次下一期不開的比例（連 0～6 次以上分開看）
+ *   歷史挑：0～9 各隔幾期、隔這麼久時下一期開出 vs 自己平常（低最多的剔除）、最近 30 期、存摺
+ */
+import { tailDetail, tailLedger, tailStreakDetail } from '~~/shared/lotto/scan/points/details'
+import { TAIL_STREAK, type PointEval } from '~~/shared/lotto/scan/points/evaluate'
 import type { Row } from '~~/shared/lotto/scan/points/rows'
 import type { PointSummary } from '~~/shared/lotto/scan/points/stats'
 
 const props = defineProps<{ rows: Row[], t: number, now: PointEval, summary: PointSummary, hNow: PointEval, hSummary: PointSummary }>()
 const chosen = ref<number | null>(null)
 const d = computed(() => tailDetail(props.rows, props.t))
+const st = computed(() => tailStreakDetail(props.rows, props.t))
+const streakRows = computed(() => st.value.rows.map(r => ({
+  label: r.k === 6 ? '連 6+ 次' : `連 ${r.k} 次`,
+  hit: r.hit,
+  n: r.n,
+  highlight: Math.min(st.value.current, 6) === r.k
+})))
 const pick = computed(() => chosen.value ?? d.value.excluded ?? 0)
 const led = computed(() => tailLedger(props.rows, props.t, pick.value))
 const pct = (v: number) => Math.round(v * 100)
@@ -36,7 +47,18 @@ const stripRows = computed(() => d.value.tails.map(x => ({
   >
     <div class="space-y-1">
       <div class="text-xs text-muted">
-        每個尾數已經隔幾期沒開。右邊「下期 x%／平常 y%」：20 年來隔這麼久的時候，下一期有開出的比例，跟它自己平常的比例比。比平常低最多的那個就是排除的尾數（粗體）
+        <b class="font-medium">你的看法：</b>出現同尾時，前面已經連續幾次「同尾之後下一期都有帶出同尾」，這次下一期<b>不開</b>這個尾數的比例
+        （現在已經連 <b class="text-highlighted">{{ st.current }}</b> 次；連到 {{ TAIL_STREAK }} 次以上、又出現同尾就亮燈）
+      </div>
+      <ScanVizRuns
+        :rows="streakRows"
+        :base="st.base"
+        what="下一期不開這個尾數"
+      />
+    </div>
+    <div class="space-y-1">
+      <div class="text-xs text-muted">
+        <b class="font-medium">歷史挑：</b>每個尾數已經隔幾期沒開。右邊「下期 x%／平常 y%」：20 年來隔這麼久的時候，下一期有開出的比例，跟它自己平常的比例比。比平常低最多的那個就是排除的尾數（粗體）
       </div>
       <ScanVizDue :items="dueItems" />
     </div>

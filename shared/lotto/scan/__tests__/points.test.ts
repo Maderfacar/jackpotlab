@@ -123,9 +123,19 @@ describe('evaluatePoints', () => {
     assert.equal(ev[WARMUP + 1]!.hit, true)
   })
 
-  it('第 8 點「你的看法」還沒定 → 一律不亮', () => {
-    const ev = evaluatePoints(buildRows(randomDraws(300, 9))).tail
-    assert.ok(ev.every(e => !e.lit))
+  it('第 8 點「你的看法」：最近 5 次同尾都帶出同尾，這次又同尾才亮；下一期沒開這個尾數 = 說中', () => {
+    const f = (i: number) => row(i, [1, 2, 3, 5, 9], [9, 9, 9, 9, 9])
+    const pair = (i: number) => row(i, [4, 14, 20, 25, 30], [9, 9, 9, 9, 9]) // 尾4、尾0 同尾
+    const carry = (i: number) => row(i, [24, 6, 7, 8, 10], [9, 9, 9, 9, 9]) // 帶出尾4、尾0
+    const seq: Row[] = [...filler(WARMUP)]
+    for (let k = 0; k < 5; k++) seq.push(pair(seq.length), carry(seq.length + 1))
+    const last = seq.length
+    seq.push(pair(last), f(last + 1))
+    const ev = evaluatePoints(seq).tail
+    assert.equal(ev[last - 2]!.lit, false, '第 5 次同尾時，前面只有 4 次')
+    assert.equal(ev[last]!.lit, true, '前面 5 次都帶出、這次又同尾')
+    assert.equal(ev[last]!.target, '尾0、尾4')
+    assert.equal(ev[last]!.hit, true, '下一期沒開尾0、尾4')
   })
 
   it('第 8 點歷史挑：成真 = 被排除的尾數下一期真的沒開', () => {

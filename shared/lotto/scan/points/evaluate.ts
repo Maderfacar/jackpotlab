@@ -34,7 +34,9 @@ export const VALUE_DUE = 2
 export const POS_RUN = 2
 /** 第 5 點：只看平常 y=1 過半的球位 */
 export const Y1_MAJORITY = 0.5
-/** 第 8 點：尾數隔期分組 0,1,2,3,4,5+；格子次數少於這個不拿來比 */
+/** 第 8 點「你的看法」：最近幾次同尾都帶出同尾，這次就猜不開（使用者：近期五次） */
+export const TAIL_STREAK = 5
+/** 第 8 點歷史挑：尾數隔期分組 0,1,2,3,4,5+；格子次數少於這個不拿來比 */
 export const TAIL_GAP_CAP = 5
 export const TAIL_MIN_N = 30
 
@@ -102,6 +104,8 @@ export function evaluatePoints(rows: Row[]): Record<PointKey, PointEval[]> {
   const gRun = [0, 0, 0, 0, 0]
   const tailOcc = Array.from({ length: 10 }, () => new Occ())
   const tailMasks: number[] = []
+  /** 每次同尾（第 q 期有 2 顆以上同尾）之後，第 q+1 期有沒有帶出同尾；依時間排 */
+  const pairOutcomes: boolean[] = []
 
   for (let s = 0; s < rows.length; s++) {
     const r = rows[s]!
@@ -139,6 +143,10 @@ export function evaluatePoints(rows: Row[]): Record<PointKey, PointEval[]> {
     const mask = r.nums.reduce((m, n) => m | (1 << (n % 10)), 0)
     for (let d = 0; d < 10; d++) tailOcc[d]!.add(s, (mask & (1 << d)) !== 0)
     tailMasks.push(mask)
+    if (s >= 1) {
+      const prevTails = pairTails(rows[s - 1]!.nums)
+      if (prevTails.length) pairOutcomes.push(prevTails.some(d => hasTail(r.nums, d)))
+    }
 
     if (!live) {
       POINT_KEYS.forEach(k => out[k].push(NONE))
@@ -194,20 +202,23 @@ export function evaluatePoints(rows: Row[]): Record<PointKey, PointEval[]> {
       })
     }
 
+    // 同尾的尾數平常有開出的比例（第 4、8 點共用）
+    const tails = pairTails(r.nums)
+    let tailsBase: number | null = null
+    if (tails.length === 1) {
+      tailsBase = tailOcc[tails[0]!]!.freq
+    } else if (tails.length > 1) {
+      // 兩組同尾（少見）：逐期數「任一尾有開」
+      const want = tails.reduce((m, d) => m | (1 << d), 0)
+      let k = 0
+      for (let q = 0; q <= s; q++) if ((tailMasks[q]! & want) !== 0) k++
+      tailsBase = k / (s + 1)
+    }
+
     // ---- 第 4 點：同尾對 → 下一期開出該尾 ----
     {
-      const tails = pairTails(r.nums)
       const lit = tails.length > 0
-      let base: number | null = null
-      if (tails.length === 1) {
-        base = tailOcc[tails[0]!]!.freq
-      } else if (lit) {
-        // 兩組同尾（少見）：逐期數「任一尾有開」
-        const want = tails.reduce((m, d) => m | (1 << d), 0)
-        let k = 0
-        for (let q = 0; q <= s; q++) if ((tailMasks[q]! & want) !== 0) k++
-        base = k / (s + 1)
-      }
+      const base = tailsBase
       out.pair.push({
         lit,
         strong: false,
@@ -257,8 +268,19 @@ export function evaluatePoints(rows: Row[]): Record<PointKey, PointEval[]> {
       })
     }
 
-    // ---- 第 8 點「你的看法」：使用者還沒給排除尾數的規則 → 先不亮（原本的排除規則是看歷史挑的，搬到 history.ts）----
-    out.tail.push(NONE)
+    // ---- 第 8 點「你的看法」（2026-10-12 使用者）：這期有同尾，而且最近 5 次同尾之後下一期都有帶出同尾
+    //      → 這次反過來，猜下一期不開這個尾數（剔除這個尾數的全部號碼）----
+    {
+      const recent = pairOutcomes.slice(-TAIL_STREAK)
+      const lit = tails.length > 0 && recent.length === TAIL_STREAK && recent.every(Boolean)
+      out.tail.push({
+        lit,
+        strong: false,
+        target: lit ? tails.map(d => `尾${d}`).join('、') : '',
+        hit: lit && nx ? !tails.some(d => hasTail(nx.nums, d)) : null,
+        base: lit && tailsBase != null ? 1 - tailsBase : null
+      })
+    }
   }
   return out
 }
