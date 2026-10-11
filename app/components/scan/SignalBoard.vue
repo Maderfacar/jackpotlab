@@ -76,7 +76,7 @@ const emit = defineEmits<{ toggle: [key: PointKey], jump: [key: PointKey] }>()
           v-else
           class="text-xs text-muted"
         >
-          沒亮
+          沒亮：這期沒有出現「{{ tile.meta.when }}」的情況
         </div>
 
         <ScanVizRateBars
@@ -108,7 +108,7 @@ const emit = defineEmits<{ toggle: [key: PointKey], jump: [key: PointKey] }>()
       <span class="flex items-center gap-1"><span class="sb-lamp sb-lamp-on" />亮燈</span>
       <span class="flex items-center gap-1"><span class="sb-lamp sb-lamp-strong" />亮得強</span>
       <span class="flex items-center gap-1"><span class="sb-lamp" />沒亮</span>
-      <span>兩條線：上＝20 年來亮了之後真的說中幾成，下＝不管亮不亮本來就有幾成。上面明顯比下面長，這一點才有用</span>
+      <span>兩條線：上＝20 年來每亮 100 次說中幾次，下＝不管亮不亮、每 100 期本來就有幾次。上面明顯比下面長，這一點才有用</span>
     </div>
   </section>
 </template>

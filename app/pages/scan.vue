@@ -181,6 +181,11 @@ function jump(key: PointKey) {
         />
       </div>
 
+      <ScanGuide
+        :low="summary.low"
+        :pair="summary.pair"
+      />
+
       <ScanSignalBoard
         :tiles="tiles"
         :can-pick="canPick"

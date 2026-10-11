@@ -17,7 +17,7 @@ const diff = computed(() => (rate.value == null || props.base == null ? null : M
 <template>
   <div class="space-y-1">
     <div class="flex items-center gap-2">
-      <span class="w-16 shrink-0 text-[11px] text-muted">亮了說中</span>
+      <span class="w-16 shrink-0 text-[11px] text-muted">亮了之後</span>
       <div class="viz-track">
         <div
           class="viz-bar viz-bar-main"
@@ -41,8 +41,8 @@ const diff = computed(() => (rate.value == null || props.base == null ? null : M
         v-if="diff != null"
         class="font-semibold"
         :class="diff >= 3 ? 'viz-up' : diff <= -3 ? 'viz-down' : ''"
-      >{{ diff >= 3 ? `比平常多 ${diff}%` : diff <= -3 ? `比平常少 ${-diff}%` : '跟平常差不多' }}</span>
-      <span>亮過 {{ n.toLocaleString() }} 次</span>
+      >{{ diff >= 3 ? `每 100 次比平常多中 ${diff} 次` : diff <= -3 ? `每 100 次比平常少中 ${-diff} 次` : '跟平常差不多，亮不亮都一樣' }}</span>
+      <span>（亮過 {{ n.toLocaleString() }} 次，說中 {{ hit.toLocaleString() }} 次）</span>
       <UBadge
         v-if="n > 0 && n < SMALL_SAMPLE"
         color="warning"
