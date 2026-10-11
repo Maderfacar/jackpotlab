@@ -81,6 +81,16 @@ export async function fetchSuperLotto638ByPeriod(period: number): Promise<SuperL
 }
 
 /**
+ * 539 — 用月份查整個月（一個月最多約 27 期，pageSize 給 50 一次拿完）。
+ * 2026-10-11 補抓 2007～2023 歷史用：比逐期查少很多次請求。
+ * @param month YYYY-MM
+ */
+export async function fetchDaily539ByMonth(month: string): Promise<Daily539Record[]> {
+  const url = `${API_BASE}/${GAMES.lotto539.endpoint}?month=${month}&pageNum=1&pageSize=50`
+  return extractArray(await fetchJson(url), GAMES.lotto539.resultField, daily539RecordSchema)
+}
+
+/**
  * 賓果賓果 — 用日期查當日全部期數（通常 200+ 筆）。
  * 注意：API 預設 pageSize=10，必須明指 pageSize 才能拿全部。
  * @param date YYYY-MM-DD (台北時區)
@@ -142,6 +152,7 @@ export type { LatestSnapshot }
  */
 export const taiwanLottery = {
   fetchDaily539ByPeriod,
+  fetchDaily539ByMonth,
   fetchLotto649ByPeriod,
   fetchSuperLotto638ByPeriod,
   fetchBingoByDate,
