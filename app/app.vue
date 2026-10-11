@@ -27,6 +27,8 @@ interface NavItem {
   label: string
   icon: string
   to: string
+  /** 不是網站頁面（例如 API）：整頁另開新分頁，不走站內路由 */
+  external?: boolean
 }
 
 const navItems: NavItem[] = [
@@ -34,13 +36,16 @@ const navItems: NavItem[] = [
   { label: '我的查找', icon: 'i-lucide-scan-search', to: '/scan' },
   { label: '隔期篩選', icon: 'i-lucide-list-filter', to: '/gapfilter' },
   { label: '開獎號碼', icon: 'i-lucide-list-checks', to: '/draws' },
-  { label: '系統健康', icon: 'i-lucide-activity', to: '/admin/health' }
+  { label: '系統健康', icon: 'i-lucide-activity', to: '/admin/health' },
+  // 2026-10-11 使用者要求放進選單：給 AI 讀的純文字隔期資料（第三版，v=3 只是讓快取換新）
+  { label: 'API（給 AI 讀）', icon: 'i-lucide-braces', to: '/api/analysis/lotto539?v=3', external: true }
 ]
 
 const navMenuItems = computed(() => navItems.map(item => ({
   label: item.label,
   icon: item.icon,
-  to: item.to
+  to: item.to,
+  ...(item.external ? { external: true, target: '_blank' } : {})
 })))
 </script>
 
