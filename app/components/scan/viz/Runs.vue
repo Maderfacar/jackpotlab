@@ -8,6 +8,8 @@ defineProps<{
   base: number | null
   /** 條代表什麼，例「下一期反轉」 */
   what: string
+  /** 平常指誰（例：第 2 顆），不給就只寫「平常」 */
+  baseLabel?: string
 }>()
 const pct = (h: number, n: number) => (n ? `${Math.round((h / n) * 100)}%` : '—')
 </script>
@@ -15,7 +17,7 @@ const pct = (h: number, n: number) => (n ? `${Math.round((h / n) * 100)}%` : '�
 <template>
   <div class="space-y-1">
     <div class="flex justify-between text-[10px] text-muted">
-      <span>{{ what }}的比例（細線 = 平常{{ base == null ? '' : ` ${Math.round(base * 100)}%` }}）</span>
+      <span>{{ what }}的比例（細線 = {{ baseLabel ?? '' }}平常{{ base == null ? '' : ` ${Math.round(base * 100)}%` }}）</span>
       <span>次數</span>
     </div>
     <div

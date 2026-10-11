@@ -68,6 +68,7 @@ const base = computed(() => {
       <ScanVizRuns
         :rows="runRows"
         :base="base"
+        :base-label="`第 ${pick + 1} 顆`"
         what="下一期回到 0～5"
       />
     </div>

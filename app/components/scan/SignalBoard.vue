@@ -20,7 +20,7 @@ const emit = defineEmits<{ toggle: [key: PointKey], jump: [key: PointKey] }>()
         八點燈號
       </h2>
       <span class="text-xs text-muted">
-        {{ canPick ? '亮燈的點可以勾「我信」，下一期開出後自動對答案' : hasNext ? '下一期已開出：✓ 成真、✗ 沒成真' : '' }}
+        {{ canPick ? '亮燈的點可以勾「我信」（存在這台裝置的瀏覽器），下一期開出後自動對答案' : hasNext ? '下一期已開出：✓ 成真、✗ 沒成真' : '' }}
       </span>
     </div>
     <UAlert

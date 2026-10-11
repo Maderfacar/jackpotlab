@@ -24,7 +24,7 @@ const nextText: Record<string, string> = { repeat: '連莊', other: '不連莊',
   >
     <div class="space-y-1">
       <div class="text-xs text-muted">
-        20 年來同尾對（共 {{ d.total }} 次）的下一期
+        20 年來同尾對（共 {{ d.total }} 組，一期可能有兩組）的下一期
       </div>
       <ScanVizBars
         :items="outcome"

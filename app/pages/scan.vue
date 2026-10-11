@@ -5,7 +5,7 @@
  * 資料：public/data/lotto539-history.json（2007-01-01 起全部歷史，不吃資料庫讀取）
  *      + /api/draws/lotto539/since（只讀存檔之後的新期數）。
  * 每期八點亮燈／成真在 shared/lotto/scan/points；可切到任何一期，只用那期以前的資料。
- * 判斷勾選存 Firestore users/{uid}/scanPicks/lotto539（useScanPicks）。
+ * 判斷勾選存這台裝置的瀏覽器（useScanPicks）。
  */
 import { HISTORY_FILE_PATH, mergeDraws, parseHistoryFile, type PlainDraw } from '~~/shared/lotto/history-file'
 import type { DrawQueryResponse } from '~~/shared/lotto/types'
