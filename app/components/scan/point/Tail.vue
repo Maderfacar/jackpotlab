@@ -6,10 +6,11 @@
  */
 import { tailDetail, tailLedger, tailStreakDetail } from '~~/shared/lotto/scan/points/details'
 import { TAIL_STREAK, type PointEval } from '~~/shared/lotto/scan/points/evaluate'
+import type { NumberInfo } from '~~/shared/lotto/scan/points/board-prob'
 import type { Row } from '~~/shared/lotto/scan/points/rows'
 import type { PointSummary } from '~~/shared/lotto/scan/points/stats'
 
-const props = defineProps<{ rows: Row[], t: number, now: PointEval, summary: PointSummary, hNow: PointEval, hSummary: PointSummary }>()
+const props = defineProps<{ rows: Row[], infos: NumberInfo[][], t: number, now: PointEval, summary: PointSummary, hNow: PointEval, hSummary: PointSummary }>()
 const chosen = ref<number | null>(null)
 const d = computed(() => tailDetail(props.rows, props.t))
 const st = computed(() => tailStreakDetail(props.rows, props.t))
@@ -17,6 +18,7 @@ const streakRows = computed(() => st.value.rows.map(r => ({
   label: r.k === 6 ? '連 6+ 次' : `連 ${r.k} 次`,
   hit: r.hit,
   n: r.n,
+  expect: r.expect,
   highlight: Math.min(st.value.current, 6) === r.k
 })))
 const pick = computed(() => chosen.value ?? d.value.excluded ?? 0)
@@ -52,7 +54,6 @@ const stripRows = computed(() => d.value.tails.map(x => ({
       </div>
       <ScanVizRuns
         :rows="streakRows"
-        :base="st.base"
         what="下一期不開這個尾數"
       />
     </div>

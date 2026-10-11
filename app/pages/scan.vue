@@ -10,7 +10,7 @@
 import { HISTORY_FILE_PATH, mergeDraws, parseHistoryFile, type PlainDraw } from '~~/shared/lotto/history-file'
 import type { DrawQueryResponse } from '~~/shared/lotto/types'
 import { WARMUP } from '~~/shared/lotto/scan/scan'
-import { evaluatePoints, POINT_KEYS, type PointKey } from '~~/shared/lotto/scan/points/evaluate'
+import { buildInfos, evaluatePoints, POINT_KEYS, withBoardProb, type PointKey } from '~~/shared/lotto/scan/points/evaluate'
 import { evaluateHistory } from '~~/shared/lotto/scan/points/history'
 import { pickKey, POINT_META } from '~~/shared/lotto/scan/points/meta'
 import { buildRows } from '~~/shared/lotto/scan/points/rows'
@@ -35,9 +35,11 @@ const { data, status, error } = useAsyncData('scan-draws', async () => {
 }, { server: false })
 
 const rows = computed(() => buildRows(data.value?.draws ?? []))
-const evals = computed(() => evaluatePoints(rows.value))
+/** 每期開完的盤面：每顆號碼下一期如果開出會帶的隔期 / 值 / y（「平常」照這個算） */
+const infos = computed(() => buildInfos(rows.value))
+const evals = computed(() => withBoardProb(evaluatePoints(rows.value, infos.value), infos.value))
 /** 歷史挑：每期照 20 年同樣情況挑的猜法（shared/lotto/scan/points/history.ts） */
-const hEvals = computed(() => evaluateHistory(rows.value))
+const hEvals = computed(() => withBoardProb(evaluateHistory(rows.value, infos.value), infos.value))
 const lastT = computed(() => rows.value.length - 1)
 
 /** null = 一直跟著最新一期 */
@@ -221,6 +223,7 @@ function jump(key: PointKey) {
         </h2>
         <ScanPointLow
           :rows="rows"
+          :infos="infos"
           :t="t"
           :now="nowEvals.low"
           :summary="summary.low"
@@ -229,6 +232,7 @@ function jump(key: PointKey) {
         />
         <ScanPointGapSum
           :rows="rows"
+          :infos="infos"
           :t="t"
           :now="nowEvals.gapsum"
           :summary="summary.gapsum"
@@ -237,6 +241,7 @@ function jump(key: PointKey) {
         />
         <ScanPointValue
           :rows="rows"
+          :infos="infos"
           :t="t"
           :now="nowEvals.value"
           :summary="summary.value"
@@ -245,6 +250,7 @@ function jump(key: PointKey) {
         />
         <ScanPointPair
           :rows="rows"
+          :infos="infos"
           :t="t"
           :now="nowEvals.pair"
           :summary="summary.pair"
@@ -253,6 +259,7 @@ function jump(key: PointKey) {
         />
         <ScanPointY
           :rows="rows"
+          :infos="infos"
           :t="t"
           :now="nowEvals.y"
           :summary="summary.y"
@@ -261,6 +268,7 @@ function jump(key: PointKey) {
         />
         <ScanPointPos
           :rows="rows"
+          :infos="infos"
           :t="t"
           :now="nowEvals.pos"
           :summary="summary.pos"
@@ -269,6 +277,7 @@ function jump(key: PointKey) {
         />
         <ScanPointChain
           :rows="rows"
+          :infos="infos"
           :t="t"
           :now="nowEvals.chain"
           :summary="summary.chain"
@@ -277,6 +286,7 @@ function jump(key: PointKey) {
         />
         <ScanPointTail
           :rows="rows"
+          :infos="infos"
           :t="t"
           :now="nowEvals.tail"
           :summary="summary.tail"
@@ -298,7 +308,7 @@ function jump(key: PointKey) {
       />
 
       <p class="text-xs text-muted">
-        「平常」＝不管有沒有亮燈，這件事本來就會發生的比例。次數不到 30 次的會標「次數少」，參考就好。
+        「盤面該有」＝照那一期的盤面（每顆號碼下一期開出會帶的隔期、值、y），號碼隨機開出時這件事本來就會發生的機率；20 年驗證這個算法和實際差不到 1.6 個百分點。次數不到 30 次的會標「次數少」，參考就好。
         過去的開獎存在網站裡（到第 {{ data.fileLast }} 期），之後的新期數才去資料庫讀。
       </p>
     </template>

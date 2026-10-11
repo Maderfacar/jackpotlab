@@ -2,10 +2,11 @@
 /** ⑦ 連莊・梯型：候選號、多久出現一次、間隔、兩種是穿插還是重疊、最近 120 期時間軸、存摺 */
 import { chainDetail } from '~~/shared/lotto/scan/points/details'
 import type { PointEval } from '~~/shared/lotto/scan/points/evaluate'
+import type { NumberInfo } from '~~/shared/lotto/scan/points/board-prob'
 import type { Row } from '~~/shared/lotto/scan/points/rows'
 import type { PointSummary } from '~~/shared/lotto/scan/points/stats'
 
-const props = defineProps<{ rows: Row[], t: number, now: PointEval, summary: PointSummary, hNow: PointEval, hSummary: PointSummary }>()
+const props = defineProps<{ rows: Row[], infos: NumberInfo[][], t: number, now: PointEval, summary: PointSummary, hNow: PointEval, hSummary: PointSummary }>()
 const d = computed(() => chainDetail(props.rows, props.t))
 const issues = computed(() => d.value.timeline.map(x => x.issue))
 const timelineRows = computed(() => [

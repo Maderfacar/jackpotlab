@@ -2,17 +2,18 @@
 /** ① 0~5 開幾顆：分佈、徘徊之後、0~5 桶子現在裝幾顆、開 k 顆的隔期、存摺 */
 import { lowDetail } from '~~/shared/lotto/scan/points/details'
 import { LOW_RUN, type PointEval } from '~~/shared/lotto/scan/points/evaluate'
+import type { NumberInfo } from '~~/shared/lotto/scan/points/board-prob'
 import type { Row } from '~~/shared/lotto/scan/points/rows'
 import type { PointSummary } from '~~/shared/lotto/scan/points/stats'
 
-const props = defineProps<{ rows: Row[], t: number, now: PointEval, summary: PointSummary, hNow: PointEval, hSummary: PointSummary }>()
-const d = computed(() => lowDetail(props.rows, props.t))
+const props = defineProps<{ rows: Row[], infos: NumberInfo[][], t: number, now: PointEval, summary: PointSummary, hNow: PointEval, hSummary: PointSummary }>()
+const d = computed(() => lowDetail(props.rows, props.t, props.infos))
 const total = computed(() => d.value.dist.reduce((a, b) => a + b, 0))
-const baseLe2 = computed(() => (total.value ? (d.value.dist[0]! + d.value.dist[1]! + d.value.dist[2]!) / total.value : null))
 const runRows = computed(() => d.value.runs.map(r => ({
   label: r.k === 7 ? '連 7+ 期' : `連 ${r.k} 期`,
   hit: r.next[0]! + r.next[1]! + r.next[2]!,
   n: r.n,
+  expect: r.expect,
   highlight: Math.min(d.value.current, 7) === r.k
 })))
 const mean = computed(() => (total.value ? d.value.dist.reduce((a, c, k) => a + c * k, 0) / total.value : 0))
@@ -50,11 +51,10 @@ const mean = computed(() => (total.value ? d.value.dist.reduce((a, c, k) => a + 
       </div>
       <ScanVizRuns
         :rows="runRows"
-        :base="baseLe2"
         what="下一期只開 0～2 顆"
       />
       <div class="text-[11px] text-muted">
-        放寬成「接下來兩期內」：連 {{ LOW_RUN }} 期以上之後，下一期或下下期有一期只開 0～2 顆的比例：
+        放寬成「接下來兩期內」：連 {{ LOW_RUN }} 期以上之後，下一期或下下期有一期只開 0～2 顆的比例（這一項還沒有盤面對照）：
         <b class="font-mono text-highlighted">{{ d.within2.n ? Math.round(d.within2.hit / d.within2.n * 100) : 0 }}%</b>（{{ d.within2.hit }}/{{ d.within2.n }}）
       </div>
     </div>

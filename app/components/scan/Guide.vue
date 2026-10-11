@@ -1,6 +1,7 @@
 <script setup lang="ts">
 /**
- * 「怎麼看這一頁」：用第 ① 點的真實數字，白話說明燈、說中、百分比、平常（2026-10-11 使用者看不懂 % 與燈號）。
+ * 「怎麼看這一頁」：用第 ① 點的真實數字，白話說明燈、說中、百分比、盤面該有（2026-10-11 使用者看不懂 % 與燈號；
+ * 2026-10-12 平常改成照該期盤面算）。
  * 數字全部來自 summary，不寫死。
  */
 import type { PointSummary } from '~~/shared/lotto/scan/points/stats'
@@ -14,6 +15,7 @@ const lowRate = computed(() => pct(props.low.hit, props.low.n))
 const lowBase = computed(() => Math.round((props.low.base ?? 0) * 100))
 const pairRate = computed(() => pct(props.pair.hit, props.pair.n))
 const pairBase = computed(() => Math.round((props.pair.base ?? 0) * 100))
+const lowDiff = computed(() => lowRate.value - lowBase.value)
 </script>
 
 <template>
@@ -49,11 +51,19 @@ const pairBase = computed(() => Math.round((props.pair.base ?? 0) * 100))
       </div>
       <div class="guide-step">
         <div class="guide-no">
-          4．「平常」是什麼，怎麼看有沒有用
+          4．「盤面該有」是什麼，怎麼看有沒有用
         </div>
-        不管燈有沒有亮、隨便挑一期，下一期 0~5 只開 0～2 顆本來就有 <b>{{ lowBase }}%</b>（每 100 期約 {{ lowBase }} 期）。
-        ① 亮的時候是 {{ lowRate }}%，比平常多 {{ lowRate - lowBase }}，<b>代表亮燈時確實比較常說中</b>。
-        反過來，④ 亮了說中 {{ pairRate }}%、平常也是 {{ pairBase }}%，<b>差不多就代表亮不亮都一樣</b>，這一點幫不上忙。
+        每一期開獎前，盤面就決定了每顆號碼開出來會帶什麼隔期、值、y。照那一期的盤面，號碼隨機開出時，
+        ① 亮的那 {{ low.n }} 期，「0~5 只開 0～2 顆」本來就該有 <b>{{ lowBase }}%</b>。
+        ① 實際說中 {{ lowRate }}%，<template v-if="lowDiff >= 3">
+          比盤面該有多 {{ lowDiff }}，<b>代表亮燈時確實比較常說中</b>。
+        </template><template v-else-if="lowDiff <= -3">
+          比盤面該有少 {{ -lowDiff }}，<b>反而比較少說中</b>。
+        </template><template v-else>
+          <b>跟盤面該有的差不多，代表亮不亮都一樣</b>，說中只是因為那幾期的盤面本來就容易這樣。
+        </template>
+        ④ 也一樣：亮了說中 {{ pairRate }}%、盤面該有 {{ pairBase }}%。
+        上面明顯比下面多，那一點才真的有用。
       </div>
       <div class="guide-step md:col-span-2">
         <div class="guide-no">
@@ -61,7 +71,7 @@ const pairBase = computed(() => Math.round((props.pair.base ?? 0) * 100))
         </div>
         每一點都有兩種猜法並排：<b>你的看法</b>是照你講的規則（例如連 5 期就猜只開 0～2 顆）；
         <b>歷史挑</b>是每一期回頭查 20 年「同樣情況下一期最常比平常多發生什麼」就猜那個，只用那一期以前的資料。
-        兩邊都在最下面「成績單」打分數，比的是「每 100 次比平常多中幾次」，看哪一邊比較準。
+        兩邊都在最下面「成績單」打分數，比的是「每 100 次比盤面該有的多中幾次」，看哪一邊比較準。
       </div>
     </div>
   </details>

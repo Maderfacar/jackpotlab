@@ -12,7 +12,7 @@ export interface PointSummary {
   /** 亮燈過、而且下一期已開出的期數 */
   n: number
   hit: number
-  /** 平常（同樣的對象不看亮燈本來發生的比例），對同一批期數平均 */
+  /** 平常：照每一期盤面算出「本來該有」的機率，對同一批期數平均（沒有盤面機率時退回舊的 20 年平均） */
   base: number | null
 }
 
@@ -29,8 +29,9 @@ export function summarize(ev: Evals, t: number): Record<PointKey, PointSummary> 
       if (!e.lit || e.hit == null) continue
       n++
       if (e.hit) hit++
-      if (e.base != null) {
-        baseSum += e.base
+      const b = e.bp ?? e.base
+      if (b != null) {
+        baseSum += b
         baseN++
       }
     }

@@ -9,8 +9,9 @@
  * 回傳格式與 evaluatePoints 相同（lit / target / hit / base），統計與畫面可以共用。
  */
 import { WARMUP } from '../scan'
+import { numbersWhere, type GuessEvent, type NumberInfo } from './board-prob'
 import {
-  POINT_KEYS, TAIL_GAP_CAP, tailRatio, VALUE_LEVELS, valueLevel,
+  buildInfos, POINT_KEYS, TAIL_GAP_CAP, tailRatio, VALUE_LEVELS, valueLevel,
   type PointEval, type PointKey
 } from './evaluate'
 import { gapSumOf, hasTail, lowCount, pairTails, type Row } from './rows'
@@ -64,6 +65,7 @@ interface Choice {
   base: number
   diff: number
   check: (next: Row) => boolean
+  event: GuessEvent
 }
 const better = (a: Choice | null, b: Choice | null): Choice | null => (!b || (a && a.diff >= b.diff) ? a : b)
 
@@ -82,7 +84,9 @@ const relDir = (cur: number, next: number) => (next === -cur ? 0 : next === cur 
 const GAP_BUCKETS = ['0～5', '6～9', '10～19', '20 以上']
 const gapBucket = (g: number | null) => (g == null ? 3 : g <= 5 ? 0 : g <= 9 ? 1 : g <= 19 ? 2 : 3)
 
-export function evaluateHistory(rows: Row[]): Record<PointKey, PointEval[]> {
+const tailNums = (tails: number[]) => Array.from({ length: 39 }, (_, i) => i + 1).filter(n => tails.includes(n % 10))
+
+export function evaluateHistory(rows: Row[], infos: NumberInfo[][] = buildInfos(rows)): Record<PointKey, PointEval[]> {
   const out = Object.fromEntries(POINT_KEYS.map(k => [k, [] as PointEval[]])) as Record<PointKey, PointEval[]>
   const S = rows.length
 
@@ -218,15 +222,27 @@ export function evaluateHistory(rows: Row[]): Record<PointKey, PointEval[]> {
     }
     const nx = rows[s + 1]
     const push = (k: PointKey, ch: Choice | null) => out[k].push(ch && ch.diff > 0
-      ? { lit: true, strong: false, target: ch.target, hit: nx ? ch.check(nx) : null, base: ch.base }
+      ? { lit: true, strong: false, target: ch.target, hit: nx ? ch.check(nx) : null, base: ch.base, event: ch.event }
       : NONE)
+    const info = infos[s]!
+    // 這期盤面上，各群號碼（建一次，各點共用）
+    const lowNums = numbersWhere(info, x => x.gap != null && x.gap <= 5)
+    const byLevel = VALUE_LEVELS.map(() => [] as number[])
+    const byY = [0, 1, 2, 3, 4].map(() => [] as number[])
+    const byBucket = [0, 1, 2, 3].map(() => [] as number[])
+    info.forEach((z, n) => {
+      if (n < 1) return
+      if (z.value != null) byLevel[valueLevel(z.value)]!.push(n)
+      if (z.y != null) byY[Math.min(z.y, 5) - 1]!.push(n)
+      byBucket[gapBucket(z.gap)]!.push(n)
+    })
 
     // ① 0~5 開幾顆：狀況 = 這期開幾顆 × 已連幾期 3～4 顆
     {
       let best: Choice | null = null
       LOW_LABELS.forEach((label, o) => {
         const x = tLow.rate(keyLow(s), o)
-        if (x) best = better(best, { target: `0~5 開 ${label}`, base: x.base, diff: x.rate - x.base, check: n => lowOutcome(n) === o })
+        if (x) best = better(best, { target: `0~5 開 ${label}`, base: x.base, diff: x.rate - x.base, check: n => lowOutcome(n) === o, event: { kind: 'count', nums: lowNums, min: o === 0 ? 0 : o + 1, max: o + 1 } })
       })
       push('low', best)
     }
@@ -238,7 +254,7 @@ export function evaluateHistory(rows: Row[]): Record<PointKey, PointEval[]> {
         const labels = [cur > 0 ? '變小（反過來）' : '變大（反過來）', cur > 0 ? '繼續變大' : '繼續變小', '一樣']
         labels.forEach((label, o) => {
           const x = tDir.rate(keyDir(s), o)
-          if (x) best = better(best, { target: `隔期和${label}`, base: x.base, diff: x.rate - x.base, check: n => relDir(cur, Math.sign(gapSumOf(n) - gapSumOf(r))) === o })
+          if (x) best = better(best, { target: `隔期和${label}`, base: x.base, diff: x.rate - x.base, check: n => relDir(cur, Math.sign(gapSumOf(n) - gapSumOf(r))) === o, event: { kind: 'gapsum', cur: gapSumOf(r), want: o === 2 ? 'eq' : (o === 0) === (cur > 0) ? 'lt' : 'gt' } })
         })
       }
       push('gapsum', best)
@@ -250,7 +266,7 @@ export function evaluateHistory(rows: Row[]): Record<PointKey, PointEval[]> {
         const g = valGapAt[s]![L]!
         if (g < 0) return
         const x = tVal[L]!.rate(String(Math.min(g, VALUE_GAP_CAP)), 0)
-        if (x) best = better(best, { target: `開出值 ${label}`, base: x.base, diff: x.rate - x.base, check: n => n.values.some(v => v != null && valueLevel(v) === L) })
+        if (x) best = better(best, { target: `開出值 ${label}`, base: x.base, diff: x.rate - x.base, check: n => n.values.some(v => v != null && valueLevel(v) === L), event: { kind: 'count', nums: byLevel[L]!, min: 1, max: 5 } })
       })
       push('value', best)
     }
@@ -263,8 +279,9 @@ export function evaluateHistory(rows: Row[]): Record<PointKey, PointEval[]> {
         const want = (n: Row) => tails.some(d => hasTail(n.nums, d))
         const yes = tPair.rate(pairKey(s), 0, true)
         const no = tPair.rate(pairKey(s), 1, true)
-        if (yes) best = better(best, { target: `再開出${name}`, base: pairBase.get(s)![0]!, diff: yes.rate - yes.base, check: want })
-        if (no) best = better(best, { target: `不開${name}`, base: pairBase.get(s)![1]!, diff: no.rate - no.base, check: n => !want(n) })
+        const tn = tailNums(tails)
+        if (yes) best = better(best, { target: `再開出${name}`, base: pairBase.get(s)![0]!, diff: yes.rate - yes.base, check: want, event: { kind: 'count', nums: tn, min: 1, max: 5 } })
+        if (no) best = better(best, { target: `不開${name}`, base: pairBase.get(s)![1]!, diff: no.rate - no.base, check: n => !want(n), event: { kind: 'count', nums: tn, min: 0, max: 0 } })
       }
       push('pair', best)
     }
@@ -274,7 +291,7 @@ export function evaluateHistory(rows: Row[]): Record<PointKey, PointEval[]> {
       for (let p = 0; p < 5; p++) {
         for (let o = 0; o < 5; o++) {
           const x = tY[p]!.rate(keyY(s, p), o)
-          if (x) best = better(best, { target: `第 ${p + 1} 顆 y=${o === 4 ? '5+' : o + 1}`, base: x.base, diff: x.rate - x.base, check: n => n.ys[p] != null && Math.min(n.ys[p]!, 5) - 1 === o })
+          if (x) best = better(best, { target: `第 ${p + 1} 顆 y=${o === 4 ? '5+' : o + 1}`, base: x.base, diff: x.rate - x.base, check: n => n.ys[p] != null && Math.min(n.ys[p]!, 5) - 1 === o, event: { kind: 'pos', pos: p, nums: byY[o]! } })
         }
       }
       push('y', best)
@@ -285,7 +302,7 @@ export function evaluateHistory(rows: Row[]): Record<PointKey, PointEval[]> {
       for (let p = 0; p < 5; p++) {
         for (let o = 0; o < 4; o++) {
           const x = tPos[p]!.rate(keyPos(s, p), o)
-          if (x) best = better(best, { target: `第 ${p + 1} 顆從隔期 ${GAP_BUCKETS[o]} 開出`, base: x.base, diff: x.rate - x.base, check: n => gapBucket(n.gaps[p] ?? null) === o })
+          if (x) best = better(best, { target: `第 ${p + 1} 顆從隔期 ${GAP_BUCKETS[o]} 開出`, base: x.base, diff: x.rate - x.base, check: n => gapBucket(n.gaps[p] ?? null) === o, event: { kind: 'pos', pos: p, nums: byBucket[o]! } })
         }
       }
       push('pos', best)
@@ -297,15 +314,15 @@ export function evaluateHistory(rows: Row[]): Record<PointKey, PointEval[]> {
       if (cs.all.length) {
         const key = `${cs.rep.length > 0}-${cs.stair.length > 0}`
         const base = chainBase.get(s)!
-        const opts: [number, string, (n: Row) => boolean][] = [
-          [0, `連開第 3 期（${cs.rep.map(pad2).join('、')}）`, n => cs.rep.some(x => n.nums.includes(x))],
-          [1, `梯子走到 ${cs.stair.map(pad2).join('、')}`, n => cs.stair.some(x => n.nums.includes(x))],
-          [2, `候選號都不開（${cs.all.map(pad2).join('、')}）`, n => !cs.all.some(x => n.nums.includes(x))]
+        const opts: [number, string, (n: Row) => boolean, GuessEvent][] = [
+          [0, `連開第 3 期（${cs.rep.map(pad2).join('、')}）`, n => cs.rep.some(x => n.nums.includes(x)), { kind: 'count', nums: cs.rep, min: 1, max: 5 }],
+          [1, `梯子走到 ${cs.stair.map(pad2).join('、')}`, n => cs.stair.some(x => n.nums.includes(x)), { kind: 'count', nums: cs.stair, min: 1, max: 5 }],
+          [2, `候選號都不開（${cs.all.map(pad2).join('、')}）`, n => !cs.all.some(x => n.nums.includes(x)), { kind: 'count', nums: cs.all, min: 0, max: 0 }]
         ]
-        for (const [o, target, check] of opts) {
+        for (const [o, target, check, event] of opts) {
           if ((o === 0 && !cs.rep.length) || (o === 1 && !cs.stair.length)) continue
           const x = tChain.rate(key, o, true)
-          if (x) best = better(best, { target, base: base[o]!, diff: x.rate - x.base, check })
+          if (x) best = better(best, { target, base: base[o]!, diff: x.rate - x.base, check, event })
         }
       }
       push('chain', best)
@@ -319,7 +336,7 @@ export function evaluateHistory(rows: Row[]): Record<PointKey, PointEval[]> {
         const x = tailRatio(tailCell[d]!, Math.min(s - tailLast[d]!, TAIL_GAP_CAP))
         if (!x || x.ratio >= bestRatio) continue
         bestRatio = x.ratio
-        best = { target: `不開尾${d}`, base: 1 - x.own, diff: x.own - x.rate, check: n => !hasTail(n.nums, d) }
+        best = { target: `不開尾${d}`, base: 1 - x.own, diff: x.own - x.rate, check: n => !hasTail(n.nums, d), event: { kind: 'count', nums: tailNums([d]), min: 0, max: 0 } }
       }
       push('tail', best)
     }

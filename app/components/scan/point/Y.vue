@@ -2,10 +2,11 @@
 /** ⑤ 位置 y：5 顆各自的 y 分佈、每顆 y=1～5 各隔幾期沒出現、連幾期 y≠1、存摺 */
 import { yDetail } from '~~/shared/lotto/scan/points/details'
 import type { PointEval } from '~~/shared/lotto/scan/points/evaluate'
+import type { NumberInfo } from '~~/shared/lotto/scan/points/board-prob'
 import type { Row } from '~~/shared/lotto/scan/points/rows'
 import type { PointSummary } from '~~/shared/lotto/scan/points/stats'
 
-const props = defineProps<{ rows: Row[], t: number, now: PointEval, summary: PointSummary, hNow: PointEval, hSummary: PointSummary }>()
+const props = defineProps<{ rows: Row[], infos: NumberInfo[][], t: number, now: PointEval, summary: PointSummary, hNow: PointEval, hSummary: PointSummary }>()
 const d = computed(() => yDetail(props.rows, props.t))
 const heatRows = computed(() => d.value.positions.map(p => ({ label: `第 ${p.p + 1} 顆`, values: p.dist, mark: p.now == null ? null : Math.min(p.now, 5) - 1 })))
 /** 現在隔幾期 ÷ 平均：> 1 變橘，越久越深 */

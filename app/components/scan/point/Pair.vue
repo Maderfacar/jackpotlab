@@ -2,10 +2,11 @@
 /** ④ 同尾對：這期的同尾與候選號、下一期怎麼帶（連莊 / 不連莊 / 沒開）、前 10 期的同尾對結果、存摺 */
 import { pairDetail } from '~~/shared/lotto/scan/points/details'
 import type { PointEval } from '~~/shared/lotto/scan/points/evaluate'
+import type { NumberInfo } from '~~/shared/lotto/scan/points/board-prob'
 import type { Row } from '~~/shared/lotto/scan/points/rows'
 import type { PointSummary } from '~~/shared/lotto/scan/points/stats'
 
-const props = defineProps<{ rows: Row[], t: number, now: PointEval, summary: PointSummary, hNow: PointEval, hSummary: PointSummary }>()
+const props = defineProps<{ rows: Row[], infos: NumberInfo[][], t: number, now: PointEval, summary: PointSummary, hNow: PointEval, hSummary: PointSummary }>()
 const d = computed(() => pairDetail(props.rows, props.t))
 const outcome = computed(() => [
   { label: '連莊', value: d.value.repeat, title: `下一期又開出同一顆號碼：${d.value.repeat} 次` },

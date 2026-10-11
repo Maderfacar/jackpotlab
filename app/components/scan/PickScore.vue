@@ -118,14 +118,14 @@ const mineScore = computed(() => {
           20 年評比：你的看法 vs 歷史挑
         </div>
         <div class="text-xs text-muted">
-          比的是「比平常多說中幾次（每 100 次）」，越多越好；只比說中率不公平，因為兩邊猜的東西不一樣，有的本來就容易中。
+          比的是「比盤面該有的多說中幾次（每 100 次）」，越多越好；只比說中率不公平，因為兩邊猜的東西不一樣，有的本來就容易中。
         </div>
       </div>
       <div class="space-y-2">
         <div class="grid grid-cols-[6.5rem_minmax(0,1fr)_minmax(0,1fr)_3rem] items-center gap-x-3 text-[11px] text-muted">
           <span />
-          <span>你的看法：說中／平常</span>
-          <span>歷史挑：說中／平常</span>
+          <span>你的看法：說中／盤面該有</span>
+          <span>歷史挑：說中／盤面該有</span>
           <span class="text-right">誰贏</span>
         </div>
         <div
@@ -165,7 +165,7 @@ const mineScore = computed(() => {
         </div>
       </div>
       <p class="mt-3 text-[11px] text-muted">
-        +8 ＝每 100 次比平常多中 8 次。兩邊相差不到 3 算「差不多」，可能只是運氣。
+        +8 ＝每 100 次比盤面該有的多中 8 次。兩邊相差不到 3 算「差不多」，可能只是運氣。
       </p>
     </UCard>
 

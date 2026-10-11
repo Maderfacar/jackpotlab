@@ -2,16 +2,17 @@
 /** ② 隔期和：最近走勢（變大橘、變小藍）、連 k 次同方向之後反轉的比例、存摺 */
 import { gapSumDetail } from '~~/shared/lotto/scan/points/details'
 import { GAPSUM_STRONG, GAPSUM_WATCH, type PointEval } from '~~/shared/lotto/scan/points/evaluate'
+import type { NumberInfo } from '~~/shared/lotto/scan/points/board-prob'
 import type { Row } from '~~/shared/lotto/scan/points/rows'
 import type { PointSummary } from '~~/shared/lotto/scan/points/stats'
 
-const props = defineProps<{ rows: Row[], t: number, now: PointEval, summary: PointSummary, hNow: PointEval, hSummary: PointSummary }>()
-const d = computed(() => gapSumDetail(props.rows, props.t))
-const all = computed(() => d.value.runs.reduce((a, r) => ({ hit: a.hit + r.hit, n: a.n + r.n }), { hit: 0, n: 0 }))
+const props = defineProps<{ rows: Row[], infos: NumberInfo[][], t: number, now: PointEval, summary: PointSummary, hNow: PointEval, hSummary: PointSummary }>()
+const d = computed(() => gapSumDetail(props.rows, props.t, props.infos))
 const runRows = computed(() => d.value.runs.map(r => ({
   label: r.k === 5 ? '連 5+ 次' : `連 ${r.k} 次`,
   hit: r.hit,
   n: r.n,
+  expect: r.expect,
   highlight: Math.min(d.value.current, 5) === r.k
 })))
 const dirText = computed(() => (d.value.dir > 0 ? '變大' : d.value.dir < 0 ? '變小' : '一樣'))
@@ -48,7 +49,6 @@ const dirText = computed(() => (d.value.dir > 0 ? '變大' : d.value.dir < 0 ? '
       </div>
       <ScanVizRuns
         :rows="runRows"
-        :base="all.n ? all.hit / all.n : null"
         what="下一期反過來"
       />
     </div>

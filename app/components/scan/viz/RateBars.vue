@@ -29,7 +29,7 @@ const diff = computed(() => (rate.value == null || props.base == null ? null : M
       <span class="w-10 shrink-0 text-right font-mono text-xs font-semibold text-highlighted">{{ pct(rate) }}</span>
     </div>
     <div class="flex items-center gap-2">
-      <span class="w-16 shrink-0 text-[11px] text-muted">平常就有</span>
+      <span class="w-16 shrink-0 text-[11px] text-muted">盤面該有</span>
       <div class="viz-track">
         <div
           class="viz-bar viz-bar-base"
@@ -43,7 +43,7 @@ const diff = computed(() => (rate.value == null || props.base == null ? null : M
         v-if="diff != null"
         class="font-semibold"
         :class="diff >= 3 ? 'viz-up' : diff <= -3 ? 'viz-down' : ''"
-      >{{ diff >= 3 ? `每 100 次比平常多中 ${diff} 次` : diff <= -3 ? `每 100 次比平常少中 ${-diff} 次` : (hist ? '跟平常差不多，猜了等於沒猜' : '跟平常差不多，亮不亮都一樣') }}</span>
+      >{{ diff >= 3 ? `每 100 次比盤面該有多中 ${diff} 次` : diff <= -3 ? `每 100 次比盤面該有少中 ${-diff} 次` : (hist ? '跟盤面該有的差不多，猜了等於沒猜' : '跟盤面該有的差不多，亮不亮都一樣') }}</span>
       <span>（{{ hist ? '猜過' : '亮過' }} {{ n.toLocaleString() }} 次，說中 {{ hit.toLocaleString() }} 次）</span>
       <UBadge
         v-if="n > 0 && n < SMALL_SAMPLE"

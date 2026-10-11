@@ -171,7 +171,7 @@ const emit = defineEmits<{ toggle: [key: PickKey], jump: [key: PointKey] }>()
         name="i-lucide-history"
         class="sb-hist-icon"
       />歷史挑＝照 20 年同樣情況挑的猜法</span>
-      <span>兩條線：上＝20 年來每亮 100 次說中幾次，下＝不管亮不亮、每 100 期本來就有幾次。上面明顯比下面長，這一點才有用</span>
+      <span>兩條線：上＝20 年來每亮 100 次說中幾次，下＝照那幾期的盤面本來就該中幾次。上面明顯比下面長，這一點才有用</span>
     </div>
   </section>
 </template>

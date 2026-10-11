@@ -5,6 +5,7 @@ import { tailPairEvents, WARMUP, type PairNext } from '../scan'
 import {
   chainCandidates, GAPSUM_STRONG, LOW_RUN, stairs, TAIL_GAP_CAP, tailRatio, tripleRepeats, VALUE_LEVELS, valueLevel
 } from './evaluate'
+import { hyper, numbersWhere, probability, type NumberInfo } from './board-prob'
 import { gapSumOf, hasTail, lowCount, pairTails, repeatCount, smallValueCount, y1Count, type Row } from './rows'
 import { intervalStats, ledger, type IntervalStats } from './stats'
 
@@ -14,20 +15,27 @@ const RECENT = 30
 export interface Rate {
   hit: number
   n: number
+  /** 照那幾期盤面「本來該有」的次數加總（每期的盤面機率相加） */
+  expect: number
 }
-const rate = (): Rate => ({ hit: 0, n: 0 })
-const bump = (r: Rate, ok: boolean) => {
+const rate = (): Rate => ({ hit: 0, n: 0, expect: 0 })
+const bump = (r: Rate, ok: boolean, p = 0) => {
   r.n++
+  r.expect += p
   if (ok) r.hit++
+}
+const leq2 = (info: NumberInfo[]) => {
+  const K = numbersWhere(info, x => x.gap != null && x.gap <= 5).length
+  return hyper(K, 0) + hyper(K, 1) + hyper(K, 2)
 }
 
 // ---------- 第 1 點：0~5 開幾顆 ----------
 
-export function lowDetail(rows: Row[], t: number) {
+export function lowDetail(rows: Row[], t: number, infos: NumberInfo[][]) {
   const dist = new Array<number>(6).fill(0)
   for (let s = WARMUP; s <= t; s++) dist[lowCount(rows[s]!)]!++
   // 連 k 期都開 3 或 4 顆之後（剛好 k 期），下一期開幾顆
-  const runs = Array.from({ length: 7 }, (_, i) => ({ k: i + 1, next: new Array<number>(6).fill(0), n: 0 }))
+  const runs = Array.from({ length: 7 }, (_, i) => ({ k: i + 1, next: new Array<number>(6).fill(0), n: 0, expect: 0 }))
   let run = 0
   const within2 = rate()
   for (let s = WARMUP; s < t; s++) {
@@ -37,6 +45,7 @@ export function lowDetail(rows: Row[], t: number) {
       const row = runs[Math.min(run, 7) - 1]!
       row.n++
       row.next[lowCount(rows[s + 1]!)]!++
+      row.expect += leq2(infos[s]!)
     }
     if (run >= LOW_RUN && s + 2 <= t) bump(within2, lowCount(rows[s + 1]!) <= 2 || lowCount(rows[s + 2]!) <= 2)
   }
@@ -66,7 +75,7 @@ export function lowDetail(rows: Row[], t: number) {
 
 // ---------- 第 2 點：隔期和 ----------
 
-export function gapSumDetail(rows: Row[], t: number) {
+export function gapSumDetail(rows: Row[], t: number, infos: NumberInfo[][]) {
   const dirOf = (s: number) => (s > 0 ? Math.sign(gapSumOf(rows[s]!) - gapSumOf(rows[s - 1]!)) : 0)
   // 連 k 次同方向之後，下一期反轉
   const runs = Array.from({ length: 5 }, (_, i) => ({ k: i + 1, ...rate() }))
@@ -76,7 +85,10 @@ export function gapSumDetail(rows: Row[], t: number) {
     const d = dirOf(s)
     run = d !== 0 && d === prev ? run + 1 : d !== 0 ? 1 : 0
     prev = d
-    if (run >= 1) bump(runs[Math.min(run, 5) - 1]!, dirOf(s + 1) === -d)
+    if (run >= 1) {
+      const p = probability(infos[s]!, { kind: 'gapsum', cur: gapSumOf(rows[s]!), want: d > 0 ? 'lt' : 'gt' })
+      bump(runs[Math.min(run, 5) - 1]!, dirOf(s + 1) === -d, p)
+    }
   }
   let current = 0
   const dNow = dirOf(t)
@@ -187,7 +199,7 @@ export function yDetail(rows: Row[], t: number) {
 /** 熱度圖欄數：隔期 0～29 各一欄，30 以上一欄 */
 export const POS_GAP_COLS = 30
 
-export function posDetail(rows: Row[], t: number) {
+export function posDetail(rows: Row[], t: number, infos: NumberInfo[][]) {
   const grid = [0, 1, 2, 3, 4].map(() => new Array<number>(POS_GAP_COLS + 1).fill(0))
   const totals = [0, 0, 0, 0, 0]
   for (let s = WARMUP; s <= t; s++) {
@@ -210,13 +222,15 @@ export function posDetail(rows: Row[], t: number) {
   const base = [0, 1, 2, 3, 4].map(() => rate())
   const run = [0, 0, 0, 0, 0]
   for (let s = WARMUP; s < t; s++) {
+    const lowNums = numbersWhere(infos[s]!, x => x.gap != null && x.gap <= 5)
     for (let p = 0; p < 5; p++) {
       const g = rows[s]!.gaps[p]
       run[p] = g == null || g > 5 ? run[p]! + 1 : 0
       const ng = rows[s + 1]!.gaps[p]
       const back = ng != null && ng <= 5
-      bump(base[p]!, back)
-      if (run[p]! >= 1) bump(rules[p]![Math.min(run[p]!, 5) - 1]!, back)
+      const prob = probability(infos[s]!, { kind: 'pos', pos: p, nums: lowNums })
+      bump(base[p]!, back, prob)
+      if (run[p]! >= 1) bump(rules[p]![Math.min(run[p]!, 5) - 1]!, back, prob)
     }
   }
   const recent = rows.slice(Math.max(WARMUP, t - RECENT + 1), t + 1).map(r => ({ issue: r.issue, gaps: r.gaps }))
@@ -317,18 +331,9 @@ export const tailLedger = (rows: Row[], t: number, pick: number) =>
  * 這次下一期「不開這個尾數」的比例（連 0、1、2…6 次以上分開看），和平常不開的比例。
  */
 export function tailStreakDetail(rows: Row[], t: number) {
-  const prefix = Array.from({ length: 10 }, () => [0])
-  rows.forEach((r, s) => {
-    for (let d = 0; d < 10; d++) prefix[d]!.push(prefix[d]![s]! + (hasTail(r.nums, d) ? 1 : 0))
-  })
-  /** 第 s 期以前（含）這些尾數「任一有開」的比例 */
-  const seenRate = (tails: number[], s: number) => {
-    if (tails.length === 1) return prefix[tails[0]!]![s + 1]! / (s + 1)
-    let k = 0
-    for (let q = 0; q <= s; q++) if (tails.some(d => hasTail(rows[q]!.nums, d))) k++
-    return k / (s + 1)
-  }
-  const rowsOut = Array.from({ length: 7 }, (_, k) => ({ k, hit: 0, n: 0, baseSum: 0 }))
+  /** 這些尾數的號碼下一期一顆都不開的機率（照盤面：39 取 5） */
+  const noneProb = (tails: number[]) => hyper(Array.from({ length: 39 }, (_, i) => i + 1).filter(n => tails.includes(n % 10)).length, 0)
+  const rowsOut = Array.from({ length: 7 }, (_, k) => ({ k, hit: 0, n: 0, expect: 0 }))
   const outcomes: boolean[] = []
   for (let s = 0; s <= t; s++) {
     if (s >= 1) {
@@ -343,10 +348,10 @@ export function tailStreakDetail(rows: Row[], t: number) {
     const row = rowsOut[Math.min(streak, 6)]!
     row.n++
     if (!tails.some(d => hasTail(rows[s + 1]!.nums, d))) row.hit++
-    row.baseSum += 1 - seenRate(tails, s)
+    row.expect += noneProb(tails)
   }
   const n = rowsOut.reduce((a, r) => a + r.n, 0)
-  const base = n ? rowsOut.reduce((a, r) => a + r.baseSum, 0) / n : null
+  const base = n ? rowsOut.reduce((a, r) => a + r.expect, 0) / n : null
   // 目前：最近連續幾次同尾都帶出同尾（只算下一期已開出的）
   let current = 0
   for (let i = outcomes.length - 1; i >= 0 && outcomes[i]; i--) current++

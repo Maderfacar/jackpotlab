@@ -2,15 +2,16 @@
 /** ⑥ 第 1～5 顆各自的隔期：每個隔期一格的熱度圖、連 k 期 > 5 之後回到 0～5、存摺 */
 import { POS_GAP_COLS, posDetail, posLedger } from '~~/shared/lotto/scan/points/details'
 import type { PointEval } from '~~/shared/lotto/scan/points/evaluate'
+import type { NumberInfo } from '~~/shared/lotto/scan/points/board-prob'
 import type { Row } from '~~/shared/lotto/scan/points/rows'
 import type { PointSummary } from '~~/shared/lotto/scan/points/stats'
 
-const props = defineProps<{ rows: Row[], t: number, now: PointEval, summary: PointSummary, hNow: PointEval, hSummary: PointSummary }>()
+const props = defineProps<{ rows: Row[], infos: NumberInfo[][], t: number, now: PointEval, summary: PointSummary, hNow: PointEval, hSummary: PointSummary }>()
 /** 下面的「連 k 期」與存摺看哪一顆；預設跟著亮燈的那顆 */
 const chosen = ref<number | null>(null)
 const litPos = computed(() => (props.now.lit ? Number(props.now.target.replace(/\D/g, '')) - 1 : 0))
 const pick = computed(() => chosen.value ?? litPos.value)
-const d = computed(() => posDetail(props.rows, props.t))
+const d = computed(() => posDetail(props.rows, props.t, props.infos))
 const led = computed(() => posLedger(props.rows, props.t, pick.value))
 const cols = Array.from({ length: POS_GAP_COLS + 1 }, (_, i) => (i === POS_GAP_COLS ? '30+' : String(i)))
 const heatRows = computed(() => d.value.grid.map((values, p) => ({
@@ -22,12 +23,9 @@ const runRows = computed(() => d.value.rules[pick.value]!.map(r => ({
   label: r.k === 5 ? '連 5+ 期' : `連 ${r.k} 期`,
   hit: r.hit,
   n: r.n,
+  expect: r.expect,
   highlight: Math.min(d.value.runs[pick.value]!, 5) === r.k
 })))
-const base = computed(() => {
-  const b = d.value.base[pick.value]!
-  return b.n ? b.hit / b.n : null
-})
 </script>
 
 <template>
@@ -69,8 +67,6 @@ const base = computed(() => {
       </div>
       <ScanVizRuns
         :rows="runRows"
-        :base="base"
-        :base-label="`第 ${pick + 1} 顆`"
         what="下一期回到 0～5"
       />
     </div>

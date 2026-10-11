@@ -8,7 +8,9 @@
  *   base   — 「平常」：不看亮燈，同一件事本來發生的比例（只用第 s 期以前的資料算）
  * 全部只用第 s 期（含）以前的資料決定亮燈，不偷看未來。
  */
+import { computeBoardStates } from '../board-states'
 import { WARMUP } from '../scan'
+import { boardInfo, numbersWhere, probability, type GuessEvent, type NumberInfo } from './board-prob'
 import { hasTail, lowCount, pairTails, gapSumOf, type Row } from './rows'
 
 export const POINT_KEYS = ['low', 'gapsum', 'value', 'pair', 'y', 'pos', 'chain', 'tail'] as const
@@ -20,7 +22,12 @@ export interface PointEval {
   strong: boolean
   target: string
   hit: boolean | null
+  /** 平常（20 年平均的比例；舊做法，留作對照） */
   base: number | null
+  /** 猜的那件事，換成「下一期哪一群號碼」的描述，用來照該期盤面算機率 */
+  event?: GuessEvent | null
+  /** 照該期盤面精確算出的機率（2026-10-12 使用者：平常要以該期盤面來推導） */
+  bp?: number | null
 }
 
 /** 第 1 點：0~5 每期都開 3 或 4 顆，連續幾期算徘徊（使用者：五期左右） */
@@ -85,8 +92,22 @@ function hyperAny(k: number): number {
   return 1 - none
 }
 
+/** 每期開完的盤面 → 每顆號碼下一期如果開出會帶的隔期 / 值 / y（八點、歷史挑共用，同一份） */
+export function buildInfos(rows: Row[]): NumberInfo[][] {
+  return computeBoardStates(rows.map(r => r.nums), 60).map(boardInfo)
+}
+
+/** 有 event 的就照該期盤面算機率，填進 bp（回傳新物件，不改原本的） */
+export function withBoardProb(evals: Record<PointKey, PointEval[]>, infos: NumberInfo[][]): Record<PointKey, PointEval[]> {
+  return Object.fromEntries(POINT_KEYS.map(k => [k, evals[k].map((e, s) => (e.lit && e.event
+    ? { ...e, bp: probability(infos[s]!, e.event) }
+    : e))])) as Record<PointKey, PointEval[]>
+}
+
+const tailNums = (tails: number[]) => Array.from({ length: 39 }, (_, i) => i + 1).filter(n => tails.includes(n % 10))
+
 /** 每期 × 八點。前 WARMUP 期一律不亮（隔期表還沒填滿）。 */
-export function evaluatePoints(rows: Row[]): Record<PointKey, PointEval[]> {
+export function evaluatePoints(rows: Row[], infos: NumberInfo[][] = buildInfos(rows)): Record<PointKey, PointEval[]> {
   const out = Object.fromEntries(POINT_KEYS.map(k => [k, [] as PointEval[]])) as Record<PointKey, PointEval[]>
   const next = (s: number) => rows[s + 1]
 
@@ -111,6 +132,7 @@ export function evaluatePoints(rows: Row[]): Record<PointKey, PointEval[]> {
     const r = rows[s]!
     const nx = next(s)
     const live = s >= WARMUP
+    const info = infos[s]!
 
     // ---- 更新累計（含第 s 期）----
     const low = lowCount(r)
@@ -161,7 +183,8 @@ export function evaluatePoints(rows: Row[]): Record<PointKey, PointEval[]> {
         strong: false,
         target: lit ? `已連 ${lowRun} 期` : '',
         hit: lit && nx ? lowCount(nx) <= 2 : null,
-        base: lit ? lowLe2.freq : null
+        base: lit ? lowLe2.freq : null,
+        event: lit ? { kind: 'count', nums: numbersWhere(info, x => x.gap != null && x.gap <= 5), min: 0, max: 2 } : null
       })
     }
 
@@ -174,7 +197,8 @@ export function evaluatePoints(rows: Row[]): Record<PointKey, PointEval[]> {
         strong: gsRun >= GAPSUM_STRONG,
         target: lit ? `連 ${gsRun} 次${dir > 0 ? '變大' : '變小'}` : '',
         hit: lit && nx ? nd === -dir : null,
-        base: revN ? revHit / revN : null
+        base: revN ? revHit / revN : null,
+        event: lit ? { kind: 'gapsum', cur: gapSumOf(r), want: dir > 0 ? 'lt' : 'gt' } : null
       })
     }
 
@@ -198,7 +222,8 @@ export function evaluatePoints(rows: Row[]): Record<PointKey, PointEval[]> {
         strong: false,
         target: lit ? `值 ${VALUE_LEVELS[best]}` : '',
         hit: lit && nx ? nx.values.some(v => v != null && valueLevel(v) === best) : null,
-        base: lit ? valueOcc[best]!.freq : null
+        base: lit ? valueOcc[best]!.freq : null,
+        event: lit ? { kind: 'count', nums: numbersWhere(info, x => x.value != null && valueLevel(x.value) === best), min: 1, max: 5 } : null
       })
     }
 
@@ -224,7 +249,8 @@ export function evaluatePoints(rows: Row[]): Record<PointKey, PointEval[]> {
         strong: false,
         target: lit ? tails.map(d => `尾${d}`).join('、') : '',
         hit: lit && nx ? tails.some(d => hasTail(nx.nums, d)) : null,
-        base
+        base,
+        event: lit ? { kind: 'count', nums: tailNums(tails), min: 1, max: 5 } : null
       })
     }
 
@@ -238,7 +264,8 @@ export function evaluatePoints(rows: Row[]): Record<PointKey, PointEval[]> {
         strong: false,
         target: lit ? `第 ${p + 1} 顆` : '',
         hit: lit && nx ? nx.ys[p] === 1 : null,
-        base: lit ? y1Occ[p]!.freq : null
+        base: lit ? y1Occ[p]!.freq : null,
+        event: lit ? { kind: 'pos', pos: p, nums: numbersWhere(info, x => x.y === 1) } : null
       })
     }
 
@@ -251,7 +278,8 @@ export function evaluatePoints(rows: Row[]): Record<PointKey, PointEval[]> {
         strong: false,
         target: lit ? `第 ${p + 1} 顆` : '',
         hit: lit && nx ? (nx.gaps[p] != null && nx.gaps[p]! <= 5) : null,
-        base: lit ? lowPosOcc[p]!.freq : null
+        base: lit ? lowPosOcc[p]!.freq : null,
+        event: lit ? { kind: 'pos', pos: p, nums: numbersWhere(info, x => x.gap != null && x.gap <= 5) } : null
       })
     }
 
@@ -264,7 +292,8 @@ export function evaluatePoints(rows: Row[]): Record<PointKey, PointEval[]> {
         strong: false,
         target: lit ? cands.map(pad2).join('、') : '',
         hit: lit && nx ? cands.some(n => nx.nums.includes(n)) : null,
-        base: lit ? hyperAny(cands.length) : null
+        base: lit ? hyperAny(cands.length) : null,
+        event: lit ? { kind: 'count', nums: cands, min: 1, max: 5 } : null
       })
     }
 
@@ -278,7 +307,8 @@ export function evaluatePoints(rows: Row[]): Record<PointKey, PointEval[]> {
         strong: false,
         target: lit ? tails.map(d => `尾${d}`).join('、') : '',
         hit: lit && nx ? !tails.some(d => hasTail(nx.nums, d)) : null,
-        base: lit && tailsBase != null ? 1 - tailsBase : null
+        base: lit && tailsBase != null ? 1 - tailsBase : null,
+        event: lit ? { kind: 'count', nums: tailNums(tails), min: 0, max: 0 } : null
       })
     }
   }

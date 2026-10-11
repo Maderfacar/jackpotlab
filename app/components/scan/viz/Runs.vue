@@ -3,13 +3,12 @@
 const SMALL_SAMPLE = 30
 
 defineProps<{
-  rows: { label: string, hit: number, n: number, highlight?: boolean }[]
-  /** 平常比例 0～1 */
-  base: number | null
+  /** expect = 照那幾期盤面「本來該有」的次數加總（有的話，每列畫自己的黑線） */
+  rows: { label: string, hit: number, n: number, highlight?: boolean, expect?: number }[]
+  /** 沒有每列盤面數字時用的平常比例 0～1 */
+  base?: number | null
   /** 條代表什麼，例「下一期反轉」 */
   what: string
-  /** 平常指誰（例：第 2 顆），不給就只寫「平常」 */
-  baseLabel?: string
 }>()
 const pct = (h: number, n: number) => (n ? `${Math.round((h / n) * 100)}%` : '—')
 </script>
@@ -17,7 +16,7 @@ const pct = (h: number, n: number) => (n ? `${Math.round((h / n) * 100)}%` : '�
 <template>
   <div class="space-y-1">
     <div class="flex justify-between text-[10px] text-muted">
-      <span>條＝{{ what }}的比例，黑線＝{{ baseLabel ?? '' }}平常{{ base == null ? '' : ` ${Math.round(base * 100)}%` }}；淡色＝次數少</span>
+      <span>條＝{{ what }}的比例，黑線＝照那幾期盤面本來該有的比例；淡色＝次數少</span>
       <span>次數</span>
     </div>
     <div
@@ -25,7 +24,7 @@ const pct = (h: number, n: number) => (n ? `${Math.round((h / n) * 100)}%` : '�
       :key="r.label"
       class="grid grid-cols-[4.5rem_minmax(0,1fr)_2.5rem_3rem] items-center gap-x-2"
       :class="r.n > 0 && r.n < SMALL_SAMPLE ? 'opacity-60' : ''"
-      :title="`${r.label}：${what} ${r.hit}/${r.n}${r.n < SMALL_SAMPLE ? '（次數少，參考就好）' : ''}`"
+      :title="`${r.label}：${what} ${r.hit}/${r.n}${r.expect != null && r.n ? `，照盤面該有 ${Math.round(r.expect / r.n * 100)}%` : ''}${r.n < SMALL_SAMPLE ? '（次數少，參考就好）' : ''}`"
     >
       <span
         class="text-xs"
@@ -38,9 +37,9 @@ const pct = (h: number, n: number) => (n ? `${Math.round((h / n) * 100)}%` : '�
           :style="{ width: `${r.n ? (r.hit / r.n) * 100 : 0}%` }"
         />
         <span
-          v-if="base != null"
+          v-if="r.expect != null ? r.n > 0 : base != null"
           class="ru-base"
-          :style="{ left: `${base * 100}%` }"
+          :style="{ left: `${(r.expect != null ? r.expect / r.n : base!) * 100}%` }"
         />
       </span>
       <span class="text-right font-mono text-xs font-semibold">{{ pct(r.hit, r.n) }}</span>

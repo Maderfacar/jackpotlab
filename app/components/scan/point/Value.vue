@@ -2,10 +2,11 @@
 /** ③ 值：每個值各隔幾期沒出現（何時輪到值 1、2、3…）、5 顆小／中／大的搭配、存摺 */
 import { valueDetail } from '~~/shared/lotto/scan/points/details'
 import { VALUE_DUE, type PointEval } from '~~/shared/lotto/scan/points/evaluate'
+import type { NumberInfo } from '~~/shared/lotto/scan/points/board-prob'
 import type { Row } from '~~/shared/lotto/scan/points/rows'
 import type { PointSummary } from '~~/shared/lotto/scan/points/stats'
 
-const props = defineProps<{ rows: Row[], t: number, now: PointEval, summary: PointSummary, hNow: PointEval, hSummary: PointSummary }>()
+const props = defineProps<{ rows: Row[], infos: NumberInfo[][], t: number, now: PointEval, summary: PointSummary, hNow: PointEval, hSummary: PointSummary }>()
 const d = computed(() => valueDetail(props.rows, props.t))
 const comboLabel = (key: string) => {
   const [s, m, b] = key.split('-')
