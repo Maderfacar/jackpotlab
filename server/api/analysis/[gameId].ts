@@ -14,9 +14,11 @@
  *   format 預設 text（純文字表格，一期一列，給 LLM 直接讀）；json = 原本的 JSON
  *          （2026-10-07 使用者拍板：JSON 700 期 144 KB 單行，ChatGPT 讀網址會被壓縮截斷）
  *
- * 回應帶 CDN 快取 5 分鐘（s-maxage=300），LLM 重複讀同一網址不會每次都讀 Firestore。
+ * CDN 快取：賓果 5 分鐘；539 等每日彩種在 20:25～23:59（台北）5 分鐘，其餘時間快取到當天 20:25
+ * （2026-10-11 使用者拍板：開完獎到下次開獎前資料不變，見 shared/lotto/cache-window.ts）。
  */
 
+import { analysisCacheSeconds } from '../../../shared/lotto/cache-window'
 import { GAMES, isGameId, type GameId } from '../../../shared/lotto/games'
 import { getLatestDraw, getRecentDraws } from '../../utils/draw-service'
 import {
@@ -108,7 +110,8 @@ export default defineEventHandler(async (event) => {
   }
   const generatedAt = new Date().toISOString()
 
-  setResponseHeader(event, 'Cache-Control', 'public, s-maxage=300, stale-while-revalidate=60')
+  const maxAge = gameId === 'bingo_bingo' ? 300 : analysisCacheSeconds(new Date())
+  setResponseHeader(event, 'Cache-Control', `public, s-maxage=${maxAge}, stale-while-revalidate=60`)
 
   if (format === 'text') {
     setResponseHeader(event, 'Content-Type', 'text/plain; charset=utf-8')
