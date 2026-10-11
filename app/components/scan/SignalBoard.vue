@@ -69,7 +69,7 @@ const emit = defineEmits<{ toggle: [key: PointKey], jump: [key: PointKey] }>()
             >（強）</span>
           </div>
           <div class="text-xs text-muted">
-            → {{ tile.meta.claim }}
+            → 猜：{{ tile.meta.claim }}
           </div>
         </div>
         <div

@@ -36,7 +36,7 @@ const meta = computed(() => metaOf(props.pointKey))
         </div>
         <p class="text-xs text-muted">
           <b class="font-medium">什麼時候亮：</b>{{ meta.when }}<br>
-          <b class="font-medium">亮了代表：</b>{{ meta.claim }}
+          <b class="font-medium">亮了就猜：</b>{{ meta.claim }}（只是照這個看法去猜，準不準看右邊）
         </p>
       </div>
       <div class="w-full sm:w-64">
