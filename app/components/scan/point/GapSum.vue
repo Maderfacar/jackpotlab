@@ -5,7 +5,7 @@ import { GAPSUM_STRONG, GAPSUM_WATCH, type PointEval } from '~~/shared/lotto/sca
 import type { Row } from '~~/shared/lotto/scan/points/rows'
 import type { PointSummary } from '~~/shared/lotto/scan/points/stats'
 
-const props = defineProps<{ rows: Row[], t: number, now: PointEval, summary: PointSummary }>()
+const props = defineProps<{ rows: Row[], t: number, now: PointEval, summary: PointSummary, hNow: PointEval, hSummary: PointSummary }>()
 const d = computed(() => gapSumDetail(props.rows, props.t))
 const all = computed(() => d.value.runs.reduce((a, r) => ({ hit: a.hit + r.hit, n: a.n + r.n }), { hit: 0, n: 0 }))
 const runRows = computed(() => d.value.runs.map(r => ({
@@ -22,6 +22,8 @@ const dirText = computed(() => (d.value.dir > 0 ? '變大' : d.value.dir < 0 ? '
     point-key="gapsum"
     :now="now"
     :summary="summary"
+    :h-now="hNow"
+    :h-summary="hSummary"
   >
     <div class="space-y-1">
       <div class="flex flex-wrap items-baseline gap-x-3 text-xs text-muted">

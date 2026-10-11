@@ -5,7 +5,7 @@ import { VALUE_DUE, type PointEval } from '~~/shared/lotto/scan/points/evaluate'
 import type { Row } from '~~/shared/lotto/scan/points/rows'
 import type { PointSummary } from '~~/shared/lotto/scan/points/stats'
 
-const props = defineProps<{ rows: Row[], t: number, now: PointEval, summary: PointSummary }>()
+const props = defineProps<{ rows: Row[], t: number, now: PointEval, summary: PointSummary, hNow: PointEval, hSummary: PointSummary }>()
 const d = computed(() => valueDetail(props.rows, props.t))
 const comboLabel = (key: string) => {
   const [s, m, b] = key.split('-')
@@ -25,6 +25,8 @@ const dueItems = computed(() => d.value.levels.map(l => ({
     point-key="value"
     :now="now"
     :summary="summary"
+    :h-now="hNow"
+    :h-summary="hSummary"
   >
     <div class="space-y-1">
       <div class="text-xs text-muted">

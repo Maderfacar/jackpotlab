@@ -55,6 +55,14 @@ const pairBase = computed(() => Math.round((props.pair.base ?? 0) * 100))
         ① 亮的時候是 {{ lowRate }}%，比平常多 {{ lowRate - lowBase }}，<b>代表亮燈時確實比較常說中</b>。
         反過來，④ 亮了說中 {{ pairRate }}%、平常也是 {{ pairBase }}%，<b>差不多就代表亮不亮都一樣</b>，這一點幫不上忙。
       </div>
+      <div class="guide-step md:col-span-2">
+        <div class="guide-no">
+          5．「你的看法」和「歷史挑」
+        </div>
+        每一點都有兩種猜法並排：<b>你的看法</b>是照你講的規則（例如連 5 期就猜只開 0～2 顆）；
+        <b>歷史挑</b>是每一期回頭查 20 年「同樣情況下一期最常比平常多發生什麼」就猜那個，只用那一期以前的資料。
+        兩邊都在最下面「成績單」打分數，比的是「每 100 次比平常多中幾次」，看哪一邊比較準。
+      </div>
     </div>
   </details>
 </template>

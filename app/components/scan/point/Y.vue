@@ -5,7 +5,7 @@ import type { PointEval } from '~~/shared/lotto/scan/points/evaluate'
 import type { Row } from '~~/shared/lotto/scan/points/rows'
 import type { PointSummary } from '~~/shared/lotto/scan/points/stats'
 
-const props = defineProps<{ rows: Row[], t: number, now: PointEval, summary: PointSummary }>()
+const props = defineProps<{ rows: Row[], t: number, now: PointEval, summary: PointSummary, hNow: PointEval, hSummary: PointSummary }>()
 const d = computed(() => yDetail(props.rows, props.t))
 const heatRows = computed(() => d.value.positions.map(p => ({ label: `第 ${p.p + 1} 顆`, values: p.dist, mark: p.now == null ? null : Math.min(p.now, 5) - 1 })))
 /** 現在隔幾期 ÷ 平均：> 1 變橘，越久越深 */
@@ -21,6 +21,8 @@ function cellStyle(cur: number | null, mean: number | null) {
     point-key="y"
     :now="now"
     :summary="summary"
+    :h-now="hNow"
+    :h-summary="hSummary"
   >
     <div class="space-y-1">
       <div class="text-xs text-muted">

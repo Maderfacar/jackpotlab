@@ -6,13 +6,14 @@
  * 寫不進去；兩種做法都只限同一台裝置，所以改用瀏覽器存。清除瀏覽器資料會不見。
  * 鍵 = 勾選當下「最新一期」的期號（勾的是它的下一期），下一期開出後就鎖住不能改。
  */
-import { POINT_KEYS, type PointKey } from '~~/shared/lotto/scan/points/evaluate'
+import { POINT_KEYS } from '~~/shared/lotto/scan/points/evaluate'
+import type { PickKey } from '~~/shared/lotto/scan/points/meta'
 
-type Picks = Record<string, PointKey[]>
+type Picks = Record<string, PickKey[]>
 
 const STORAGE_KEY = 'jackpotlab-scan-picks-v1'
 
-const isPointKey = (k: unknown): k is PointKey => typeof k === 'string' && (POINT_KEYS as readonly string[]).includes(k)
+const isPickKey = (k: unknown): k is PickKey => typeof k === 'string' && (POINT_KEYS as readonly string[]).includes(k.replace(/@h$/, ''))
 
 export function useScanPicks() {
   const picks = ref<Picks>({})
@@ -24,7 +25,7 @@ export function useScanPicks() {
       const raw = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? '{}') as Record<string, unknown>
       const clean: Picks = {}
       for (const [issue, list] of Object.entries(raw)) {
-        if (Array.isArray(list)) clean[issue] = list.filter(isPointKey)
+        if (Array.isArray(list)) clean[issue] = list.filter(isPickKey)
       }
       picks.value = clean
       status.value = 'ready'
@@ -44,14 +45,14 @@ export function useScanPicks() {
   }
 
   /** 切換某期（baseIssue 開完後）對某一點的勾選 */
-  function toggle(baseIssue: string, key: PointKey): void {
+  function toggle(baseIssue: string, key: PickKey): void {
     const cur = picks.value[baseIssue] ?? []
     const nextList = cur.includes(key) ? cur.filter(k => k !== key) : [...cur, key]
     picks.value = { ...picks.value, [baseIssue]: nextList }
     save()
   }
 
-  const isPicked = (baseIssue: string, key: PointKey): boolean => (picks.value[baseIssue] ?? []).includes(key)
+  const isPicked = (baseIssue: string, key: PickKey): boolean => (picks.value[baseIssue] ?? []).includes(key)
 
   return { picks, status, errorText, toggle, isPicked }
 }

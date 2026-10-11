@@ -9,6 +9,7 @@ import { mergeDraws, parseHistoryFile, type PlainDraw } from '../../history-file
 import { WARMUP } from '../scan'
 import { chainCandidates, evaluatePoints, LOW_RUN, POINT_KEYS, stairs, tailRatio, tripleRepeats } from '../points/evaluate'
 import { tailDetail } from '../points/details'
+import { evaluateHistory, MIN_N } from '../points/history'
 import { buildRows, lowCount, pairTails, type Row } from '../points/rows'
 import { allTrueTable, intervalStats, ledger, pairMatrix, summarize } from '../points/stats'
 
@@ -122,24 +123,29 @@ describe('evaluatePoints', () => {
     assert.equal(ev[WARMUP + 1]!.hit, true)
   })
 
-  it('第 8 點：成真 = 被排除的尾數下一期真的沒開', () => {
+  it('第 8 點「你的看法」還沒定 → 一律不亮', () => {
+    const ev = evaluatePoints(buildRows(randomDraws(300, 9))).tail
+    assert.ok(ev.every(e => !e.lit))
+  })
+
+  it('第 8 點歷史挑：成真 = 被排除的尾數下一期真的沒開', () => {
     const rows = buildRows(randomDraws(600, 9))
-    const ev = evaluatePoints(rows).tail
+    const ev = evaluateHistory(rows).tail
     for (let s = WARMUP + 100; s < rows.length - 1; s++) {
       const e = ev[s]!
       if (!e.lit) continue
-      const d = Number(e.target.replace('尾', ''))
+      const d = Number(e.target.replace('不開尾', ''))
       assert.equal(e.hit, !rows[s + 1]!.nums.some(n => n % 10 === d))
     }
   })
 })
 
-describe('第 8 點：排除尾數跟自己的平常比（2026-10-11 改）', () => {
+describe('第 8 點歷史挑：排除尾數跟自己的平常比（2026-10-11 改）', () => {
   it('不會因為尾 0 只有 3 顆號碼就幾乎每期都挑尾 0', () => {
-    const ev = evaluatePoints(buildRows(randomDraws(1500, 33))).tail
+    const ev = evaluateHistory(buildRows(randomDraws(1500, 33))).tail
     const lit = ev.filter(e => e.lit)
-    const zero = lit.filter(e => e.target === '尾0').length
-    assert.ok(lit.length > 1000)
+    const zero = lit.filter(e => e.target === '不開尾0').length
+    assert.ok(lit.length > 500)
     assert.ok(zero / lit.length < 0.5, `尾0 佔 ${zero}/${lit.length}`)
   })
 
@@ -154,10 +160,53 @@ describe('第 8 點：排除尾數跟自己的平常比（2026-10-11 改）', ()
 
   it('燈號挑的尾數 = 細節卡粗體的排除尾數', () => {
     const rows = buildRows(randomDraws(800, 41))
-    const ev = evaluatePoints(rows).tail
+    const ev = evaluateHistory(rows).tail
     for (const t of [300, 555, 799]) {
       const d = tailDetail(rows, t)
-      assert.equal(ev[t]!.target, d.excluded == null ? '' : `尾${d.excluded}`)
+      if (ev[t]!.lit) assert.equal(ev[t]!.target, `不開尾${d.excluded}`)
+    }
+  })
+})
+
+describe('歷史挑（2026-10-11 使用者拍板：八點都要有，並排比）', () => {
+  it('不偷看未來：截到第 s+1 期算的第 s 期，和用全部資料算的一樣', () => {
+    const draws = randomDraws(700, 51)
+    const full = evaluateHistory(buildRows(draws))
+    for (const s of [200, 450, 698]) {
+      const part = evaluateHistory(buildRows(draws.slice(0, s + 2)))
+      for (const k of POINT_KEYS) {
+        assert.deepEqual(part[k][s], full[k][s], `${k} 第 ${s} 期`)
+      }
+    }
+  })
+
+  it('前面同樣情況還不到 MIN_N 次時不猜', () => {
+    const ev = evaluateHistory(buildRows(randomDraws(WARMUP + 20, 61)))
+    for (const k of POINT_KEYS) assert.ok(ev[k].slice(WARMUP, WARMUP + 20).every(e => !e.lit), k)
+    assert.equal(MIN_N, 30)
+  })
+
+  it('成真就是照它猜的那件事有沒有發生（②：反過來 / 繼續）', () => {
+    const rows = buildRows(randomDraws(900, 71))
+    const ev = evaluateHistory(rows).gapsum
+    const gs = (r: Row) => r.gaps.reduce<number>((a, g) => a + (g ?? 0), 0)
+    let checked = 0
+    for (let s = 300; s < rows.length - 1; s++) {
+      const e = ev[s]!
+      if (!e.lit) continue
+      const cur = Math.sign(gs(rows[s]!) - gs(rows[s - 1]!))
+      const nxt = Math.sign(gs(rows[s + 1]!) - gs(rows[s]!))
+      const want = e.target.includes('反過來') ? nxt === -cur : e.target.includes('繼續') ? nxt === cur : nxt === 0
+      assert.equal(e.hit, want, `第 ${s} 期 ${e.target}`)
+      checked++
+    }
+    assert.ok(checked > 100)
+  })
+
+  it('平常比例在 0～1 之間；猜中率統計格式與你的看法相同', () => {
+    const ev = evaluateHistory(buildRows(randomDraws(800, 81)))
+    for (const k of POINT_KEYS) {
+      for (const e of ev[k]) if (e.lit) assert.ok(e.base != null && e.base >= 0 && e.base <= 1, k)
     }
   })
 })

@@ -5,7 +5,7 @@ import { LOW_RUN, type PointEval } from '~~/shared/lotto/scan/points/evaluate'
 import type { Row } from '~~/shared/lotto/scan/points/rows'
 import type { PointSummary } from '~~/shared/lotto/scan/points/stats'
 
-const props = defineProps<{ rows: Row[], t: number, now: PointEval, summary: PointSummary }>()
+const props = defineProps<{ rows: Row[], t: number, now: PointEval, summary: PointSummary, hNow: PointEval, hSummary: PointSummary }>()
 const d = computed(() => lowDetail(props.rows, props.t))
 const total = computed(() => d.value.dist.reduce((a, b) => a + b, 0))
 const baseLe2 = computed(() => (total.value ? (d.value.dist[0]! + d.value.dist[1]! + d.value.dist[2]!) / total.value : null))
@@ -23,6 +23,8 @@ const mean = computed(() => (total.value ? d.value.dist.reduce((a, c, k) => a + 
     point-key="low"
     :now="now"
     :summary="summary"
+    :h-now="hNow"
+    :h-summary="hSummary"
   >
     <div class="grid gap-4 sm:grid-cols-2">
       <div class="space-y-1">

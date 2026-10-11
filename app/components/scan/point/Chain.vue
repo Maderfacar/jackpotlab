@@ -5,7 +5,7 @@ import type { PointEval } from '~~/shared/lotto/scan/points/evaluate'
 import type { Row } from '~~/shared/lotto/scan/points/rows'
 import type { PointSummary } from '~~/shared/lotto/scan/points/stats'
 
-const props = defineProps<{ rows: Row[], t: number, now: PointEval, summary: PointSummary }>()
+const props = defineProps<{ rows: Row[], t: number, now: PointEval, summary: PointSummary, hNow: PointEval, hSummary: PointSummary }>()
 const d = computed(() => chainDetail(props.rows, props.t))
 const issues = computed(() => d.value.timeline.map(x => x.issue))
 const timelineRows = computed(() => [
@@ -24,6 +24,8 @@ const mixText = computed(() => {
     point-key="chain"
     :now="now"
     :summary="summary"
+    :h-now="hNow"
+    :h-summary="hSummary"
   >
     <div class="space-y-1">
       <div class="text-xs text-muted">

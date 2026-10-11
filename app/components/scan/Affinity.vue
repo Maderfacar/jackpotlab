@@ -15,6 +15,12 @@ const props = defineProps<{
   allTrue: AllTrueRow[]
 }>()
 const emit = defineEmits<{ jump: [key: PointKey] }>()
+/** 看「你的看法」還是「歷史挑」 */
+const set = defineModel<'mine' | 'hist'>('set', { required: true })
+const setItems = [
+  { label: '你的看法', value: 'mine' },
+  { label: '歷史挑', value: 'hist' }
+]
 
 const labels = POINT_META.map(m => `${m.no} ${m.name}`)
 const issues = computed(() => props.strip.low.map(c => c.issue))
@@ -49,6 +55,17 @@ const shade = (h: number, k: number) => `color-mix(in oklab, var(--viz-blue) ${M
       <p class="text-sm text-muted">
         八點不會每期都亮、也不會全部說中。這裡看哪幾點常常一起說中（相吸）、哪幾點很少一起說中（相斥）。
       </p>
+      <div class="flex items-center gap-2 pt-1">
+        <span class="text-xs text-muted">要看：</span>
+        <UTabs
+          v-model="set"
+          :items="setItems"
+          :content="false"
+          size="xs"
+          variant="pill"
+          color="primary"
+        />
+      </div>
     </div>
 
     <UCard>

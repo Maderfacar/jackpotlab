@@ -11,7 +11,8 @@ import { HISTORY_FILE_PATH, mergeDraws, parseHistoryFile, type PlainDraw } from 
 import type { DrawQueryResponse } from '~~/shared/lotto/types'
 import { WARMUP } from '~~/shared/lotto/scan/scan'
 import { evaluatePoints, POINT_KEYS, type PointKey } from '~~/shared/lotto/scan/points/evaluate'
-import { POINT_META } from '~~/shared/lotto/scan/points/meta'
+import { evaluateHistory } from '~~/shared/lotto/scan/points/history'
+import { pickKey, POINT_META } from '~~/shared/lotto/scan/points/meta'
 import { buildRows } from '~~/shared/lotto/scan/points/rows'
 import { allTrueTable, pairMatrix, strip, summarize } from '~~/shared/lotto/scan/points/stats'
 
@@ -35,6 +36,8 @@ const { data, status, error } = useAsyncData('scan-draws', async () => {
 
 const rows = computed(() => buildRows(data.value?.draws ?? []))
 const evals = computed(() => evaluatePoints(rows.value))
+/** 歷史挑：每期照 20 年同樣情況挑的猜法（shared/lotto/scan/points/history.ts） */
+const hEvals = computed(() => evaluateHistory(rows.value))
 const lastT = computed(() => rows.value.length - 1)
 
 /** null = 一直跟著最新一期 */
@@ -50,7 +53,10 @@ const ready = computed(() => rows.value.length > WARMUP + 2)
 const draw = computed(() => rows.value[t.value]!)
 const nextDraw = computed(() => rows.value[t.value + 1] ?? null)
 const summary = computed(() => summarize(evals.value, t.value))
-const nowEvals = computed(() => Object.fromEntries(POINT_KEYS.map(k => [k, evals.value[k][t.value]!])) as Record<PointKey, typeof evals.value.low[number]>)
+const hSummary = computed(() => summarize(hEvals.value, t.value))
+type Ev = typeof evals.value.low[number]
+const nowEvals = computed(() => Object.fromEntries(POINT_KEYS.map(k => [k, evals.value[k][t.value]!])) as Record<PointKey, Ev>)
+const hNowEvals = computed(() => Object.fromEntries(POINT_KEYS.map(k => [k, hEvals.value[k][t.value]!])) as Record<PointKey, Ev>)
 
 // ---- 判斷勾選 ----
 const picks = useScanPicks()
@@ -61,13 +67,19 @@ const tiles = computed(() => POINT_META.map(m => ({
   meta: m,
   now: nowEvals.value[m.key],
   summary: summary.value[m.key],
-  picked: picks.isPicked(draw.value.issue, m.key)
+  picked: picks.isPicked(draw.value.issue, pickKey(m.key, false)),
+  hNow: hNowEvals.value[m.key],
+  hSummary: hSummary.value[m.key],
+  hPicked: picks.isPicked(draw.value.issue, pickKey(m.key, true))
 })))
 
 // ---- 相吸相斥 ----
-const stripData = computed(() => strip(evals.value, rows.value, t.value, STRIP_SIZE))
-const matrix = computed(() => pairMatrix(evals.value, t.value))
-const allTrue = computed(() => allTrueTable(evals.value, t.value))
+/** 相吸相斥要看「你的看法」還是「歷史挑」 */
+const affinitySet = ref<'mine' | 'hist'>('mine')
+const affinityEvals = computed(() => (affinitySet.value === 'mine' ? evals.value : hEvals.value))
+const stripData = computed(() => strip(affinityEvals.value, rows.value, t.value, STRIP_SIZE))
+const matrix = computed(() => pairMatrix(affinityEvals.value, t.value))
+const allTrue = computed(() => allTrueTable(affinityEvals.value, t.value))
 
 const rangeText = computed(() => {
   if (!ready.value) return ''
@@ -196,6 +208,7 @@ function jump(key: PointKey) {
       />
 
       <ScanAffinity
+        v-model:set="affinitySet"
         :strip="stripData"
         :matrix="matrix"
         :all-true="allTrue"
@@ -211,48 +224,64 @@ function jump(key: PointKey) {
           :t="t"
           :now="nowEvals.low"
           :summary="summary.low"
+          :h-now="hNowEvals.low"
+          :h-summary="hSummary.low"
         />
         <ScanPointGapSum
           :rows="rows"
           :t="t"
           :now="nowEvals.gapsum"
           :summary="summary.gapsum"
+          :h-now="hNowEvals.gapsum"
+          :h-summary="hSummary.gapsum"
         />
         <ScanPointValue
           :rows="rows"
           :t="t"
           :now="nowEvals.value"
           :summary="summary.value"
+          :h-now="hNowEvals.value"
+          :h-summary="hSummary.value"
         />
         <ScanPointPair
           :rows="rows"
           :t="t"
           :now="nowEvals.pair"
           :summary="summary.pair"
+          :h-now="hNowEvals.pair"
+          :h-summary="hSummary.pair"
         />
         <ScanPointY
           :rows="rows"
           :t="t"
           :now="nowEvals.y"
           :summary="summary.y"
+          :h-now="hNowEvals.y"
+          :h-summary="hSummary.y"
         />
         <ScanPointPos
           :rows="rows"
           :t="t"
           :now="nowEvals.pos"
           :summary="summary.pos"
+          :h-now="hNowEvals.pos"
+          :h-summary="hSummary.pos"
         />
         <ScanPointChain
           :rows="rows"
           :t="t"
           :now="nowEvals.chain"
           :summary="summary.chain"
+          :h-now="hNowEvals.chain"
+          :h-summary="hSummary.chain"
         />
         <ScanPointTail
           :rows="rows"
           :t="t"
           :now="nowEvals.tail"
           :summary="summary.tail"
+          :h-now="hNowEvals.tail"
+          :h-summary="hSummary.tail"
         />
       </div>
 
@@ -260,6 +289,10 @@ function jump(key: PointKey) {
         :picks="picks.picks.value"
         :status="picks.status.value"
         :evals="evals"
+        :h-evals="hEvals"
+        :summary="summary"
+        :h-summary="hSummary"
+        :t="t"
         :index-of="indexOf"
         :rows="rows"
       />

@@ -101,7 +101,6 @@ export function evaluatePoints(rows: Row[]): Record<PointKey, PointEval[]> {
   const lowPosOcc = [0, 1, 2, 3, 4].map(() => new Occ())
   const gRun = [0, 0, 0, 0, 0]
   const tailOcc = Array.from({ length: 10 }, () => new Occ())
-  const tailCell = Array.from({ length: 10 }, () => Array.from({ length: TAIL_GAP_CAP + 1 }, () => ({ n: 0, hit: 0 })))
   const tailMasks: number[] = []
 
   for (let s = 0; s < rows.length; s++) {
@@ -136,17 +135,9 @@ export function evaluatePoints(rows: Row[]): Record<PointKey, PointEval[]> {
       gRun[p] = g == null || g > 5 ? gRun[p]! + 1 : 0
     }
 
-    // 尾數：先用「上一期開完時的隔期」把本期結果記進格子，再更新
+    // 尾數：每個尾數開出的頻率（第 4 點的平常用）
     const mask = r.nums.reduce((m, n) => m | (1 << (n % 10)), 0)
-    for (let d = 0; d < 10; d++) {
-      const gap = tailOcc[d]!.gapAt(s - 1)
-      if (gap != null && s >= WARMUP) {
-        const cell = tailCell[d]![Math.min(gap, TAIL_GAP_CAP)]!
-        cell.n++
-        if (mask & (1 << d)) cell.hit++
-      }
-      tailOcc[d]!.add(s, (mask & (1 << d)) !== 0)
-    }
+    for (let d = 0; d < 10; d++) tailOcc[d]!.add(s, (mask & (1 << d)) !== 0)
     tailMasks.push(mask)
 
     if (!live) {
@@ -266,30 +257,8 @@ export function evaluatePoints(rows: Row[]): Record<PointKey, PointEval[]> {
       })
     }
 
-    // ---- 第 8 點：排除尾數 —— 照目前隔期，下一期開出比例「比它自己平常低最多」的尾數 → 下一期沒開 ----
-    // （2026-10-11 使用者同意改：原本直接比開出率，尾 0 只有 10/20/30 三顆、本來就少開，91% 期數都挑到尾 0）
-    {
-      let best = -1
-      let bestRatio = Number.POSITIVE_INFINITY
-      let bestOwn = 0
-      for (let d = 0; d < 10; d++) {
-        const gap = tailOcc[d]!.gapAt(s)
-        if (gap == null) continue
-        const r = tailRatio(tailCell[d]!, Math.min(gap, TAIL_GAP_CAP))
-        if (r == null || r.ratio >= bestRatio) continue
-        best = d
-        bestRatio = r.ratio
-        bestOwn = r.own
-      }
-      const lit = best >= 0
-      out.tail.push({
-        lit,
-        strong: false,
-        target: lit ? `尾${best}` : '',
-        hit: lit && nx ? !hasTail(nx.nums, best) : null,
-        base: lit ? 1 - bestOwn : null
-      })
-    }
+    // ---- 第 8 點「你的看法」：使用者還沒給排除尾數的規則 → 先不亮（原本的排除規則是看歷史挑的，搬到 history.ts）----
+    out.tail.push(NONE)
   }
   return out
 }

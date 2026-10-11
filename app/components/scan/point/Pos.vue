@@ -5,7 +5,7 @@ import type { PointEval } from '~~/shared/lotto/scan/points/evaluate'
 import type { Row } from '~~/shared/lotto/scan/points/rows'
 import type { PointSummary } from '~~/shared/lotto/scan/points/stats'
 
-const props = defineProps<{ rows: Row[], t: number, now: PointEval, summary: PointSummary }>()
+const props = defineProps<{ rows: Row[], t: number, now: PointEval, summary: PointSummary, hNow: PointEval, hSummary: PointSummary }>()
 /** 下面的「連 k 期」與存摺看哪一顆；預設跟著亮燈的那顆 */
 const chosen = ref<number | null>(null)
 const litPos = computed(() => (props.now.lit ? Number(props.now.target.replace(/\D/g, '')) - 1 : 0))
@@ -35,6 +35,8 @@ const base = computed(() => {
     point-key="pos"
     :now="now"
     :summary="summary"
+    :h-now="hNow"
+    :h-summary="hSummary"
   >
     <div class="space-y-1">
       <div class="text-xs text-muted">
