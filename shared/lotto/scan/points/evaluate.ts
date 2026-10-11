@@ -266,33 +266,47 @@ export function evaluatePoints(rows: Row[]): Record<PointKey, PointEval[]> {
       })
     }
 
-    // ---- 第 8 點：排除尾數 —— 照目前隔期，歷史上下一期開出比例最低的尾數 → 下一期沒開 ----
+    // ---- 第 8 點：排除尾數 —— 照目前隔期，下一期開出比例「比它自己平常低最多」的尾數 → 下一期沒開 ----
+    // （2026-10-11 使用者同意改：原本直接比開出率，尾 0 只有 10/20/30 三顆、本來就少開，91% 期數都挑到尾 0）
     {
       let best = -1
-      let bestRate = 2
+      let bestRatio = Number.POSITIVE_INFINITY
+      let bestOwn = 0
       for (let d = 0; d < 10; d++) {
         const gap = tailOcc[d]!.gapAt(s)
         if (gap == null) continue
-        const cell = tailCell[d]![Math.min(gap, TAIL_GAP_CAP)]!
-        if (cell.n < TAIL_MIN_N) continue
-        const rate = cell.hit / cell.n
-        if (rate < bestRate) {
-          best = d
-          bestRate = rate
-        }
+        const r = tailRatio(tailCell[d]!, Math.min(gap, TAIL_GAP_CAP))
+        if (r == null || r.ratio >= bestRatio) continue
+        best = d
+        bestRatio = r.ratio
+        bestOwn = r.own
       }
       const lit = best >= 0
-      const freq = lit ? tailOcc[best]!.freq : null
       out.tail.push({
         lit,
         strong: false,
         target: lit ? `尾${best}` : '',
         hit: lit && nx ? !hasTail(nx.nums, best) : null,
-        base: freq == null ? null : 1 - freq
+        base: lit ? 1 - bestOwn : null
       })
     }
+
   }
   return out
+}
+
+/**
+ * 第 8 點：某尾數「隔這麼久（第 bucket 格）時下一期開出比例」÷「它自己平常的開出比例」。
+ * 平常 = 同一批期數（所有隔期格合計）的開出比例。格子次數少於 TAIL_MIN_N 不比（回 null）。
+ */
+export function tailRatio(cells: { n: number, hit: number }[], bucket: number): { rate: number, own: number, ratio: number } | null {
+  const cell = cells[bucket]!
+  if (cell.n < TAIL_MIN_N) return null
+  const total = cells.reduce((a, c) => ({ n: a.n + c.n, hit: a.hit + c.hit }), { n: 0, hit: 0 })
+  if (!total.hit) return null
+  const rate = cell.hit / cell.n
+  const own = total.hit / total.n
+  return { rate, own, ratio: rate / own }
 }
 
 function argMaxRun(runs: number[]): number {

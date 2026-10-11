@@ -19,7 +19,7 @@ export const POINT_META: PointMeta[] = [
   { key: 'y', no: '⑤', name: '位置 y', when: '平常多半 y=1 的那顆，連 2 期 y≠1', claim: '下一期這顆 y=1' },
   { key: 'pos', no: '⑥', name: '球位隔期', when: '同一顆連 2 期隔期 > 5', claim: '下一期這顆隔期 0～5' },
   { key: 'chain', no: '⑦', name: '連莊・梯型', when: '連莊 2 期、或梯型走了 2 步', claim: '下一期走完第 3 步' },
-  { key: 'tail', no: '⑧', name: '尾數隔期', when: '照目前隔期，歷史上下一期最少開的尾數', claim: '下一期不開這個尾數' }
+  { key: 'tail', no: '⑧', name: '尾數隔期', when: '照目前隔期，下一期開出比例比它自己平常低最多的尾數', claim: '下一期不開這個尾數' }
 ]
 
 export const metaOf = (key: PointKey): PointMeta => POINT_META.find(m => m.key === key)!

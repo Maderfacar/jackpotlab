@@ -3,7 +3,7 @@
  */
 import { tailPairEvents, WARMUP, type PairNext } from '../scan'
 import {
-  chainCandidates, GAPSUM_STRONG, LOW_RUN, stairs, TAIL_GAP_CAP, TAIL_MIN_N, tripleRepeats, VALUE_LEVELS, valueLevel
+  chainCandidates, GAPSUM_STRONG, LOW_RUN, stairs, TAIL_GAP_CAP, tailRatio, tripleRepeats, VALUE_LEVELS, valueLevel
 } from './evaluate'
 import { gapSumOf, hasTail, lowCount, pairTails, repeatCount, smallValueCount, y1Count, type Row } from './rows'
 import { intervalStats, ledger, type IntervalStats } from './stats'
@@ -297,15 +297,15 @@ export function tailDetail(rows: Row[], t: number) {
   }
   const tails = Array.from({ length: 10 }, (_, d) => {
     const stats = intervalStats(t, s => hasTail(rows[s]!.nums, d))
-    const cell = stats.current == null ? null : cells[d]![Math.min(stats.current, TAIL_GAP_CAP)]!
+    const ratio = stats.current == null ? null : tailRatio(cells[d]!, Math.min(stats.current, TAIL_GAP_CAP))
     const recent = rows.slice(Math.max(WARMUP, t - RECENT + 1), t + 1).map(r => hasTail(r.nums, d))
-    return { d, stats, next: cell && cell.n >= TAIL_MIN_N ? cell : null, recent }
+    return { d, stats, ratio, recent }
   })
-  const ranked = tails.filter(x => x.next).sort((a, b) => a.next!.hit / a.next!.n - b.next!.hit / b.next!.n)
-  return {
-    tails,
-    excluded: ranked[0]?.d ?? null
-  }
+  let excluded: number | null = null
+  tails.forEach((x) => {
+    if (x.ratio && (excluded == null || x.ratio.ratio < tails[excluded]!.ratio!.ratio)) excluded = x.d
+  })
+  return { tails, excluded }
 }
 
 /** 第 8 點存摺：尾數 pick 有沒有開 */

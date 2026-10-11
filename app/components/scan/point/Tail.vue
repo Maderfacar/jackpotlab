@@ -10,12 +10,12 @@ const chosen = ref<number | null>(null)
 const d = computed(() => tailDetail(props.rows, props.t))
 const pick = computed(() => chosen.value ?? d.value.excluded ?? 0)
 const led = computed(() => tailLedger(props.rows, props.t, pick.value))
-const pct = (r: { hit: number, n: number } | null) => (r && r.n ? Math.round((r.hit / r.n) * 100) : null)
+const pct = (v: number) => Math.round(v * 100)
 const dueItems = computed(() => d.value.tails.map(x => ({
   label: `尾 ${x.d}`,
   stats: x.stats,
   highlight: x.d === d.value.excluded,
-  note: pct(x.next) == null ? '' : `下期 ${pct(x.next)}%`
+  note: x.ratio ? `下期 ${pct(x.ratio.rate)}%／平常 ${pct(x.ratio.own)}%` : ''
 })))
 const issues = computed(() => props.rows.slice(Math.max(0, props.t - 29), props.t + 1).map(r => r.issue))
 const stripRows = computed(() => d.value.tails.map(x => ({
@@ -34,7 +34,7 @@ const stripRows = computed(() => d.value.tails.map(x => ({
   >
     <div class="space-y-1">
       <div class="text-xs text-muted">
-        0～9 各隔幾期沒開；「下期 x%」= 歷史上隔這麼久時，下一期開出的比例（最低的當排除，粗體）
+        0～9 各隔幾期沒開；「下期 x%／平常 y%」= 歷史上隔這麼久時下一期開出的比例，和這個尾數自己平常的比例；比平常低最多的當排除（粗體）
       </div>
       <ScanVizDue :items="dueItems" />
     </div>

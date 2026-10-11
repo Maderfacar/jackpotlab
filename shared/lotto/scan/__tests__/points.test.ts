@@ -7,7 +7,8 @@ import { describe, it } from 'node:test'
 
 import { mergeDraws, parseHistoryFile, type PlainDraw } from '../../history-file'
 import { WARMUP } from '../scan'
-import { chainCandidates, evaluatePoints, LOW_RUN, POINT_KEYS, stairs, tripleRepeats } from '../points/evaluate'
+import { chainCandidates, evaluatePoints, LOW_RUN, POINT_KEYS, stairs, tailRatio, tripleRepeats } from '../points/evaluate'
+import { tailDetail } from '../points/details'
 import { buildRows, lowCount, pairTails, type Row } from '../points/rows'
 import { allTrueTable, intervalStats, ledger, pairMatrix, summarize } from '../points/stats'
 
@@ -129,6 +130,34 @@ describe('evaluatePoints', () => {
       if (!e.lit) continue
       const d = Number(e.target.replace('尾', ''))
       assert.equal(e.hit, !rows[s + 1]!.nums.some(n => n % 10 === d))
+    }
+  })
+})
+
+describe('第 8 點：排除尾數跟自己的平常比（2026-10-11 改）', () => {
+  it('不會因為尾 0 只有 3 顆號碼就幾乎每期都挑尾 0', () => {
+    const ev = evaluatePoints(buildRows(randomDraws(1500, 33))).tail
+    const lit = ev.filter(e => e.lit)
+    const zero = lit.filter(e => e.target === '尾0').length
+    assert.ok(lit.length > 1000)
+    assert.ok(zero / lit.length < 0.5, `尾0 佔 ${zero}/${lit.length}`)
+  })
+
+  it('tailRatio：隔這麼久的開出比例 ÷ 自己平常；次數不夠回 null', () => {
+    const cells = [{ n: 40, hit: 20 }, { n: 30, hit: 6 }, { n: 10, hit: 4 }, { n: 0, hit: 0 }, { n: 0, hit: 0 }, { n: 0, hit: 0 }]
+    const r = tailRatio(cells, 1)!
+    assert.equal(r.rate, 0.2)
+    assert.equal(r.own, 30 / 80)
+    assert.ok(Math.abs(r.ratio - 0.2 / (30 / 80)) < 1e-12)
+    assert.equal(tailRatio(cells, 2), null)
+  })
+
+  it('燈號挑的尾數 = 細節卡粗體的排除尾數', () => {
+    const rows = buildRows(randomDraws(800, 41))
+    const ev = evaluatePoints(rows).tail
+    for (const t of [300, 555, 799]) {
+      const d = tailDetail(rows, t)
+      assert.equal(ev[t]!.target, d.excluded == null ? '' : `尾${d.excluded}`)
     }
   })
 })
