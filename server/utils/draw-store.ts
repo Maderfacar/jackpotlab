@@ -151,3 +151,17 @@ export async function getRecent(gameId: GameId, limit: number): Promise<DrawResu
     .get()
   return snap.docs.map(d => fromStored(d.data() as StoredDrawResult))
 }
+
+/** 取期號 > afterTerm 的期數，由舊到新，最多 limit 筆（給「歷史存檔之後的新期數」用，讀取次數 = 回傳筆數）。 */
+export async function getAfter(gameId: GameId, afterTerm: number, limit: number): Promise<DrawResult[]> {
+  const firestore = db()
+  if (!firestore) return []
+  const snap = await firestore
+    .collection(COLLECTION).doc(gameId)
+    .collection(RESULTS_SUBCOLLECTION)
+    .where('drawTerm', '>', afterTerm)
+    .orderBy('drawTerm', 'asc')
+    .limit(limit)
+    .get()
+  return snap.docs.map(d => fromStored(d.data() as StoredDrawResult))
+}

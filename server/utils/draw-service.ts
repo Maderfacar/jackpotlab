@@ -13,7 +13,7 @@ import {
   type SlowGameId
 } from '../../shared/lotto/fast-sources'
 import type { DrawResult } from '../../shared/lotto/types'
-import { getByDate, getLatest, getRecent, upsertDraws } from './draw-store'
+import { getAfter, getByDate, getLatest, getRecent, upsertDraws } from './draw-store'
 import { taiwanLottery } from './taiwan-lottery'
 
 /**
@@ -147,6 +147,11 @@ export async function getDrawsByDate(
  *  上限 7000：涵蓋賓果 days=30（30 × 230 期）。 */
 export async function getRecentDraws(gameId: GameId, limit: number): Promise<DrawResult[]> {
   return getRecent(gameId, Math.min(limit, 7000))
+}
+
+/** 期號 > afterTerm 的期數（由舊到新）— 純讀 Firestore，上限 1000 筆。 */
+export async function getDrawsAfter(gameId: GameId, afterTerm: number): Promise<DrawResult[]> {
+  return getAfter(gameId, afterTerm, 1000)
 }
 
 // ---------- internal helpers ----------
