@@ -7,8 +7,14 @@
  *   - 號碼欄正上方「目前隔期」= 現在每個號碼隔了幾期沒開（就是隔期狀態表的 slot 編號）。
  *   - 每顆球的隔期 / 現值 / 位置 x-y 來自 API history（與 /draws 頁同一套演算法）。
  *   - 右側 10 欄 = 尾數 0～9 各開出幾顆；再右邊 = 五顆（小→大）各一欄：上 = 隔期、中 = 值（藍底同遺漏色階）、下 = 位置 x-y（可關），最後是隔期和。
+ * 四種均值（2026-10-12）：隔期 0～19、值與位置 y 第 1～5 顆，目前的值 vs 往前 5／10／15 個與歷史平均
+ *   （app/utils/wave.ts；要全部歷史，所以另讀歷史檔 + /api/draws/lotto539/since）。
  * 顏色：藍（sequential，遺漏期數）+ 橘（開出），已用 dataviz validator 驗證亮 / 暗模式皆通過。
  */
+import { HISTORY_FILE_PATH, mergeDraws, parseHistoryFile } from '~~/shared/lotto/history-file'
+import type { DrawQueryResponse } from '~~/shared/lotto/types'
+import { computeWave } from '~/utils/wave'
+
 interface HistoryEntry {
   issue: string
   date: string
@@ -43,6 +49,15 @@ const { data, status, error } = useFetch<AnalysisJson>('/api/analysis/lotto539',
   query: { format: 'json' },
   server: false
 })
+
+// 四種均值要全部歷史：歷史檔 + 檔案之後的新期數（同 /scan，只讀新期數）
+const { data: waveDraws, status: waveStatus, error: waveError } = useAsyncData('board-wave-draws', async () => {
+  const history = parseHistoryFile(await $fetch(HISTORY_FILE_PATH))
+  const res = await $fetch<DrawQueryResponse>('/api/draws/lotto539/since', { query: { after: history.at(-1)?.issue ?? '0' } })
+  const newer = res.results.map(r => ({ issue: String(r.drawTerm), date: r.drawDate, nums: [...r.numbers].sort((a, b) => a - b) }))
+  return mergeDraws(history, newer)
+}, { server: false })
+const wave = computed(() => computeWave((waveDraws.value ?? []).map(d => ({ drawTerm: Number(d.issue), drawDate: d.date, prizes: d.nums }))))
 
 const rowCount = ref(50)
 const rowOptions = [
@@ -286,6 +301,13 @@ function toggleFocus(x: number) {
           </div>
         </div>
       </UCard>
+
+      <!-- 四種均值（隔期、值、位置 y） -->
+      <BoardWaveAverages
+        :wave="wave"
+        :loading="waveStatus === 'pending' || waveStatus === 'idle'"
+        :error-message="waveError ? `四種均值載入失敗：${waveError.message}` : ''"
+      />
 
       <!-- 控制列 -->
       <div class="flex flex-wrap items-center gap-x-5 gap-y-3">
