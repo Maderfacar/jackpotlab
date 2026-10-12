@@ -2,6 +2,7 @@
 /**
  * 四種均值（2026-10-12 使用者：放在 /board，對照隔期、值、位置）。
  * 算法見 app/utils/wave.ts；目前的值大於均值 → 橘底粗體。
+ * 位置 y 不用平均，改看次數（BoardYCounts）；值另外翻過來看盤面（BoardValueBoard）。
  */
 import type { WaveRow, WaveResult } from '~/utils/wave'
 
@@ -27,7 +28,7 @@ const aboveCount = (r: WaveRow) => r.avgs.filter(a => a.above).length
         >第 {{ wave.issue }} 期（{{ wave.date }}）開完的盤面</span>
       </h2>
       <p class="text-xs text-muted">
-        每一列的「目前」跟它往前 5、10、15 個數字的平均、還有歷史平均比。
+        隔期、值：每一列的「目前」跟它往前 5、10、15 個數字的平均、還有歷史平均比。
         <span class="wave-legend">橘底粗體</span> = 目前的值比這個平均大。
         歷史 = 2007 年第 101 期之後全部。
       </p>
@@ -100,8 +101,7 @@ const aboveCount = (r: WaveRow) => r.avgs.filter(a => a.above).length
         <section
           v-for="part in [
             { title: '隔期（第 1～5 顆，小→大）', note: '目前 = 最新一期這顆的隔期；平均 = 這之前的期數', rows: wave.gapBall },
-            { title: '值（第 1～5 顆，小→大）', note: '目前 = 最新一期這顆的值；平均 = 這之前的期數', rows: wave.value },
-            { title: '位置 y（第 1～5 顆，小→大）', note: '目前 = 最新一期這顆的 y；平均 = 這之前的期數', rows: wave.y }
+            { title: '值（第 1～5 顆，小→大）', note: '目前 = 最新一期這顆的值；平均 = 這之前的期數', rows: wave.value }
           ]"
           :key="part.title"
         >
@@ -152,7 +152,12 @@ const aboveCount = (r: WaveRow) => r.avgs.filter(a => a.above).length
             </table>
           </div>
         </section>
+        <BoardValueBoard :groups="wave.valueBoard" />
       </div>
+      <BoardYCounts
+        class="lg:col-span-2"
+        :rows="wave.yCounts"
+      />
     </div>
   </UCard>
 </template>

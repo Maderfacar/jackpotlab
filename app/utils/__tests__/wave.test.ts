@@ -7,6 +7,7 @@ import { readFileSync } from 'node:fs'
 import { describe, it } from 'node:test'
 
 import type { HistoryFile } from '../../../shared/lotto/history-file'
+import { hydrateFromDraws } from '../analysis'
 import { buildWaveRow, computeWave, type WaveResult } from '../wave'
 
 describe('buildWaveRow', () => {
@@ -28,6 +29,19 @@ describe('computeWave', () => {
 
   it('期數不夠回 null', () => {
     assert.equal(computeWave(draws.slice(0, 50)), null)
+  })
+
+  it('值盤面與 /draws 引擎的隔期狀態表一致（每格的值、號碼）', () => {
+    const part = draws.slice(0, 700)
+    const engine = hydrateFromDraws('lotto539', 60, part)
+    const expected = new Map<number, number[]>()
+    engine.periods.filter(p => p.prizes.length > 0).forEach((p) => {
+      const value = Number(p.record.split(',')[0] || 0)
+      expected.set(value, [...(expected.get(value) ?? []), ...p.prizes].sort((a, b) => a - b))
+    })
+    const got = computeWave(part)!.valueBoard
+    assert.deepEqual(new Map(got.map(g => [g.value, g.numbers])), expected)
+    assert.equal(got.reduce((n, g) => n + g.numbers.length, 0), 39)
   })
 
   it('115000246 盤面與已核對的 docs/wave/wave.json 一致', () => {
