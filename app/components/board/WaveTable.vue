@@ -43,7 +43,7 @@ const predictions = computed(() => new Map(props.rows.map((r): [string, Predicti
   return [r.key, { next: predictNext(r.open, r.current, r.recent, r.histSum, r.histCount, Number(raw)) }]
 })))
 
-const fmtDelta = (d: number) => `${d >= 0 ? '+' : '−'}${Math.abs(d).toFixed(2)}`
+const fmtDelta = (d: number) => (Math.abs(d) < 0.005 ? '不變' : `${d > 0 ? '+' : '−'}${Math.abs(d).toFixed(2)}`)
 </script>
 
 <template>
