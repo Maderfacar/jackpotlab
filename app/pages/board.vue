@@ -9,6 +9,9 @@
  *   - 右側 10 欄 = 尾數 0～9 各開出幾顆；再右邊 = 五顆（小→大）各一欄：上 = 隔期、中 = 值（藍底同遺漏色階）、下 = 位置 x-y（可關），最後是隔期和。
  * 四種均值（2026-10-12）：隔期 0～19、值與位置 y 第 1～5 顆，目前的值 vs 往前 5／10／15 個與歷史平均
  *   （app/utils/wave.ts；要全部歷史，所以另讀歷史檔 + /api/draws/lotto539/since）。
+ * 走勢表（2026-10-12 使用者，照他的 Excel）：底色分三區 1～13 藍、14～26 黃、27～39 藍；
+ *   連莊（相鄰兩期同號）兩顆都加實線框，梯型（相鄰兩期差 1 號，加或減）兩顆都加虛線框。
+ *   遺漏深淺只留在「目前隔期」那一列（可開「格子內顯示沒開期數」看數字）。
  * 顏色：藍（sequential，遺漏期數）+ 橘（開出），已用 dataviz validator 驗證亮 / 暗模式皆通過。
  */
 import { HISTORY_FILE_PATH, mergeDraws, parseHistoryFile } from '~~/shared/lotto/history-file'
@@ -78,6 +81,12 @@ interface BallInfo {
 interface BallCell extends BallInfo {
   x: number
 }
+/** 走勢表球的外框：連莊（相鄰兩期同號）、梯型（相鄰兩期差 1 號，加或減） */
+interface BallMark {
+  repeat: boolean
+  stair: boolean
+}
+
 interface Row {
   index: number
   issue: string
@@ -90,13 +99,24 @@ interface Row {
   balls: BallCell[]
   gapSum: number | ''
   prevIssue: Map<number, string | null>
+  marks: Map<number, BallMark>
 }
 
 const pad2 = (n: number) => String(n).padStart(2, '0')
 const toNum = (s: string | undefined) => (s == null || s === '' ? null : Number(s))
 
+/** 第 t 期每顆號碼的外框：跟上一期或下一期同號 → 連莊；差 1 號 → 梯型 */
+function marksOf(prizes: number[], prev: Set<number> | undefined, next: Set<number> | undefined): Map<number, BallMark> {
+  const near = (x: number, set: Set<number> | undefined) => !!set && (set.has(x - 1) || set.has(x + 1))
+  return new Map(prizes.map(x => [x, {
+    repeat: !!(prev?.has(x) || next?.has(x)),
+    stair: near(x, prev) || near(x, next)
+  }]))
+}
+
 const allRows = computed<Row[]>(() => {
   const hist = data.value?.history ?? []
+  const sets = hist.map(h => new Set(h.prizes.split(',').map(Number)))
   const lastSeen = new Array<number>(NUMBER_MAX + 1).fill(-1)
   const lastIssue = new Array<string | null>(NUMBER_MAX + 1).fill(null)
   return hist.map((h, t) => {
@@ -124,7 +144,8 @@ const allRows = computed<Row[]>(() => {
       tails: h.tails,
       balls: prizes.map(x => ({ x, ...drawn.get(x)! })),
       gapSum: h.sum ?? '',
-      prevIssue
+      prevIssue,
+      marks: marksOf(prizes, sets[t - 1], sets[t + 1])
     }
   })
 })
@@ -153,6 +174,9 @@ function valueStyle(v: number | null) {
   const f = Math.min(v, HEAT_CAP) / HEAT_CAP
   return { '--mix': `${Math.round(8 + f * 52)}%` }
 }
+
+/** 走勢表三區底色：1～13、14～26、27～39 */
+const zoneClass = (x: number) => (x <= 13 ? 'zone-a' : x <= 26 ? 'zone-b' : 'zone-c')
 
 function tailStyle(c: number) {
   if (c === 0) return {}
@@ -336,9 +360,15 @@ function toggleFocus(x: number) {
         </UButton>
         <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted">
           <span class="flex items-center gap-1.5"><span class="ball size-4 text-[0px]">·</span>開出</span>
-          <span class="flex items-center gap-1.5"><span class="ball ball-repeat size-4 text-[0px]">·</span>外框 = 上期也開過（隔期 0）</span>
+          <span class="flex items-center gap-1.5"><span class="ball mark-repeat size-4 text-[0px]">·</span>實線框 = 連莊（相鄰兩期同一號，兩顆都框）</span>
+          <span class="flex items-center gap-1.5"><span class="ball mark-stair size-4 text-[0px]">·</span>虛線框 = 梯型（相鄰兩期差 1 號，加或減，兩顆都框）</span>
           <span class="flex items-center gap-1.5">
-            <span class="legend-ramp" />沒開：越深 = 越久沒開（{{ HEAT_CAP }} 期以上最深）
+            <span class="zone-swatch zone-a" />1～13
+            <span class="zone-swatch zone-b" />14～26
+            <span class="zone-swatch zone-c" />27～39
+          </span>
+          <span class="flex items-center gap-1.5">
+            <span class="legend-ramp" />目前隔期那一列：越深 = 越久沒開（{{ HEAT_CAP }} 期以上最深）
           </span>
         </div>
       </div>
@@ -380,8 +410,8 @@ function toggleFocus(x: number) {
                 <th
                   v-for="x in NUMBERS"
                   :key="x"
-                  class="col-num cursor-pointer"
-                  :class="[x % 10 === 0 ? 'sep' : '', focusNumber === x ? 'is-focus' : '']"
+                  class="col-num cursor-pointer zone-cell"
+                  :class="[zoneClass(x), x === 13 || x === 26 ? 'zone-sep' : '', focusNumber === x ? 'is-focus' : '']"
                   @click="toggleFocus(x)"
                 >
                   {{ pad2(x) }}
@@ -447,16 +477,15 @@ function toggleFocus(x: number) {
                 <td
                   v-for="x in NUMBERS"
                   :key="x"
-                  class="heat-cell"
-                  :class="[x % 10 === 0 ? 'sep' : '', focusNumber === x ? 'is-focus' : '']"
-                  :style="r.drawn.has(x) ? {} : heatStyle(r.miss[x] ?? null)"
+                  class="heat-cell zone-cell"
+                  :class="[zoneClass(x), x === 13 || x === 26 ? 'zone-sep' : '', focusNumber === x ? 'is-focus' : '']"
                   @mouseenter="hovered = { row: r, x }"
                   @click="pinned = { row: r, x }"
                 >
                   <span
                     v-if="r.drawn.has(x)"
                     class="ball size-[21px] text-[10px]"
-                    :class="r.drawn.get(x)!.gap === 0 ? 'ball-repeat' : ''"
+                    :class="[r.marks.get(x)?.repeat ? 'mark-repeat' : '', r.marks.get(x)?.stair ? 'mark-stair' : '']"
                   >{{ pad2(x) }}</span>
                   <span
                     v-else-if="showMissNumbers && r.miss[x] != null"
@@ -539,6 +568,39 @@ function toggleFocus(x: number) {
 }
 .ball-repeat {
   box-shadow: 0 0 0 2px var(--ui-bg), 0 0 0 4px var(--ui-text);
+}
+/* 走勢表：連莊 = 實線框，梯型 = 虛線框（兩者都有就兩層） */
+.mark-repeat {
+  box-shadow: 0 0 0 1.5px var(--ui-bg), 0 0 0 3px var(--ui-text);
+}
+.mark-stair {
+  outline: 2px dashed var(--ui-text);
+  outline-offset: 1px;
+}
+.mark-repeat.mark-stair {
+  outline-offset: 3px;
+}
+
+/* 走勢表三區底色（照使用者的 Excel：藍、黃、藍） */
+.board-root {
+  --zone-blue: color-mix(in oklab, #2a78d6 18%, var(--ui-bg));
+  --zone-yellow: color-mix(in oklab, #eda100 24%, var(--ui-bg));
+}
+:global(.dark) .board-root {
+  --zone-blue: color-mix(in oklab, #3987e5 26%, var(--ui-bg));
+  --zone-yellow: color-mix(in oklab, #c98500 28%, var(--ui-bg));
+}
+/* 要壓過 .heat-cell 的底色，所以用兩個 class */
+.zone-cell.zone-a, .zone-cell.zone-c, .zone-swatch.zone-a, .zone-swatch.zone-c { background: var(--zone-blue); }
+.zone-cell.zone-b, .zone-swatch.zone-b { background: var(--zone-yellow); }
+.board th.zone-cell { color: var(--ui-text-highlighted); }
+.zone-cell.zone-sep { box-shadow: inset -2px 0 0 var(--ui-border-accented); }
+.zone-cell.is-focus { box-shadow: inset 2px 0 0 var(--drawn), inset -2px 0 0 var(--drawn); }
+.zone-swatch {
+  display: inline-block;
+  width: 14px;
+  height: 10px;
+  border-radius: 3px;
 }
 
 .chip {
