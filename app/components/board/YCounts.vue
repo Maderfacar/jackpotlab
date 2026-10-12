@@ -42,7 +42,7 @@ function tip(row: YCountRow, w: YWindow, hist: YWindow, k: number): string {
         <span class="yc-swatch yc-legend-above" />橘框 = 這幾期比例比歷史高
       </span>
     </div>
-    <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+    <div class="grid grid-cols-[minmax(0,1fr)] gap-4 sm:grid-cols-2 xl:grid-cols-5">
       <div
         v-for="row in rows"
         :key="row.key"

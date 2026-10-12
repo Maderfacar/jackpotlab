@@ -48,7 +48,7 @@ const aboveCount = (r: WaveRow) => r.avgs.filter(a => a.above).length
     </p>
     <div
       v-else-if="wave"
-      class="grid gap-6 lg:grid-cols-[1.3fr_1fr]"
+      class="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]"
     >
       <section>
         <h3 class="mb-1 text-sm font-semibold">
