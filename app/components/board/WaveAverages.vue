@@ -92,7 +92,7 @@ const issueOf = (t: number) => String(props.ctx?.draws[t]?.drawTerm ?? '')
     </p>
     <div
       v-else-if="wave"
-      class="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]"
+      class="grid grid-cols-[minmax(0,1fr)] gap-6 *:min-w-0 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]"
     >
       <BoardWaveTable
         v-model:expected="expected"

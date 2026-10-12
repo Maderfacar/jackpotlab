@@ -26,7 +26,7 @@ const HEIGHT = 240
 const PAD = { top: 14, right: 58, bottom: 26, left: 34 }
 
 const root = ref<HTMLElement | null>(null)
-const width = ref(720)
+const width = ref(320)
 let observer: ResizeObserver | null = null
 onMounted(() => {
   if (!root.value) return
@@ -250,6 +250,8 @@ const fmt = (v: number | null | undefined) => (v === null || v === undefined ? '
   --s2: #eb6834;
   --s3: #1baf7a;
   --s4: #eda100;
+  width: 100%;
+  min-width: 0;
   overflow: hidden;
 }
 :global(.dark) .trend-root,
