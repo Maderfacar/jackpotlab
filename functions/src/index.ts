@@ -3,6 +3,7 @@ import { setGlobalOptions } from 'firebase-functions/v2'
 import { logger } from 'firebase-functions/v2'
 import { onSchedule } from 'firebase-functions/v2/scheduler'
 import { scrapeAndStore } from './scraper.js'
+import { scrapeCaFantasy5 } from './ca-fantasy5.js'
 
 initializeApp()
 
@@ -86,4 +87,17 @@ export const scrapeSuperLotto = onSchedule({
 }, async () => {
   const outcome = await scrapeAndStore('super_lotto638')
   logger.info('scrapeSuperLotto done', outcome)
+})
+
+/**
+ * 美國加州天天樂（California Fantasy 5）— 每天加州時間 18:30 開獎（2026-10-12 使用者要求接進來）。
+ * 第三方網站更新時間不一定 → 加州時間 19:15、21:15、23:15、隔天 07:15 各抓一次；
+ * 已存到最新就只花 1 次讀取，沒有新的一期不寫。至少兩家一致才寫。
+ */
+export const scrapeCaFantasy5Daily = onSchedule({
+  schedule: '15 7,19,21,23 * * *',
+  timeZone: 'America/Los_Angeles'
+}, async () => {
+  const outcome = await scrapeCaFantasy5()
+  logger.info('scrapeCaFantasy5 done', outcome)
 })
