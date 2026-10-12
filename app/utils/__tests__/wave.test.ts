@@ -15,35 +15,35 @@ const file = JSON.parse(readFileSync('public/data/lotto539-history.json', 'utf8'
 const draws = file.rows.map(([drawTerm, drawDate, prizes]) => ({ drawTerm, drawDate, prizes }))
 
 describe('predictNext', () => {
-  // 隔期 4：目前已等 2，往前 1,2,3,4,0,…
-  const recent = [1, 2, 3, 4, 0, 1, 6, 1, 1, 0, 1, 0, 8, 0, 3]
+  // 隔期 4：目前已等 2，最近 15 個（含目前）2,1,2,3,4,0,…；歷史含目前共 51 個、總和 102
+  const recent = [2, 1, 2, 3, 4, 0, 1, 6, 1, 1, 0, 1, 0, 8, 0]
 
-  it('隔期格輸入 0：下一期從這格開出，目前那段 2 定案加進平均', () => {
-    const p = predictNext(true, 2, recent, 100, 50, 0)!
+  it('隔期格輸入 0：下一期從這格開出，新的 0 排最前面、也算進平均', () => {
+    const p = predictNext(true, 2, recent, 102, 51, 0)!
     assert.equal(p.current, 0)
-    assert.equal(p.avgs[0], (2 + 1 + 2 + 3 + 4) / 5)
-    assert.equal(p.avgs[1], (2 + 1 + 2 + 3 + 4 + 0 + 1 + 6 + 1 + 1) / 10)
-    assert.equal(p.avgs[3], 102 / 51)
+    assert.equal(p.avgs[0], (0 + 2 + 1 + 2 + 3) / 5)
+    assert.equal(p.avgs[1], (0 + 2 + 1 + 2 + 3 + 4 + 0 + 1 + 6 + 1) / 10)
+    assert.equal(p.avgs[3], 102 / 52)
   })
 
-  it('隔期格輸入目前 +1 以上：還沒開出，平均不變', () => {
-    const p = predictNext(true, 2, recent, 100, 50, 3)!
+  it('隔期格輸入目前 +1 以上：還沒開出，目前那個變成輸入的數字', () => {
+    const p = predictNext(true, 2, recent, 102, 51, 3)!
     assert.equal(p.current, 3)
-    assert.equal(p.avgs[0], (1 + 2 + 3 + 4 + 0) / 5)
-    assert.equal(p.avgs[3], 2)
+    assert.equal(p.avgs[0], (3 + 1 + 2 + 3 + 4) / 5)
+    assert.equal(p.avgs[3], 103 / 51)
   })
 
   it('隔期格輸入 1～目前：不可能，回 null', () => {
-    assert.equal(predictNext(true, 2, recent, 100, 50, 1), null)
-    assert.equal(predictNext(true, 2, recent, 100, 50, 2), null)
+    assert.equal(predictNext(true, 2, recent, 102, 51, 1), null)
+    assert.equal(predictNext(true, 2, recent, 102, 51, 2), null)
   })
 
-  it('第 1～5 顆：輸入的數字是新的目前，原本的目前加進平均', () => {
-    const r = [4, 1, 0, 2, 3, 11, 2, 6, 7, 0, 4, 0, 2, 19, 0]
+  it('第 1～5 顆：輸入的數字排最前面、算進平均', () => {
+    const r = [0, 4, 1, 0, 2, 3, 11, 2, 6, 7, 0, 4, 0, 2, 19]
     const p = predictNext(false, 0, r, 900, 100, 5)!
     assert.equal(p.current, 5)
-    assert.equal(p.avgs[0], (0 + 4 + 1 + 0 + 2) / 5)
-    assert.equal(p.avgs[3], 900 / 101)
+    assert.equal(p.avgs[0], (5 + 0 + 4 + 1 + 0) / 5)
+    assert.equal(p.avgs[3], 905 / 101)
   })
 
   it('預測的平均 = 真的多開一期之後重算的平均', () => {

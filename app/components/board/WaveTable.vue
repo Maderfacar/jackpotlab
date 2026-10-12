@@ -4,7 +4,7 @@
  * - 目前的值大於平均 → 橘底粗體。
  * - 最後一欄輸入「下一期開完後的目前值」→ 目前與四個平均下面即時顯示下一期會變成怎樣（predictNext）。
  *   隔期格：0 = 下一期從這格開出；比目前大 1 以上 = 還沒開出。
- * - 點一列 → 上層畫這一列的走勢。
+ * - 點一列或在那一列輸入 → 上層畫這一列的走勢（輸入的預期會畫成最右邊的「下期」）。
  */
 import type { WaveRow } from '~/utils/wave'
 import { predictNext } from '~/utils/wave-series'
@@ -31,6 +31,8 @@ const aboveCount = (r: WaveRow) => r.avgs.filter(a => a.above).length
 
 function setExpected(r: WaveRow, value: string) {
   expected.value = { ...expected.value, [rowId(r)]: value }
+  // 輸入哪一列，走勢圖就切到那一列
+  emit('select', rowId(r))
 }
 
 interface Prediction {

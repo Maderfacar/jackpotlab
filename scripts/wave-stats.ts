@@ -32,9 +32,9 @@ function toMarkdown(w: WaveResult, title: string, keyName: string, note: string,
     '|---|---|---|---|---|---|---|',
     ...rows.map(r => `| ${r.key} | ${r.current} | ${r.avgs.map(cell).join(' | ')} | ${r.avgs.filter(a => a.above).length} |`),
     '',
-    `## 驗證用原始數字（往前 ${WAVE_RECENT} 個，左邊最新）`,
+    `## 驗證用原始數字（最近 ${WAVE_RECENT} 個，左邊最新，第一個就是目前）`,
     '',
-    `| ${keyName} | 目前的值 | 往前 ${WAVE_RECENT} 個 |`,
+    `| ${keyName} | 目前的值 | 最近 ${WAVE_RECENT} 個 |`,
     '|---|---|---|',
     ...rows.map(r => `| ${r.key} | ${r.current} | ${r.recent.join(',')} |`),
     ''
@@ -72,11 +72,11 @@ function valueBoardMarkdown(w: WaveResult): string {
 
 mkdirSync(OUT_DIR, { recursive: true })
 writeFileSync(`${OUT_DIR}/gap.md`, toMarkdown(wave, '隔期 0～19 四種均值', '隔期',
-  '目前的值＝這格已經幾期沒開出（記錄第一個數字，還在加）；均值＝往前已結束的 5／10／15 個數字、歷史＝第 101 期之後全部。', wave.gap))
+  '目前的值＝這格已經幾期沒開出（記錄第一個數字，還在加）；均值＝含目前在內的最近 5／10／15 個數字、歷史＝第 101 期之後全部（含目前）。', wave.gap))
 writeFileSync(`${OUT_DIR}/gap-ball.md`, toMarkdown(wave, '隔期：第 1～5 顆四種均值', '球',
-  '第 1～5 顆＝號碼由小到大。目前的值＝最新一期這顆的隔期；均值＝這之前的 5／10／15 期、歷史＝第 101 期之後全部。', wave.gapBall))
+  '第 1～5 顆＝號碼由小到大。目前的值＝最新一期這顆的隔期；均值＝含最新一期在內的最近 5／10／15 期、歷史＝第 101 期之後全部。', wave.gapBall))
 writeFileSync(`${OUT_DIR}/value.md`, toMarkdown(wave, '值：第 1～5 顆四種均值', '球',
-  '第 1～5 顆＝號碼由小到大。目前的值＝最新一期這顆的值；均值＝這之前的 5／10／15 期、歷史＝第 101 期之後全部。', wave.value))
+  '第 1～5 顆＝號碼由小到大。目前的值＝最新一期這顆的值；均值＝含最新一期在內的最近 5／10／15 期、歷史＝第 101 期之後全部。', wave.value))
 writeFileSync(`${OUT_DIR}/y.md`, yMarkdown(wave))
 writeFileSync(`${OUT_DIR}/value-board.md`, valueBoardMarkdown(wave))
 writeFileSync(`${OUT_DIR}/wave.json`, `${JSON.stringify(wave, null, 1)}\n`)

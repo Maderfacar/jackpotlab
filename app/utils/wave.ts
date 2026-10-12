@@ -1,17 +1,17 @@
 /**
  * 波段均值（2026-10-12 使用者拍板）：以「最新一期開完的盤面」為基礎，算隔期、值、位置 y。
  *
- * - 隔期 0～19：每格的記錄（/draws 的 record，最左最新）。目前的值 = 第一個數字（這格已幾期沒開出，還在加）；
- *   均值 = 往前已結束的 5／10／15 個數字、歷史 = 第 101 期之後開始的已結束數字。
- * - 隔期（第 1～5 顆）、值：第 1～5 顆（號碼由小到大）各自一串，每期一個數字。目前的值 = 最新一期那顆；
- *   均值 = 最新一期之前的 5／10／15 期、歷史 = 第 101 期之後全部（不含最新一期）。
+ * - 隔期 0～19：每格的記錄（/draws 的 record，最左最新）。目前的值 = 第一個數字（這格已幾期沒開出，還在加）。
+ * - 隔期（第 1～5 顆）、值：第 1～5 顆（號碼由小到大）各自一串，每期一個數字。目前的值 = 最新一期那顆。
+ * - 均值 = 含目前在內的最近 5／10／15 個數字；歷史 = 第 101 期之後全部（含目前）。
+ *   （2026-10-12 使用者改：最新那個數字不管多少都要算進平均；原本不含目前。）
  * - 目前的值大於均值 → above。
  * - 位置 y 不用平均（看不出是 1 還是 3），改數最近 5／10／15 期與歷史 y=1、2、3、4 以上各幾次。
  * - 值盤面：同一格的號碼值一定相同，所以把盤面翻過來看「每種值有幾顆號碼帶著」。
  * - 前 100 期是盤面剛開始累積的期間，不算進歷史。
  *
- * 底稿與每期狀態在 app/utils/wave-series.ts。docs/wave/wave.json 由 processDraw 版產生、
- * 並經 Python 獨立重算核對，測試要求逐值一致。scripts/wave-stats.ts 用這裡寫 docs/wave。
+ * 底稿與每期狀態在 app/utils/wave-series.ts。docs/wave/wave.json 經 Python 照定義獨立重算核對，
+ * 測試要求逐值一致。scripts/wave-stats.ts 用這裡寫 docs/wave。
  */
 import type { AnalysisDrawInput } from './analysis'
 import {
@@ -34,7 +34,7 @@ export interface WaveRow {
   open: boolean
   current: number
   avgs: WaveAvg[]
-  /** 平均用的數字（最新在前，最多 WAVE_RECENT 個），給人工驗證與輸入預期數字用 */
+  /** 平均用的數字（最新在前，第一個就是目前，最多 WAVE_RECENT 個），給人工驗證與輸入預期數字用 */
   recent: number[]
   histSum: number
   histCount: number
@@ -88,7 +88,7 @@ function average(label: string, current: number, total: number, count: number): 
 /** 某一列在第 t 期（期序）開完時的表格列；數字不夠回 null */
 export function rowAt(s: WaveSeries, t: number): WaveRow | null {
   const snap = snapshotAt(s, t)
-  if (!snap || snap.histCount === 0) return null
+  if (!snap) return null
   const sums = WAVE_LENGTHS.map(n => snap.recent.length >= n ? snap.recent.slice(0, n).reduce((a, b) => a + b, 0) : null)
   if (sums.some(x => x === null)) return null
   return {

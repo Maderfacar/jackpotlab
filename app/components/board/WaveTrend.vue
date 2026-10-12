@@ -3,6 +3,7 @@
  * 一列的走勢（2026-10-12 使用者：要知道這四個欄位在過去每一期的走勢）。
  * 灰色長條 = 每期開完時的「目前」；四條線 = 當期的 5／10／15 個平均與歷史平均。
  * 顏色：dataviz 參考調色盤的類別色前四格（固定順序：藍、橘、青綠、黃），線尾直接標名稱，滑過顯示當期數字。
+ * 有輸入「下一期目前」時，最右邊多一格「下期」：虛線接上、空心點、虛框長條。
  */
 import type { TrendPoint } from '~/utils/wave-series'
 
@@ -13,7 +14,19 @@ const props = defineProps<{
   issueOf: (t: number) => string
   /** 隔期格：「目前」是已等幾期 */
   open: boolean
+  /** 輸入的「下一期目前」算出來的下一期狀態 */
+  predicted?: { current: number, avgs: number[] } | null
 }>()
+
+interface ChartPoint extends TrendPoint {
+  predicted?: boolean
+}
+/** 期序 −1 = 下一期（預期） */
+const all = computed<ChartPoint[]>(() => (props.predicted
+  ? [...props.points, { t: -1, current: props.predicted.current, avgs: props.predicted.avgs, predicted: true }]
+  : props.points))
+const predIndex = computed(() => (props.predicted ? props.points.length : -1))
+const labelOf = (t: number) => (t < 0 ? '下期' : props.issueOf(t).slice(-3))
 
 const SERIES = [
   { label: '5 個', cls: 's1' },
@@ -48,7 +61,7 @@ const innerW = computed(() => width.value - PAD.left - PAD.right)
 const innerH = HEIGHT - PAD.top - PAD.bottom
 
 const yMax = computed(() => {
-  const vals = props.points.flatMap(p => [p.current, ...p.avgs.filter((a): a is number => a !== null)])
+  const vals = all.value.flatMap(p => [p.current, ...p.avgs.filter((a): a is number => a !== null)])
   const m = Math.max(1, ...vals)
   const step = m <= 5 ? 1 : m <= 12 ? 2 : m <= 30 ? 5 : 10
   return Math.ceil((m * 1.05) / step) * step
@@ -58,7 +71,7 @@ const ticks = computed(() => {
   return Array.from({ length: n + 1 }, (_, i) => (yMax.value / n) * i)
 })
 
-const step = computed(() => innerW.value / Math.max(1, props.points.length))
+const step = computed(() => innerW.value / Math.max(1, all.value.length))
 const xAt = (i: number) => PAD.left + step.value * (i + 0.5)
 const yAt = (v: number) => PAD.top + innerH - (v / yMax.value) * innerH
 
@@ -72,9 +85,19 @@ function pathOf(k: number): string {
   return d
 }
 
+/** 最後一期接到「下期」的虛線 */
+function predPathOf(k: number): string {
+  const last = props.points.at(-1)
+  const v0 = last?.avgs[k]
+  const v1 = props.predicted?.avgs[k]
+  if (!last || v0 === null || v0 === undefined || v1 === undefined) return ''
+  const i = props.points.length - 1
+  return `M${xAt(i).toFixed(1)},${yAt(v0).toFixed(1)}L${xAt(i + 1).toFixed(1)},${yAt(v1).toFixed(1)}`
+}
+
 /** 線尾標籤：依最後一點的高度排，太近就往下推，避免重疊 */
 const endLabels = computed(() => {
-  const last = props.points.at(-1)
+  const last = all.value.at(-1)
   if (!last) return []
   const items = SERIES.map((s, k) => ({ ...s, v: last.avgs[k], y: last.avgs[k] == null ? 0 : yAt(last.avgs[k]!) }))
     .filter(it => it.v !== null && it.v !== undefined)
@@ -86,13 +109,13 @@ const endLabels = computed(() => {
 })
 
 const xLabels = computed(() => {
-  const n = props.points.length
+  const n = all.value.length
   const every = Math.max(1, Math.ceil(n / Math.max(2, Math.floor(innerW.value / 70))))
-  return props.points.map((p, i) => ({ i, t: p.t })).filter(({ i }) => i % every === 0 || i === n - 1)
+  return all.value.map((p, i) => ({ i, t: p.t })).filter(({ i }) => i % every === 0 || i === n - 1)
 })
 
 const hover = ref<number | null>(null)
-const hoverPoint = computed(() => (hover.value === null ? null : props.points[hover.value] ?? null))
+const hoverPoint = computed(() => (hover.value === null ? null : all.value[hover.value] ?? null))
 const tipLeft = computed(() => {
   if (hover.value === null) return 0
   const x = xAt(hover.value)
@@ -149,14 +172,14 @@ const fmt = (v: number | null | undefined) => (v === null || v === undefined ? '
         </g>
         <g class="bars">
           <rect
-            v-for="(p, i) in points"
+            v-for="(p, i) in all"
             :key="p.t"
             :x="xAt(i) - Math.max(1, step * 0.3)"
             :width="Math.max(2, step * 0.6)"
             :y="yAt(p.current)"
             :height="Math.max(0, yAt(0) - yAt(p.current))"
             rx="1.5"
-            :class="hover === i ? 'is-hover' : ''"
+            :class="[hover === i ? 'is-hover' : '', p.predicted ? 'is-pred' : '']"
           />
         </g>
         <path
@@ -166,6 +189,24 @@ const fmt = (v: number | null | undefined) => (v === null || v === undefined ? '
           class="line"
           :class="s.cls"
         />
+        <template v-if="predicted">
+          <path
+            v-for="(s, k) in SERIES"
+            :key="`p${s.label}`"
+            :d="predPathOf(k)"
+            class="line pred-line"
+            :class="s.cls"
+          />
+          <circle
+            v-for="(s, k) in SERIES"
+            :key="`pc${s.label}`"
+            :cx="xAt(predIndex)"
+            :cy="yAt(predicted.avgs[k] ?? 0)"
+            r="3.5"
+            class="pred-dot"
+            :class="s.cls"
+          />
+        </template>
         <g
           v-for="l in endLabels"
           :key="l.label"
@@ -189,7 +230,8 @@ const fmt = (v: number | null | undefined) => (v === null || v === undefined ? '
             :x="xAt(xl.i)"
             :y="HEIGHT - 8"
             text-anchor="middle"
-          >{{ issueOf(xl.t).slice(-3) }}</text>
+            :class="xl.t < 0 ? 'pred-label' : ''"
+          >{{ labelOf(xl.t) }}</text>
         </g>
         <line
           v-if="hover !== null"
@@ -212,7 +254,7 @@ const fmt = (v: number | null | undefined) => (v === null || v === undefined ? '
           />
         </g>
         <rect
-          v-for="(p, i) in points"
+          v-for="(p, i) in all"
           :key="`h${p.t}`"
           :x="PAD.left + step * i"
           :y="PAD.top"
@@ -229,7 +271,7 @@ const fmt = (v: number | null | undefined) => (v === null || v === undefined ? '
         :style="{ left: `${tipLeft}px` }"
       >
         <div class="font-semibold">
-          第 {{ issueOf(hoverPoint.t) }} 期開完
+          {{ hoverPoint.t < 0 ? '下一期（照你輸入的預期）' : `第 ${issueOf(hoverPoint.t)} 期開完` }}
         </div>
         <div>目前 <b>{{ hoverPoint.current }}</b></div>
         <div
@@ -305,6 +347,19 @@ circle.s2 { fill: var(--s2); }
 circle.s3 { fill: var(--s3); }
 circle.s4 { fill: var(--s4); }
 .dot { stroke: var(--ui-bg); stroke-width: 2; }
+.pred-line { stroke-dasharray: 4 3; }
+circle.pred-dot { fill: var(--ui-bg); stroke-width: 2; }
+.pred-dot.s1 { stroke: var(--s1); }
+.pred-dot.s2 { stroke: var(--s2); }
+.pred-dot.s3 { stroke: var(--s3); }
+.pred-dot.s4 { stroke: var(--s4); }
+.bars rect.is-pred {
+  fill: transparent;
+  stroke: var(--ui-text-muted);
+  stroke-width: 1.5;
+  stroke-dasharray: 3 2;
+}
+.x-axis text.pred-label { fill: var(--ui-text-highlighted); font-weight: 700; }
 .crosshair { stroke: var(--ui-text-muted); stroke-width: 1; stroke-dasharray: 3 3; }
 .tooltip {
   position: absolute;

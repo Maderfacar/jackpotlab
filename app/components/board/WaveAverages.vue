@@ -3,11 +3,11 @@
  * 四種均值（2026-10-12 使用者：放在 /board，對照隔期、值、位置）。
  * 算法見 app/utils/wave.ts、wave-series.ts；目前的值大於均值 → 橘底粗體。
  * - 每列可輸入預期的下一個數字，平均即時改成加進去之後的值（BoardWaveTable）。
- * - 點一列 → 畫這一列過去每一期的目前值與四種平均（BoardWaveTrend）。
+ * - 點一列 → 畫這一列過去每一期的目前值與四種平均（BoardWaveTrend）；有輸入預期時最右邊多一個「下期」。
  * - 位置 y 不用平均，改看次數（BoardYCounts）；值另外翻過來看盤面（BoardValueBoard）。
  */
 import { waveFromContext, type WaveContext } from '~/utils/wave'
-import { trendOf, type WaveSeries } from '~/utils/wave-series'
+import { predictNext, trendOf, type WaveSeries } from '~/utils/wave-series'
 
 const props = defineProps<{
   ctx: WaveContext | null
@@ -18,9 +18,9 @@ const props = defineProps<{
 const wave = computed(() => (props.ctx ? waveFromContext(props.ctx) : null))
 
 const TABLES = [
-  { id: 'gap', title: '隔期 0～19', keyLabel: '隔期', note: '目前 = 這格已經幾期沒開出（還在加）；平均 = 這格往前已結束的數字' },
-  { id: 'gapBall', title: '隔期（第 1～5 顆，小→大）', keyLabel: '球', note: '目前 = 最新一期這顆的隔期；平均 = 這之前的期數' },
-  { id: 'value', title: '值（第 1～5 顆，小→大）', keyLabel: '球', note: '目前 = 最新一期這顆的值；平均 = 這之前的期數' }
+  { id: 'gap', title: '隔期 0～19', keyLabel: '隔期', note: '目前 = 這格已經幾期沒開出（還在加）；平均含目前這個' },
+  { id: 'gapBall', title: '隔期（第 1～5 顆，小→大）', keyLabel: '球', note: '目前 = 最新一期這顆的隔期；平均含最新一期' },
+  { id: 'value', title: '值（第 1～5 顆，小→大）', keyLabel: '球', note: '目前 = 最新一期這顆的值；平均含最新一期' }
 ] as const
 type TableId = typeof TABLES[number]['id']
 
@@ -57,6 +57,17 @@ const trendTitle = computed(() => {
 })
 
 const issueOf = (t: number) => String(props.ctx?.draws[t]?.drawTerm ?? '')
+
+/** 選到的那一列如果有輸入「下一期目前」，走勢圖最右邊多畫一個預期點 */
+const predicted = computed(() => {
+  const w = wave.value
+  const s = selected.value
+  if (!w || !s) return null
+  const raw = (expected.value[selectedId.value] ?? '').trim()
+  const row = w[s.table.id].find(r => r.key === s.series.key)
+  if (raw === '' || !row) return null
+  return predictNext(row.open, row.current, row.recent, row.histSum, row.histCount, Number(raw))
+})
 </script>
 
 <template>
@@ -70,11 +81,11 @@ const issueOf = (t: number) => String(props.ctx?.draws[t]?.drawTerm ?? '')
         >第 {{ wave.issue }} 期（{{ wave.date }}）開完的盤面</span>
       </h2>
       <p class="text-xs text-muted">
-        隔期、值：每一列的「目前」跟它往前 5、10、15 個數字的平均、還有歷史平均比。
+        隔期、值：每一列的「目前」跟最近 5、10、15 個數字的平均、還有歷史平均比（平均都含目前這個）。
         <span class="wave-legend">橘底粗體</span> = 目前的值比這個平均大。
         歷史 = 2007 年第 101 期之後全部。
-        最後一欄輸入你預期「下一期開完後的目前值」，目前和平均下面會顯示下一期變成怎樣（<span class="pred-legend">橘框</span> = 那時的目前比平均大）。
-        隔期格：輸入 0 = 下一期從這格開出（目前那段等待算進平均）；輸入比目前大 1 以上 = 還沒開出。
+        最後一欄輸入你預期「下一期開完後的目前值」，它會算進平均，目前和平均下面顯示下一期變成怎樣（<span class="pred-legend">橘框</span> = 那時的目前比平均大）。
+        隔期格：輸入 0 = 下一期從這格開出；輸入比目前大 1 以上 = 還沒開出、已等這麼多期。
         點任一列，下方畫出它過去每一期的走勢。
       </p>
     </template>
@@ -148,6 +159,7 @@ const issueOf = (t: number) => String(props.ctx?.draws[t]?.drawTerm ?? '')
           :points="trendPoints"
           :issue-of="issueOf"
           :open="selected.series.open"
+          :predicted="predicted"
         />
       </section>
 

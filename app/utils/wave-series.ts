@@ -122,13 +122,17 @@ export function ballSeries(balls: BallInfo[][], pick: (x: BallInfo) => number | 
   })
 }
 
-/** 第 t 期開完時這一列的狀態 */
+/**
+ * 第 t 期開完時這一列的狀態。
+ * 2026-10-12 使用者：最新那個數字（隔期格還在加的「目前」、第 1～5 顆最新一期那個）也要算進平均。
+ */
 export interface WaveSnapshot {
   current: number
-  /** 平均用的數字（最新在前，最多 WAVE_RECENT 個） */
+  /** 平均用的數字（最新在前，第一個就是目前，最多 WAVE_RECENT 個） */
   recent: number[]
-  /** 5／10／15 平均（數字不夠為 null） */
+  /** 5／10／15 平均（含目前；數字不夠為 null） */
   avgs: (number | null)[]
+  /** 歷史（第 101 期之後，含目前）的總和與個數 */
   histSum: number
   histCount: number
 }
@@ -148,29 +152,32 @@ function countUpTo(at: number[], t: number): number {
 export function snapshotAt(s: WaveSeries, t: number): WaveSnapshot | null {
   const idx = countUpTo(s.at, t)
   if (idx === 0) return null
+  // 隔期格：目前 = 還在加的等待期數，排在所有已結束的數字前面；第 1～5 顆：目前 = 最新一期那個（本來就在串裡）
   const current = s.open ? t - s.at[idx - 1]! : s.values[idx - 1]!
-  const end = s.open ? idx : idx - 1
-  const avgs = WAVE_LENGTHS.map(n => (end >= n ? (s.prefix[end]! - s.prefix[end - n]!) / n : null))
-  const recent = s.values.slice(Math.max(0, end - WAVE_RECENT), end).reverse()
-  const histCount = Math.max(0, end - s.histFrom)
-  const histSum = histCount ? s.prefix[end]! - s.prefix[s.histFrom]! : 0
-  return { current, recent, avgs, histSum, histCount }
+  const doneEnd = s.open ? idx : idx - 1
+  const sumDone = (n: number) => s.prefix[doneEnd]! - s.prefix[doneEnd - n]!
+  const avgs = WAVE_LENGTHS.map(n => (doneEnd >= n - 1 ? (current + sumDone(n - 1)) / n : null))
+  const recent = [current, ...s.values.slice(Math.max(0, doneEnd - (WAVE_RECENT - 1)), doneEnd).reverse()]
+  const doneHist = Math.max(0, doneEnd - s.histFrom)
+  const histSum = current + (doneHist ? s.prefix[doneEnd]! - s.prefix[s.histFrom]! : 0)
+  return { current, recent, avgs, histSum, histCount: doneHist + 1 }
 }
 
 /**
- * 輸入「下一期開完後的目前值」x，這一列會變成怎樣（2026-10-12 使用者：隔期 4 目前 2，輸入 0 = 下一期從這格開出）。
- * - 隔期格：x = 0 → 下一期這格開出，目前那段等待（current）定案、加進平均；
- *   x ≥ current + 1 → 還沒開出，平均不變；其他值不可能（回 null）。
- * - 第 1～5 顆：x = 下一期這顆的數字；目前那個（current）變成平均的一部分。
+ * 輸入「下一期開完後的目前值」x，這一列會變成怎樣（2026-10-12 使用者：隔期 4 目前 2，輸入 0 = 下一期從這格開出；
+ * 新的數字不管 0 還是幾，都要算進平均）。recent／histSum／histCount 都已含目前。
+ * - 隔期格：x = 0 → 下一期這格開出：目前那段定案，新的 0 排在最前面；
+ *   x ≥ current + 1 → 還沒開出：目前那個變成 x；其他值不可能（回 null）。
+ * - 第 1～5 顆：x = 下一期這顆的數字，排在最前面。
  * 回傳新的目前值與四種平均（5、10、15、歷史）。
  */
 export function predictNext(open: boolean, current: number, recent: number[], histSum: number, histCount: number, x: number): { current: number, avgs: number[] } | null {
   if (!Number.isInteger(x) || x < 0) return null
-  const stays = open && x > 0
-  if (stays && x < current + 1) return null
-  const base = stays ? recent : [current, ...recent]
-  const avgs = WAVE_LENGTHS.map(n => base.slice(0, n).reduce((a, b) => a + b, 0) / n)
-  const hist = stays ? histSum / histCount : (histSum + current) / (histCount + 1)
+  const replaces = open && x > 0
+  if (replaces && x < current + 1) return null
+  const list = replaces ? [x, ...recent.slice(1)] : [x, ...recent]
+  const avgs = WAVE_LENGTHS.map(n => list.slice(0, n).reduce((a, b) => a + b, 0) / n)
+  const hist = replaces ? (histSum - current + x) / histCount : (histSum + x) / (histCount + 1)
   return { current: x, avgs: [...avgs, hist] }
 }
 
@@ -187,7 +194,7 @@ export function trendOf(s: WaveSeries, from: number, to: number): TrendPoint[] {
   for (let t = Math.max(0, from); t <= to; t++) {
     const snap = snapshotAt(s, t)
     if (!snap) continue
-    out.push({ t, current: snap.current, avgs: [...snap.avgs, snap.histCount ? snap.histSum / snap.histCount : null] })
+    out.push({ t, current: snap.current, avgs: [...snap.avgs, snap.histSum / snap.histCount] })
   }
   return out
 }
