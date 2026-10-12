@@ -5,7 +5,7 @@
  */
 import type { ValueGroup } from '~/utils/wave'
 
-const props = defineProps<{ groups: ValueGroup[] }>()
+defineProps<{ groups: ValueGroup[] }>()
 
 const HEAT_CAP = 30
 const TOTAL = 39
@@ -17,7 +17,6 @@ function valueStyle(v: number) {
 }
 
 const pad2 = (n: number) => String(n).padStart(2, '0')
-const maxCount = computed(() => Math.max(...props.groups.map(g => g.numbers.length), 1))
 </script>
 
 <template>
@@ -39,10 +38,7 @@ const maxCount = computed(() => Math.max(...props.groups.map(g => g.numbers.leng
           class="vb-value"
           :style="valueStyle(g.value)"
         >值 {{ g.value }}</span>
-        <span
-          class="vb-track"
-          :style="{ '--share': `${(g.numbers.length / maxCount) * 100}%` }"
-        >
+        <span class="vb-track">
           <span class="vb-bar">
             <span
               v-for="n in g.numbers"
@@ -50,10 +46,10 @@ const maxCount = computed(() => Math.max(...props.groups.map(g => g.numbers.leng
               class="vb-chip"
             >{{ pad2(n) }}</span>
           </span>
-        </span>
-        <span class="vb-meta">
-          <b class="text-highlighted">{{ g.numbers.length }} 顆</b>
-          <span class="text-muted">・隔期 {{ g.slots.join('、') }}</span>
+          <span class="vb-meta">
+            <b class="text-highlighted">{{ g.numbers.length }} 顆</b>
+            <span class="text-muted">・隔期 {{ g.slots.join('、') }}</span>
+          </span>
         </span>
       </li>
     </ul>
@@ -63,7 +59,7 @@ const maxCount = computed(() => Math.max(...props.groups.map(g => g.numbers.leng
 <style scoped>
 .vb-row {
   display: grid;
-  grid-template-columns: 3.6rem minmax(0, 1fr) auto;
+  grid-template-columns: 3.6rem minmax(0, 1fr);
   align-items: center;
   gap: 8px;
   font-size: 12px;
@@ -77,27 +73,32 @@ const maxCount = computed(() => Math.max(...props.groups.map(g => g.numbers.leng
   color: var(--ui-text-highlighted);
   background: color-mix(in oklab, var(--heat) var(--mix, 0%), var(--ui-bg-elevated));
 }
+/* 每顆號碼固定寬度、不折行 → 長條長度跟顆數成正比；說明接在長條後面 */
 .vb-track {
-  display: block;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 8px;
+  row-gap: 2px;
   min-width: 0;
 }
 .vb-bar {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  max-width: 100%;
+  overflow-x: auto;
   gap: 2px;
-  width: max(var(--share), 1.6rem);
   padding: 2px;
   border-radius: 5px;
   background: var(--ui-bg-elevated);
 }
 .vb-chip {
-  flex: 1 0 1.5rem;
-  max-width: 2rem;
+  flex: 0 0 1.45rem;
   border-radius: 9999px;
   padding: 1px 0;
   text-align: center;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 11px;
+  font-size: 10px;
   background: var(--ui-bg);
   color: var(--ui-text-highlighted);
 }
