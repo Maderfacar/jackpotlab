@@ -1,16 +1,24 @@
-import { isGameId } from '../../../../shared/lotto/games'
+import { CA_FANTASY5, isGameId } from '../../../../shared/lotto/games'
 import type { DrawQueryResponse } from '../../../../shared/lotto/types'
 import { getLatestDraw, getRecentDraws } from '../../../utils/draw-service'
+import { getRecent } from '../../../utils/draw-store'
+
+function readLimit(raw: unknown): number {
+  const n = typeof raw === 'string' ? Number.parseInt(raw, 10) : 50
+  return Number.isFinite(n) ? Math.max(1, Math.min(5000, n)) : 50
+}
 
 export default defineEventHandler(async (event): Promise<DrawQueryResponse> => {
   const gameId = getRouterParam(event, 'gameId')
+  // 加州天天樂：只讀 Firestore（每天排程寫入，沒有上游可補抓）
+  if (gameId === CA_FANTASY5) {
+    return { gameId, results: await getRecent(gameId, readLimit(getQuery(event).limit)), fromCache: true }
+  }
   if (!isGameId(gameId)) {
     throw createError({ statusCode: 400, statusMessage: `Unknown gameId: ${gameId}` })
   }
 
-  const query = getQuery(event)
-  const rawLimit = typeof query.limit === 'string' ? Number.parseInt(query.limit, 10) : 50
-  const limit = Number.isFinite(rawLimit) ? Math.max(1, Math.min(5000, rawLimit)) : 50
+  const limit = readLimit(getQuery(event).limit)
 
   // 讀 Firestore 前先觸發 getLatestDraw —— 慢彩種只在「該開的那期還沒存到」時才打上游，
   // 賓果則是 5 分鐘 cache。這樣官方 API 晚於 cron 時段才更新時，有人開網站就會補抓。

@@ -106,6 +106,38 @@ export const GAMES: Record<GameId, GameMeta> = {
  */
 export const BINGO_LIVE_ENABLED = false
 
+/**
+ * 美國加州天天樂（2026-10-12 使用者要求接進來；/draws 放在 539 旁邊）。
+ * 不放進 GAME_IDS：台灣彩種的排程、官方 API、補抓都不適用它。資料只從 Firestore 讀
+ * （第三方來源與每天排程見 shared/lotto/ca-fantasy5.ts、functions/src/ca-fantasy5.ts）。
+ */
+export const CA_FANTASY5 = 'ca_fantasy5' as const
+/** Firestore draws/{id} 底下有資料的彩種（台灣 4 種 + 加州天天樂） */
+export type StoredGameId = GameId | typeof CA_FANTASY5
+
+/** /draws 分頁要用的欄位 */
+export type DrawsTabMeta = Pick<GameMeta, 'name' | 'shortName' | 'drawSchedule' | 'cadenceLabel' | 'numbersCount' | 'numberMin' | 'numberMax' | 'hasSpecial' | 'specialLabel'> & { id: StoredGameId }
+
+export const CA_FANTASY5_META: DrawsTabMeta = {
+  id: CA_FANTASY5,
+  name: '加州天天樂',
+  shortName: '加州',
+  drawSchedule: '每天 美西 18:30（台灣隔天早上約 9:30～10:30）',
+  cadenceLabel: '每天',
+  numbersCount: 5,
+  numberMin: 1,
+  numberMax: 39,
+  hasSpecial: false
+}
+
+export function isStoredGameId(value: unknown): value is StoredGameId {
+  return value === CA_FANTASY5 || isGameId(value)
+}
+
+export function drawsTabMeta(id: StoredGameId): DrawsTabMeta {
+  return id === CA_FANTASY5 ? CA_FANTASY5_META : GAMES[id]
+}
+
 export function isGameId(value: unknown): value is GameId {
   return typeof value === 'string' && (GAME_IDS as readonly string[]).includes(value)
 }

@@ -1,4 +1,4 @@
-import type { GameId } from './games'
+import type { StoredGameId } from './games'
 
 /**
  * 正規化後的開獎紀錄。
@@ -6,7 +6,7 @@ import type { GameId } from './games'
  * 彩種特有的資料（如獎金分配）放在 extras。
  */
 export interface DrawResult {
-  gameId: GameId
+  gameId: StoredGameId
   /** 期別主鍵 — 在同彩種內唯一 */
   drawTerm: number
   /** ISO 8601 日期字串 (YYYY-MM-DD)，存 Firestore 比 Timestamp 更跨平台 */
@@ -31,7 +31,7 @@ export interface DrawResult {
 }
 
 export interface DrawQueryResponse {
-  gameId: GameId
+  gameId: StoredGameId
   results: DrawResult[]
   /** 這次回傳是直接從 Firestore 拿（true）還是現抓 taiwanlottery（false） */
   fromCache: boolean

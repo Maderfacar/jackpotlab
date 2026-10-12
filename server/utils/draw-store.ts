@@ -1,6 +1,6 @@
 import type { Firestore } from 'firebase-admin/firestore'
 import { Timestamp } from 'firebase-admin/firestore'
-import type { GameId } from '../../shared/lotto/games'
+import type { GameId, StoredGameId } from '../../shared/lotto/games'
 import type { DrawResult } from '../../shared/lotto/types'
 import { tryGetAdminFirestore } from './firebase-admin'
 
@@ -115,7 +115,7 @@ export async function getLatest(gameId: GameId): Promise<DrawResult | null> {
 }
 
 /** 用日期查（drawDate 必須 YYYY-MM-DD）。賓果賓果同日會回多筆。 */
-export async function getByDate(gameId: GameId, drawDate: string): Promise<DrawResult[]> {
+export async function getByDate(gameId: StoredGameId, drawDate: string): Promise<DrawResult[]> {
   const firestore = db()
   if (!firestore) return []
   const snap = await firestore
@@ -128,7 +128,7 @@ export async function getByDate(gameId: GameId, drawDate: string): Promise<DrawR
 }
 
 /** 用期號查單筆。 */
-export async function getByDrawTerm(gameId: GameId, drawTerm: number): Promise<DrawResult | null> {
+export async function getByDrawTerm(gameId: StoredGameId, drawTerm: number): Promise<DrawResult | null> {
   const firestore = db()
   if (!firestore) return null
   const snap = await firestore
@@ -140,7 +140,7 @@ export async function getByDrawTerm(gameId: GameId, drawTerm: number): Promise<D
 }
 
 /** 取最近 N 期，drawTerm 由新到舊。 */
-export async function getRecent(gameId: GameId, limit: number): Promise<DrawResult[]> {
+export async function getRecent(gameId: StoredGameId, limit: number): Promise<DrawResult[]> {
   const firestore = db()
   if (!firestore) return []
   const snap = await firestore
@@ -153,7 +153,7 @@ export async function getRecent(gameId: GameId, limit: number): Promise<DrawResu
 }
 
 /** 取期號 > afterTerm 的期數，由舊到新，最多 limit 筆（給「歷史存檔之後的新期數」用，讀取次數 = 回傳筆數）。 */
-export async function getAfter(gameId: GameId, afterTerm: number, limit: number): Promise<DrawResult[]> {
+export async function getAfter(gameId: StoredGameId, afterTerm: number, limit: number): Promise<DrawResult[]> {
   const firestore = db()
   if (!firestore) return []
   const snap = await firestore

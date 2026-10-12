@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { BINGO_LIVE_ENABLED, GAMES, GAME_IDS, type GameId } from '~~/shared/lotto/games'
+import { BINGO_LIVE_ENABLED, CA_FANTASY5, GAME_IDS, drawsTabMeta, type StoredGameId } from '~~/shared/lotto/games'
 import type { DrawResult, DrawQueryResponse } from '~~/shared/lotto/types'
 import {
   type AnalysisState, type AnalysisDrawInput,
@@ -12,9 +12,9 @@ definePageMeta({
   title: '開獎號碼'
 })
 
-const gameId = ref<GameId>('lotto539')
+const gameId = ref<StoredGameId>('lotto539')
 const showAll = ref(false)
-const subTab = ref<'list' | 'periods' | 'relations' | 'tails' | 'periods-v2' | 'relations-v2'>('list')
+const subTab = ref<'list' | 'periods' | 'relations' | 'tails'>('list')
 
 const LEGACY_STORAGE_KEY = 'jackpotlab-show-legacy-analysis'
 
@@ -34,16 +34,19 @@ watch(showLegacyAnalysis, (val) => {
   }
 })
 
-const game = computed(() => GAMES[gameId.value])
+const game = computed(() => drawsTabMeta(gameId.value))
 const isBingo = computed(() => gameId.value === 'bingo_bingo')
+/** 加州天天樂（2026-10-13 使用者：放在 539 旁邊）：只讀資料庫，資料來自第三方網站 */
+const isCa = computed(() => gameId.value === CA_FANTASY5)
 
-const tabs = GAME_IDS.map(id => ({
-  label: GAMES[id].name,
+const TAB_ORDER: StoredGameId[] = ['lotto539', CA_FANTASY5, ...GAME_IDS.filter(id => id !== 'lotto539')]
+const tabs = TAB_ORDER.map(id => ({
+  label: drawsTabMeta(id).name,
   value: id,
-  description: GAMES[id].cadenceLabel
+  description: drawsTabMeta(id).cadenceLabel
 }))
 
-type SubTabValue = 'list' | 'periods' | 'relations' | 'tails' | 'periods-v2' | 'relations-v2'
+type SubTabValue = 'list' | 'periods' | 'relations' | 'tails'
 const subTabItems = computed((): Array<{ label: string, value: SubTabValue }> => {
   const base: Array<{ label: string, value: SubTabValue }> = [
     { label: '各期獎號列表', value: 'list' }
@@ -52,9 +55,7 @@ const subTabItems = computed((): Array<{ label: string, value: SubTabValue }> =>
     base.push(
       { label: '隔期狀態', value: 'periods' },
       { label: '獎號關聯', value: 'relations' },
-      { label: '尾數', value: 'tails' },
-      { label: '隔期狀態（新版）', value: 'periods-v2' },
-      { label: '獎號關聯（新版）', value: 'relations-v2' }
+      { label: '尾數', value: 'tails' }
     )
   }
   return base
@@ -115,7 +116,8 @@ async function refresh() {
   // 新一期、但 cron 還沒跑到，recent 看到的還是舊資料。
   // 解法：先觸發一次 forceFresh 把最新一期寫進 Firestore，再 refresh。
   // 賓果走 by-date?date=today、那條路徑對「今天」本來就會強制現抓、不需要這個。
-  if (!isBingo.value && !isByDateMode.value) {
+  // 加州天天樂沒有上游可現抓（每天排程寫入），直接讀資料庫
+  if (!isBingo.value && !isCa.value && !isByDateMode.value) {
     try {
       await $fetch(`/api/admin/scrape/${gameId.value}`, { method: 'POST' })
     } catch {
@@ -142,7 +144,7 @@ function resetToDefault() {
 const depthD = ref(defaultD(gameId.value))
 const rangeN = ref(defaultN())
 
-function loadDNFor(g: GameId) {
+function loadDNFor(g: StoredGameId) {
   if (typeof window === 'undefined') {
     depthD.value = defaultD(g)
     rangeN.value = defaultN()
@@ -156,7 +158,7 @@ function loadDNFor(g: GameId) {
   rangeN.value = Number.isFinite(n) ? clampN(n) : defaultN()
 }
 
-function saveDN(g: GameId, d: number, n: number) {
+function saveDN(g: StoredGameId, d: number, n: number) {
   if (typeof window === 'undefined') return
   window.localStorage.setItem(`jackpotlab-d-${g}`, String(d))
   window.localStorage.setItem(`jackpotlab-n-${g}`, String(n))
@@ -386,65 +388,6 @@ function tailCellClass(count: number): string {
   if (count === 2) return 'bg-fuchsia-500 text-white'
   return 'bg-red-600 text-white'
 }
-
-// ---------- 新版分頁的純 UI 輔助（不修改任何分析邏輯） ----------
-
-/**
- * 從 history 建一個 issue → 該期實際開出獎號加總 的查表。
- * periodsRows[i].prizes 對 隔期 1+ 是「扣掉被後續期數中過的號之後的剩餘」、
- * 不是該期實際開出的全部號，因此「總和」要回頭從 history 拿原始開出號才正確。
- */
-const drawnSumByIssue = computed<Map<string, number>>(() => {
-  const m = new Map<string, number>()
-  const h = analysisState.value?.history ?? []
-  for (const entry of h) {
-    if (!entry.issue) continue
-    let sum = 0
-    for (const part of entry.prizes.split(',')) {
-      const n = Number.parseInt(part.trim(), 10)
-      if (Number.isFinite(n)) sum += n
-    }
-    m.set(entry.issue, sum)
-  }
-  return m
-})
-
-function drawnSumOf(issue: string | undefined | null): number | undefined {
-  if (!issue) return undefined
-  return drawnSumByIssue.value.get(issue)
-}
-
-/**
- * 跟「前一期」(陣列索引 i+1) 比較總和：
- *   - 比前一期大 → 紅
- *   - 比前一期小 → 綠
- *   - 相等或無前期可比 → 預設色
- */
-function sumCompareClass(current: number | '' | undefined, prev: number | '' | undefined): string {
-  if (current === '' || current == null || prev === '' || prev == null) return 'text-default'
-  if (current > prev) return 'text-rose-600 font-semibold'
-  if (current < prev) return 'text-emerald-600 font-semibold'
-  return 'text-default'
-}
-
-// 新版隔期狀態：每張卡的「展開記錄」狀態（key = period|issue）
-const expandedRecords = ref<Set<string>>(new Set())
-
-function recordKey(period: number, issue: string): string {
-  return `${period}|${issue}`
-}
-
-function isRecordExpanded(period: number, issue: string): boolean {
-  return expandedRecords.value.has(recordKey(period, issue))
-}
-
-function toggleRecord(period: number, issue: string): void {
-  const k = recordKey(period, issue)
-  const next = new Set(expandedRecords.value)
-  if (next.has(k)) next.delete(k)
-  else next.add(k)
-  expandedRecords.value = next
-}
 </script>
 
 <template>
@@ -455,7 +398,7 @@ function toggleRecord(period: number, issue: string): void {
           開獎號碼
         </h1>
         <p class="text-sm text-muted">
-          資料來源：台灣彩券 taiwanlottery.com
+          資料來源：{{ isCa ? '加州天天樂來自第三方網站 lotterycorner、lottery.net、lotteryusa（兩家一致才收；官方網站從台灣連不上）' : '台灣彩券 taiwanlottery.com' }}
         </p>
       </div>
       <UButton
@@ -756,6 +699,7 @@ function toggleRecord(period: number, issue: string): void {
                     v-if="result.provisional === 'thirdparty'"
                     class="font-mono"
                   >待官方公布</span>
+                  <span v-else-if="isCa">第三方網站沒有開出順序</span>
                   <span
                     v-else
                     class="font-mono"
@@ -774,6 +718,11 @@ function toggleRecord(period: number, issue: string): void {
                       <span class="text-[9px] opacity-80">×{{ count }}</span>
                     </div>
                   </div>
+                </div>
+                <div v-if="isCa">
+                  <span class="text-muted">資料來源：</span>
+                  <span class="font-mono">{{ result.source }}</span>
+                  <span v-if="result.extras?.singleSource">（單一來源）</span>
                 </div>
                 <div>
                   <span class="text-muted">抓取時間：</span>
@@ -995,198 +944,6 @@ function toggleRecord(period: number, issue: string): void {
         class="rounded-lg border border-dashed border-default p-8 text-center text-sm text-muted"
       >
         <p>分析資料載入中或資料不足</p>
-      </div>
-    </template>
-
-    <!-- ============ 隔期狀態（新版） ============ -->
-    <template v-else-if="subTab === 'periods-v2'">
-      <div
-        v-if="periodsRows.length === 0"
-        class="rounded-lg border border-dashed border-default p-8 text-center text-sm text-muted"
-      >
-        <p>分析資料載入中或資料不足</p>
-      </div>
-      <div
-        v-else
-        class="space-y-2"
-      >
-        <p class="text-xs text-muted px-1">
-          每期一張卡 · 首位數紅字 = 該期記錄首位 ≥ 平均（{{ periodsAverage.toFixed(2) }}）· 點首位數可展開完整記錄序列 · 總和顏色：比前一期大→紅、小→綠
-        </p>
-        <UCard
-          v-for="(row, idx) in periodsRows"
-          :key="`pv2-${row.period}-${row.issue}`"
-          :ui="{ body: 'p-3 sm:p-4' }"
-        >
-          <div class="space-y-3">
-            <!-- header -->
-            <div class="flex items-baseline justify-between gap-2 flex-wrap">
-              <div class="flex items-baseline gap-2 flex-wrap">
-                <UBadge
-                  color="primary"
-                  variant="subtle"
-                  size="sm"
-                  class="font-mono"
-                >
-                  隔期 {{ row.period }}
-                </UBadge>
-                <span class="font-mono text-sm font-semibold">
-                  第 {{ row.issue || '—' }} 期
-                </span>
-                <span
-                  class="font-mono text-xs"
-                  :class="showDateRed && row.hasEverMatched ? 'text-rose-600 font-semibold' : 'text-muted'"
-                >
-                  {{ row.date || '—' }}
-                </span>
-              </div>
-              <div class="flex items-baseline gap-3 flex-wrap">
-                <span
-                  v-if="drawnSumOf(row.issue) !== undefined"
-                  class="text-[10px] text-muted"
-                >
-                  總和
-                  <span
-                    class="ml-1 font-mono text-base align-baseline"
-                    :class="sumCompareClass(drawnSumOf(row.issue), drawnSumOf(periodsRows[idx + 1]?.issue))"
-                  >
-                    {{ drawnSumOf(row.issue) }}
-                  </span>
-                </span>
-                <button
-                  v-if="row.record !== ''"
-                  type="button"
-                  class="text-[10px] text-muted hover:text-default transition-colors cursor-pointer inline-flex items-baseline gap-1"
-                  :aria-expanded="isRecordExpanded(row.period, row.issue)"
-                  @click="toggleRecord(row.period, row.issue)"
-                >
-                  首位數
-                  <span
-                    class="font-mono text-base align-baseline"
-                    :class="Number.parseInt(row.record.split(',')[0] || '0', 10) >= periodsAverage ? 'text-rose-600 font-bold' : 'text-default font-semibold'"
-                  >
-                    {{ row.record.split(',')[0] }}
-                  </span>
-                  <UIcon
-                    :name="isRecordExpanded(row.period, row.issue) ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
-                    class="size-3"
-                  />
-                </button>
-              </div>
-            </div>
-            <!-- 獎號 chips -->
-            <div class="flex flex-wrap items-center gap-1">
-              <span class="text-[10px] text-muted mr-1">獎號</span>
-              <template v-if="row.prizes.length === 0">
-                <span class="text-xs text-muted">—</span>
-              </template>
-              <span
-                v-for="n in row.prizes"
-                v-else
-                :key="`pv2-${row.period}-${row.issue}-p${n}`"
-                class="inline-flex min-w-7 justify-center font-mono text-xs rounded border border-default bg-elevated/30 px-1.5 py-0.5"
-              >
-                {{ String(n).padStart(2, '0') }}
-              </span>
-            </div>
-            <!-- 展開後的完整記錄序列 -->
-            <div
-              v-if="isRecordExpanded(row.period, row.issue) && row.record !== ''"
-              class="border-t border-default pt-2 space-y-1"
-            >
-              <p class="text-[10px] text-muted">
-                完整記錄序列（左為最新、右為較早）
-              </p>
-              <div class="flex flex-wrap gap-x-1.5 gap-y-0.5 font-mono text-[11px]">
-                <span
-                  v-for="(part, partIdx) in row.record.split(',')"
-                  :key="`pv2-${row.period}-${row.issue}-r${partIdx}`"
-                  class="inline-block min-w-5 text-center tabular-nums"
-                  :class="[
-                    partIdx === 0 && Number.parseInt(part || '0', 10) >= periodsAverage
-                      ? 'text-rose-600 font-bold'
-                      : 'text-muted',
-                    Number.parseInt(part || '0', 10) >= periodsAverage && partIdx !== 0
-                      ? 'text-default'
-                      : ''
-                  ]"
-                >
-                  {{ part }}
-                </span>
-              </div>
-            </div>
-          </div>
-        </UCard>
-      </div>
-    </template>
-
-    <!-- ============ 獎號關聯（新版） ============ -->
-    <template v-else-if="subTab === 'relations-v2'">
-      <div
-        v-if="relationsRows.length === 0"
-        class="rounded-lg border border-dashed border-default p-8 text-center text-sm text-muted"
-      >
-        <p>分析資料載入中或資料不足（需至少 2 期）</p>
-      </div>
-      <div
-        v-else
-        class="space-y-2"
-      >
-        <p class="text-xs text-muted px-1">
-          每期一張卡 · 每顆獎號一格、格內顯示「隔期 / 數值 / 位置」三項對齊資訊 · 隔期總和顏色：比前一期大→紅、小→綠
-        </p>
-        <UCard
-          v-for="(row, idx) in relationsRows"
-          :key="`rv2-${row.issue}`"
-          :ui="{ body: 'p-3 sm:p-4' }"
-        >
-          <div class="space-y-3">
-            <!-- header -->
-            <div class="flex items-baseline justify-between gap-2 flex-wrap">
-              <div class="flex items-baseline gap-2 flex-wrap">
-                <span class="font-mono text-sm font-semibold">
-                  第 {{ row.issue }} 期
-                </span>
-                <span class="font-mono text-xs text-muted">
-                  {{ row.date || '—' }}
-                </span>
-              </div>
-              <span
-                v-if="row.sum !== '' && row.sum !== undefined"
-                class="text-[10px] text-muted"
-              >
-                隔期總和
-                <span
-                  class="ml-1 font-mono text-base align-baseline"
-                  :class="sumCompareClass(row.sum, relationsRows[idx + 1]?.sum)"
-                >
-                  {{ row.sum }}
-                </span>
-              </span>
-            </div>
-            <!-- per-prize cells -->
-            <div class="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 gap-1.5">
-              <div
-                v-for="(prize, cellIdx) in row.prizes.split(',')"
-                :key="`rv2-${row.issue}-c${cellIdx}`"
-                class="rounded border border-default bg-elevated/20 px-1.5 py-1.5 flex flex-col items-center gap-0.5 text-[11px]"
-              >
-                <span class="font-mono text-sm font-semibold">
-                  {{ prize.padStart(2, '0') }}
-                </span>
-                <div class="w-full border-t border-default/60" />
-                <div class="grid grid-cols-[auto_1fr] gap-x-1 gap-y-0 w-full">
-                  <span class="text-muted">隔</span>
-                  <span class="font-mono text-right">{{ (row.periods?.split(',')[cellIdx] ?? '').trim() || '—' }}</span>
-                  <span class="text-muted">值</span>
-                  <span class="font-mono text-right">{{ (row.values?.split(',')[cellIdx] ?? '').trim() || '—' }}</span>
-                  <span class="text-muted">位</span>
-                  <span class="font-mono text-right">{{ (row.positions?.split(',')[cellIdx] ?? '').trim() || '—' }}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </UCard>
       </div>
     </template>
   </UContainer>
