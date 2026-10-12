@@ -2,11 +2,12 @@
 /**
  * 四種均值的一張表（隔期 0～19、隔期／值 第 1～5 顆共用）。
  * - 目前的值大於平均 → 橘底粗體。
- * - 最後一欄可輸入預期的下一個數字 → 四個平均下面即時顯示加進去之後的值和變化（predictAverages）。
+ * - 最後一欄輸入「下一期開完後的目前值」→ 目前與四個平均下面即時顯示下一期會變成怎樣（predictNext）。
+ *   隔期格：0 = 下一期從這格開出；比目前大 1 以上 = 還沒開出。
  * - 點一列 → 上層畫這一列的走勢。
  */
 import type { WaveRow } from '~/utils/wave'
-import { predictAverages } from '~/utils/wave-series'
+import { predictNext } from '~/utils/wave-series'
 
 const props = defineProps<{
   title: string
@@ -33,15 +34,13 @@ function setExpected(r: WaveRow, value: string) {
 }
 
 interface Prediction {
-  x: number
-  avgs: number[] | null
+  next: { current: number, avgs: number[] } | null
 }
 
 const predictions = computed(() => new Map(props.rows.map((r): [string, Prediction | null] => {
   const raw = (expected.value[rowId(r)] ?? '').trim()
   if (raw === '') return [r.key, null]
-  const x = Number(raw)
-  return [r.key, { x, avgs: predictAverages(r.open, r.current, r.recent, r.histSum, r.histCount, x) }]
+  return [r.key, { next: predictNext(r.open, r.current, r.recent, r.histSum, r.histCount, Number(raw)) }]
 })))
 
 const fmtDelta = (d: number) => `${d >= 0 ? '+' : '−'}${Math.abs(d).toFixed(2)}`
@@ -68,7 +67,7 @@ const fmtDelta = (d: number) => `${d >= 0 ? '+' : '−'}${Math.abs(d).toFixed(2)
               {{ c }}
             </th>
             <th>高於</th>
-            <th>預期下一個</th>
+            <th>下一期目前</th>
           </tr>
         </thead>
         <tbody>
@@ -84,7 +83,13 @@ const fmtDelta = (d: number) => `${d >= 0 ? '+' : '−'}${Math.abs(d).toFixed(2)
               {{ r.key }}
             </td>
             <td class="font-semibold">
-              {{ r.current }}
+              <div>{{ r.current }}</div>
+              <div
+                v-if="predictions.get(r.key)?.next"
+                class="wave-pred"
+              >
+                → {{ predictions.get(r.key)!.next!.current }}
+              </div>
             </td>
             <td
               v-for="(a, k) in r.avgs"
@@ -93,12 +98,12 @@ const fmtDelta = (d: number) => `${d >= 0 ? '+' : '−'}${Math.abs(d).toFixed(2)
             >
               <div>{{ a.avg.toFixed(2) }}</div>
               <div
-                v-if="predictions.get(r.key)?.avgs"
+                v-if="predictions.get(r.key)?.next"
                 class="wave-pred"
-                :class="predictions.get(r.key)!.x > predictions.get(r.key)!.avgs![k]! ? 'pred-above' : ''"
+                :class="predictions.get(r.key)!.next!.current > predictions.get(r.key)!.next!.avgs[k]! ? 'pred-above' : ''"
               >
-                → {{ predictions.get(r.key)!.avgs![k]!.toFixed(2) }}
-                <span class="wave-delta">{{ fmtDelta(predictions.get(r.key)!.avgs![k]! - a.avg) }}</span>
+                → {{ predictions.get(r.key)!.next!.avgs[k]!.toFixed(2) }}
+                <span class="wave-delta">{{ fmtDelta(predictions.get(r.key)!.next!.avgs[k]! - a.avg) }}</span>
               </div>
             </td>
             <td :class="aboveCount(r) ? 'font-semibold' : 'text-muted'">
@@ -114,16 +119,16 @@ const fmtDelta = (d: number) => `${d >= 0 ? '+' : '−'}${Math.abs(d).toFixed(2)
                 min="0"
                 step="1"
                 class="wave-input"
-                :aria-label="`${r.key} 預期的下一個數字`"
+                :aria-label="`${r.key} 下一期開完後的目前值`"
                 placeholder="輸入"
                 :value="expected[rowId(r)] ?? ''"
                 @input="setExpected(r, ($event.target as HTMLInputElement).value)"
               >
               <div
-                v-if="predictions.get(r.key) && !predictions.get(r.key)!.avgs"
-                class="mt-0.5 text-[10px] text-error"
+                v-if="predictions.get(r.key) && !predictions.get(r.key)!.next"
+                class="mt-0.5 text-[10px] leading-tight text-error"
               >
-                {{ r.open ? `已等 ${r.current} 期，至少 ${r.current}` : '要 0 以上' }}
+                {{ r.open ? `0＝開出；${r.current + 1} 以上＝沒開` : '要 0 以上的整數' }}
               </div>
             </td>
           </tr>

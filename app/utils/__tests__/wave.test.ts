@@ -9,30 +9,56 @@ import { describe, it } from 'node:test'
 import type { HistoryFile } from '../../../shared/lotto/history-file'
 import { hydrateFromDraws } from '../analysis'
 import { buildWaveContext, computeWave, rowAt, type WaveResult } from '../wave'
-import { predictAverages, trendOf } from '../wave-series'
+import { predictNext, trendOf } from '../wave-series'
 
 const file = JSON.parse(readFileSync('public/data/lotto539-history.json', 'utf8')) as HistoryFile
 const draws = file.rows.map(([drawTerm, drawDate, prizes]) => ({ drawTerm, drawDate, prizes }))
 
-describe('predictAverages', () => {
-  it('隔期格：輸入的數字就是目前這段等待最後的期數，加進最新一個', () => {
-    // 目前已等 2，往前 1,2,3,4,0,…；輸入 3 → 5 個 = (3+1+2+3+4)/5
-    const recent = [1, 2, 3, 4, 0, 1, 6, 1, 1, 0, 1, 0, 8, 0, 3]
-    const p = predictAverages(true, 2, recent, 100, 50, 3)!
-    assert.equal(p[0], 13 / 5)
-    assert.equal(p[1], (3 + 1 + 2 + 3 + 4 + 0 + 1 + 6 + 1 + 1) / 10)
-    assert.equal(p[3], 103 / 51)
+describe('predictNext', () => {
+  // 隔期 4：目前已等 2，往前 1,2,3,4,0,…
+  const recent = [1, 2, 3, 4, 0, 1, 6, 1, 1, 0, 1, 0, 8, 0, 3]
+
+  it('隔期格輸入 0：下一期從這格開出，目前那段 2 定案加進平均', () => {
+    const p = predictNext(true, 2, recent, 100, 50, 0)!
+    assert.equal(p.current, 0)
+    assert.equal(p.avgs[0], (2 + 1 + 2 + 3 + 4) / 5)
+    assert.equal(p.avgs[1], (2 + 1 + 2 + 3 + 4 + 0 + 1 + 6 + 1 + 1) / 10)
+    assert.equal(p.avgs[3], 102 / 51)
   })
 
-  it('隔期格：輸入比目前已等的還小 → 不可能，回 null', () => {
-    assert.equal(predictAverages(true, 5, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14], 10, 5, 4), null)
+  it('隔期格輸入目前 +1 以上：還沒開出，平均不變', () => {
+    const p = predictNext(true, 2, recent, 100, 50, 3)!
+    assert.equal(p.current, 3)
+    assert.equal(p.avgs[0], (1 + 2 + 3 + 4 + 0) / 5)
+    assert.equal(p.avgs[3], 2)
   })
 
-  it('第 1～5 顆：目前那個也算進平均，再加上輸入的數字', () => {
-    const recent = [4, 1, 0, 2, 3, 11, 2, 6, 7, 0, 4, 0, 2, 19, 0]
-    const p = predictAverages(false, 0, recent, 900, 100, 5)!
-    assert.equal(p[0], (5 + 0 + 4 + 1 + 0) / 5)
-    assert.equal(p[3], (900 + 0 + 5) / 102)
+  it('隔期格輸入 1～目前：不可能，回 null', () => {
+    assert.equal(predictNext(true, 2, recent, 100, 50, 1), null)
+    assert.equal(predictNext(true, 2, recent, 100, 50, 2), null)
+  })
+
+  it('第 1～5 顆：輸入的數字是新的目前，原本的目前加進平均', () => {
+    const r = [4, 1, 0, 2, 3, 11, 2, 6, 7, 0, 4, 0, 2, 19, 0]
+    const p = predictNext(false, 0, r, 900, 100, 5)!
+    assert.equal(p.current, 5)
+    assert.equal(p.avgs[0], (0 + 4 + 1 + 0 + 2) / 5)
+    assert.equal(p.avgs[3], 900 / 101)
+  })
+
+  it('預測的平均 = 真的多開一期之後重算的平均', () => {
+    // 拿 113000222 前一期當「現在」，用實際開出的下一期驗證
+    const t = draws.findIndex(d => d.drawTerm === 113000222)
+    const before = computeWave(draws.slice(0, t))!
+    const after = computeWave(draws.slice(0, t + 1))!
+    for (const k of ['gap', 'gapBall', 'value'] as const) {
+      before[k].forEach((r, i) => {
+        const real = after[k][i]!
+        const p = predictNext(r.open, r.current, r.recent, r.histSum, r.histCount, real.current)!
+        assert.ok(p, `${k} ${r.key}`)
+        p.avgs.forEach((a, j) => assert.ok(Math.abs(a - real.avgs[j]!.avg) < 1e-9, `${k} ${r.key} ${j}`))
+      })
+    }
   })
 })
 

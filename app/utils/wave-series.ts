@@ -158,19 +158,20 @@ export function snapshotAt(s: WaveSeries, t: number): WaveSnapshot | null {
 }
 
 /**
- * 輸入預期的下一個數字 x，四個平均會變成多少（x 當成這一串最新的一個加進去）。
- * 隔期格：x 就是「目前」這段等待最後的期數，不能小於目前；
- * 第 1～5 顆：目前那個數字也會跟著算進平均，再加上 x。
+ * 輸入「下一期開完後的目前值」x，這一列會變成怎樣（2026-10-12 使用者：隔期 4 目前 2，輸入 0 = 下一期從這格開出）。
+ * - 隔期格：x = 0 → 下一期這格開出，目前那段等待（current）定案、加進平均；
+ *   x ≥ current + 1 → 還沒開出，平均不變；其他值不可能（回 null）。
+ * - 第 1～5 顆：x = 下一期這顆的數字；目前那個（current）變成平均的一部分。
+ * 回傳新的目前值與四種平均（5、10、15、歷史）。
  */
-export function predictAverages(open: boolean, current: number, recent: number[], histSum: number, histCount: number, x: number): number[] | null {
-  if (!Number.isFinite(x) || x < 0 || (open && x < current)) return null
-  const base = open ? recent : [current, ...recent]
-  const avgs = WAVE_LENGTHS.map((n) => {
-    const part = base.slice(0, n - 1)
-    return part.length === n - 1 ? (x + part.reduce((a, b) => a + b, 0)) / n : Number.NaN
-  })
-  const hist = open ? (histSum + x) / (histCount + 1) : (histSum + current + x) / (histCount + 2)
-  return [...avgs, hist]
+export function predictNext(open: boolean, current: number, recent: number[], histSum: number, histCount: number, x: number): { current: number, avgs: number[] } | null {
+  if (!Number.isInteger(x) || x < 0) return null
+  const stays = open && x > 0
+  if (stays && x < current + 1) return null
+  const base = stays ? recent : [current, ...recent]
+  const avgs = WAVE_LENGTHS.map(n => base.slice(0, n).reduce((a, b) => a + b, 0) / n)
+  const hist = stays ? histSum / histCount : (histSum + current) / (histCount + 1)
+  return { current: x, avgs: [...avgs, hist] }
 }
 
 export interface TrendPoint {
