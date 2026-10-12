@@ -13,7 +13,7 @@
  */
 import { HISTORY_FILE_PATH, mergeDraws, parseHistoryFile } from '~~/shared/lotto/history-file'
 import type { DrawQueryResponse } from '~~/shared/lotto/types'
-import { computeWave } from '~/utils/wave'
+import { buildWaveContext } from '~/utils/wave'
 
 interface HistoryEntry {
   issue: string
@@ -57,7 +57,7 @@ const { data: waveDraws, status: waveStatus, error: waveError } = useAsyncData('
   const newer = res.results.map(r => ({ issue: String(r.drawTerm), date: r.drawDate, nums: [...r.numbers].sort((a, b) => a - b) }))
   return mergeDraws(history, newer)
 }, { server: false })
-const wave = computed(() => computeWave((waveDraws.value ?? []).map(d => ({ drawTerm: Number(d.issue), drawDate: d.date, prizes: d.nums }))))
+const waveCtx = computed(() => buildWaveContext((waveDraws.value ?? []).map(d => ({ drawTerm: Number(d.issue), drawDate: d.date, prizes: d.nums }))))
 
 const rowCount = ref(50)
 const rowOptions = [
@@ -304,7 +304,7 @@ function toggleFocus(x: number) {
 
       <!-- 四種均值（隔期、值、位置 y） -->
       <BoardWaveAverages
-        :wave="wave"
+        :ctx="waveCtx"
         :loading="waveStatus === 'pending' || waveStatus === 'idle'"
         :error-message="waveError ? `四種均值載入失敗：${waveError.message}` : ''"
       />

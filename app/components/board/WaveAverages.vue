@@ -1,20 +1,62 @@
 <script setup lang="ts">
 /**
  * 四種均值（2026-10-12 使用者：放在 /board，對照隔期、值、位置）。
- * 算法見 app/utils/wave.ts；目前的值大於均值 → 橘底粗體。
- * 位置 y 不用平均，改看次數（BoardYCounts）；值另外翻過來看盤面（BoardValueBoard）。
+ * 算法見 app/utils/wave.ts、wave-series.ts；目前的值大於均值 → 橘底粗體。
+ * - 每列可輸入預期的下一個數字，平均即時改成加進去之後的值（BoardWaveTable）。
+ * - 點一列 → 畫這一列過去每一期的目前值與四種平均（BoardWaveTrend）。
+ * - 位置 y 不用平均，改看次數（BoardYCounts）；值另外翻過來看盤面（BoardValueBoard）。
  */
-import type { WaveRow, WaveResult } from '~/utils/wave'
+import { waveFromContext, type WaveContext } from '~/utils/wave'
+import { trendOf, type WaveSeries } from '~/utils/wave-series'
 
-defineProps<{
-  wave: WaveResult | null
+const props = defineProps<{
+  ctx: WaveContext | null
   loading: boolean
   errorMessage: string
 }>()
 
-const COLUMNS = ['5 個', '10 個', '15 個', '歷史']
+const wave = computed(() => (props.ctx ? waveFromContext(props.ctx) : null))
 
-const aboveCount = (r: WaveRow) => r.avgs.filter(a => a.above).length
+const TABLES = [
+  { id: 'gap', title: '隔期 0～19', keyLabel: '隔期', note: '目前 = 這格已經幾期沒開出（還在加）；平均 = 這格往前已結束的數字' },
+  { id: 'gapBall', title: '隔期（第 1～5 顆，小→大）', keyLabel: '球', note: '目前 = 最新一期這顆的隔期；平均 = 這之前的期數' },
+  { id: 'value', title: '值（第 1～5 顆，小→大）', keyLabel: '球', note: '目前 = 最新一期這顆的值；平均 = 這之前的期數' }
+] as const
+type TableId = typeof TABLES[number]['id']
+
+/** 列代號（表:鍵）→ 輸入的預期數字 */
+const expected = ref<Record<string, string>>({})
+const selectedId = ref<string>('gap:0')
+
+const trendRange = ref(50)
+const trendOptions = [
+  { label: '近 30 期', value: 30 },
+  { label: '近 50 期', value: 50 },
+  { label: '近 100 期', value: 100 },
+  { label: '近 200 期', value: 200 }
+]
+
+const selected = computed<{ table: typeof TABLES[number], series: WaveSeries } | null>(() => {
+  if (!props.ctx) return null
+  const [tableId, key] = selectedId.value.split(':') as [TableId, string]
+  const table = TABLES.find(t => t.id === tableId)
+  const series = props.ctx[tableId]?.find(s => s.key === key)
+  return table && series ? { table, series } : null
+})
+
+const trendPoints = computed(() => {
+  if (!props.ctx || !selected.value) return []
+  const last = props.ctx.draws.length - 1
+  return trendOf(selected.value.series, last - trendRange.value + 1, last)
+})
+
+const trendTitle = computed(() => {
+  const s = selected.value
+  if (!s) return ''
+  return s.table.id === 'gap' ? `隔期 ${s.series.key} 的走勢` : `${s.table.title.replace(/（.*$/, '')}・${s.series.key} 的走勢`
+})
+
+const issueOf = (t: number) => String(props.ctx?.draws[t]?.drawTerm ?? '')
 </script>
 
 <template>
@@ -31,6 +73,8 @@ const aboveCount = (r: WaveRow) => r.avgs.filter(a => a.above).length
         隔期、值：每一列的「目前」跟它往前 5、10、15 個數字的平均、還有歷史平均比。
         <span class="wave-legend">橘底粗體</span> = 目前的值比這個平均大。
         歷史 = 2007 年第 101 期之後全部。
+        最後一欄輸入你預期的下一個數字，平均下面會顯示加進去之後變多少（<span class="pred-legend">橘框</span> = 你輸入的數字比加進去後的平均大）。
+        點任一列，下方畫出它過去每一期的走勢。
       </p>
     </template>
 
@@ -48,112 +92,65 @@ const aboveCount = (r: WaveRow) => r.avgs.filter(a => a.above).length
     </p>
     <div
       v-else-if="wave"
-      class="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]"
+      class="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]"
     >
-      <section>
-        <h3 class="mb-1 text-sm font-semibold">
-          隔期 0～19
-        </h3>
-        <p class="mb-2 text-xs text-muted">
-          目前 = 這格已經幾期沒開出（還在加）；平均 = 這格往前已結束的數字
-        </p>
-        <div class="overflow-x-auto">
-          <table class="wave-table">
-            <thead>
-              <tr>
-                <th>隔期</th>
-                <th>目前</th>
-                <th
-                  v-for="c in COLUMNS"
-                  :key="c"
-                >
-                  {{ c }}
-                </th>
-                <th>高於幾種</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr
-                v-for="r in wave.gap"
-                :key="r.key"
-              >
-                <td>{{ r.key }}</td>
-                <td class="font-semibold">
-                  {{ r.current }}
-                </td>
-                <td
-                  v-for="a in r.avgs"
-                  :key="a.label"
-                  :class="a.above ? 'is-above' : ''"
-                >
-                  {{ a.avg.toFixed(2) }}
-                </td>
-                <td :class="aboveCount(r) ? 'font-semibold' : 'text-muted'">
-                  {{ aboveCount(r) }}
-                </td>
-              </tr>
-            </tbody>
-          </table>
+      <BoardWaveTable
+        v-model:expected="expected"
+        :title="TABLES[0].title"
+        :note="TABLES[0].note"
+        :key-label="TABLES[0].keyLabel"
+        table-id="gap"
+        :rows="wave.gap"
+        :selected-id="selectedId"
+        @select="selectedId = $event"
+      />
+      <div class="space-y-6">
+        <BoardWaveTable
+          v-model:expected="expected"
+          :title="TABLES[1].title"
+          :note="TABLES[1].note"
+          :key-label="TABLES[1].keyLabel"
+          table-id="gapBall"
+          :rows="wave.gapBall"
+          :selected-id="selectedId"
+          @select="selectedId = $event"
+        />
+        <BoardWaveTable
+          v-model:expected="expected"
+          :title="TABLES[2].title"
+          :note="TABLES[2].note"
+          :key-label="TABLES[2].keyLabel"
+          table-id="value"
+          :rows="wave.value"
+          :selected-id="selectedId"
+          @select="selectedId = $event"
+        />
+      </div>
+
+      <section
+        v-if="selected"
+        class="lg:col-span-2"
+      >
+        <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <h3 class="text-sm font-semibold">
+            走勢：點上面任一列切換
+          </h3>
+          <USelect
+            v-model="trendRange"
+            :items="trendOptions"
+            size="sm"
+            class="w-28"
+          />
         </div>
+        <BoardWaveTrend
+          :title="trendTitle"
+          :points="trendPoints"
+          :issue-of="issueOf"
+          :open="selected.series.open"
+        />
       </section>
 
-      <div class="space-y-6">
-        <section
-          v-for="part in [
-            { title: '隔期（第 1～5 顆，小→大）', note: '目前 = 最新一期這顆的隔期；平均 = 這之前的期數', rows: wave.gapBall },
-            { title: '值（第 1～5 顆，小→大）', note: '目前 = 最新一期這顆的值；平均 = 這之前的期數', rows: wave.value }
-          ]"
-          :key="part.title"
-        >
-          <h3 class="mb-1 text-sm font-semibold">
-            {{ part.title }}
-          </h3>
-          <p class="mb-2 text-xs text-muted">
-            {{ part.note }}
-          </p>
-          <div class="overflow-x-auto">
-            <table class="wave-table">
-              <thead>
-                <tr>
-                  <th>球</th>
-                  <th>目前</th>
-                  <th
-                    v-for="c in COLUMNS"
-                    :key="c"
-                  >
-                    {{ c }}
-                  </th>
-                  <th>高於幾種</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr
-                  v-for="r in part.rows"
-                  :key="r.key"
-                >
-                  <td class="whitespace-nowrap">
-                    {{ r.key }}
-                  </td>
-                  <td class="font-semibold">
-                    {{ r.current }}
-                  </td>
-                  <td
-                    v-for="a in r.avgs"
-                    :key="a.label"
-                    :class="a.above ? 'is-above' : ''"
-                  >
-                    {{ a.avg.toFixed(2) }}
-                  </td>
-                  <td :class="aboveCount(r) ? 'font-semibold' : 'text-muted'">
-                    {{ aboveCount(r) }}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
-        <BoardValueBoard :groups="wave.valueBoard" />
-      </div>
+      <BoardValueBoard :groups="wave.valueBoard" />
       <BoardYCounts
         class="lg:col-span-2"
         :rows="wave.yCounts"
@@ -163,37 +160,17 @@ const aboveCount = (r: WaveRow) => r.avgs.filter(a => a.above).length
 </template>
 
 <style scoped>
-.wave-table {
-  border-collapse: separate;
-  border-spacing: 2px;
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-}
-.wave-table th {
-  padding: 2px 6px;
-  font-weight: 500;
-  color: var(--ui-text-muted);
-  white-space: nowrap;
-}
-.wave-table td {
-  padding: 3px 8px;
-  text-align: right;
-  border-radius: 4px;
-  background: var(--ui-bg-elevated);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-}
-.wave-table td:first-child {
-  text-align: left;
-  font-family: inherit;
-}
-.wave-table td.is-above,
 .wave-legend {
+  padding: 0 4px;
+  border-radius: 3px;
   background: color-mix(in oklab, var(--drawn) 38%, var(--ui-bg));
   color: var(--ui-text-highlighted);
   font-weight: 700;
 }
-.wave-legend {
+.pred-legend {
   padding: 0 4px;
   border-radius: 3px;
+  box-shadow: inset 0 0 0 1.5px var(--drawn);
+  color: var(--ui-text-highlighted);
 }
 </style>

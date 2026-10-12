@@ -5,6 +5,7 @@
  "gap": [
   {
    "key": "0",
+   "open": true,
    "current": 0,
    "avgs": [
     {
@@ -44,10 +45,13 @@
     0,
     0,
     2
-   ]
+   ],
+   "histSum": 2824,
+   "histCount": 3065
   },
   {
    "key": "1",
+   "open": true,
    "current": 3,
    "avgs": [
     {
@@ -87,10 +91,13 @@
     0,
     2,
     0
-   ]
+   ],
+   "histSum": 3098,
+   "histCount": 2786
   },
   {
    "key": "2",
+   "open": true,
    "current": 0,
    "avgs": [
     {
@@ -130,10 +137,13 @@
     0,
     0,
     1
-   ]
+   ],
+   "histSum": 3455,
+   "histCount": 2433
   },
   {
    "key": "3",
+   "open": true,
    "current": 1,
    "avgs": [
     {
@@ -173,10 +183,13 @@
     0,
     3,
     0
-   ]
+   ],
+   "histSum": 3734,
+   "histCount": 2154
   },
   {
    "key": "4",
+   "open": true,
    "current": 2,
    "avgs": [
     {
@@ -216,10 +229,13 @@
     8,
     0,
     3
-   ]
+   ],
+   "histSum": 3974,
+   "histCount": 1911
   },
   {
    "key": "5",
+   "open": true,
    "current": 2,
    "avgs": [
     {
@@ -259,10 +275,13 @@
     0,
     1,
     1
-   ]
+   ],
+   "histSum": 4130,
+   "histCount": 1752
   },
   {
    "key": "6",
+   "open": true,
    "current": 0,
    "avgs": [
     {
@@ -302,10 +321,13 @@
     3,
     0,
     4
-   ]
+   ],
+   "histSum": 4365,
+   "histCount": 1524
   },
   {
    "key": "7",
+   "open": true,
    "current": 2,
    "avgs": [
     {
@@ -345,10 +367,13 @@
     1,
     9,
     4
-   ]
+   ],
+   "histSum": 4549,
+   "histCount": 1331
   },
   {
    "key": "8",
+   "open": true,
    "current": 3,
    "avgs": [
     {
@@ -388,10 +413,13 @@
     0,
     0,
     6
-   ]
+   ],
+   "histSum": 4676,
+   "histCount": 1203
   },
   {
    "key": "9",
+   "open": true,
    "current": 1,
    "avgs": [
     {
@@ -431,10 +459,13 @@
     3,
     7,
     5
-   ]
+   ],
+   "histSum": 4865,
+   "histCount": 1020
   },
   {
    "key": "10",
+   "open": true,
    "current": 0,
    "avgs": [
     {
@@ -474,10 +505,13 @@
     8,
     3,
     0
-   ]
+   ],
+   "histSum": 5043,
+   "histCount": 843
   },
   {
    "key": "11",
+   "open": true,
    "current": 1,
    "avgs": [
     {
@@ -517,10 +551,13 @@
     1,
     27,
     4
-   ]
+   ],
+   "histSum": 5068,
+   "histCount": 809
   },
   {
    "key": "12",
+   "open": true,
    "current": 14,
    "avgs": [
     {
@@ -560,10 +597,13 @@
     4,
     6,
     0
-   ]
+   ],
+   "histSum": 5169,
+   "histCount": 673
   },
   {
    "key": "13",
+   "open": true,
    "current": 28,
    "avgs": [
     {
@@ -603,10 +643,13 @@
     36,
     0,
     61
-   ]
+   ],
+   "histSum": 5270,
+   "histCount": 588
   },
   {
    "key": "14",
+   "open": true,
    "current": 8,
    "avgs": [
     {
@@ -646,10 +689,13 @@
     0,
     6,
     4
-   ]
+   ],
+   "histSum": 5314,
+   "histCount": 538
   },
   {
    "key": "15",
+   "open": true,
    "current": 30,
    "avgs": [
     {
@@ -689,10 +735,13 @@
     16,
     2,
     22
-   ]
+   ],
+   "histSum": 5382,
+   "histCount": 451
   },
   {
    "key": "16",
+   "open": true,
    "current": 3,
    "avgs": [
     {
@@ -732,10 +781,13 @@
     10,
     3,
     11
-   ]
+   ],
+   "histSum": 5457,
+   "histCount": 427
   },
   {
    "key": "17",
+   "open": true,
    "current": 14,
    "avgs": [
     {
@@ -775,10 +827,13 @@
     4,
     8,
     10
-   ]
+   ],
+   "histSum": 5520,
+   "histCount": 354
   },
   {
    "key": "18",
+   "open": true,
    "current": 25,
    "avgs": [
     {
@@ -818,10 +873,13 @@
     3,
     22,
     16
-   ]
+   ],
+   "histSum": 5515,
+   "histCount": 311
   },
   {
    "key": "19",
+   "open": true,
    "current": 4,
    "avgs": [
     {
@@ -861,12 +919,15 @@
     14,
     43,
     14
-   ]
+   ],
+   "histSum": 5614,
+   "histCount": 266
   }
  ],
  "gapBall": [
   {
    "key": "第 1 顆",
+   "open": false,
    "current": 2,
    "avgs": [
     {
@@ -906,10 +967,13 @@
     5,
     12,
     0
-   ]
+   ],
+   "histSum": 40026,
+   "histCount": 5887
   },
   {
    "key": "第 2 顆",
+   "open": false,
    "current": 10,
    "avgs": [
     {
@@ -949,10 +1013,13 @@
     9,
     0,
     14
-   ]
+   ],
+   "histSum": 39327,
+   "histCount": 5886
   },
   {
    "key": "第 3 顆",
+   "open": false,
    "current": 0,
    "avgs": [
     {
@@ -992,10 +1059,13 @@
     2,
     17,
     10
-   ]
+   ],
+   "histSum": 40646,
+   "histCount": 5889
   },
   {
    "key": "第 4 顆",
+   "open": false,
    "current": 10,
    "avgs": [
     {
@@ -1035,10 +1105,13 @@
     0,
     6,
     17
-   ]
+   ],
+   "histSum": 39622,
+   "histCount": 5887
   },
   {
    "key": "第 5 顆",
+   "open": false,
    "current": 6,
    "avgs": [
     {
@@ -1078,12 +1151,15 @@
     21,
     0,
     1
-   ]
+   ],
+   "histSum": 39968,
+   "histCount": 5887
   }
  ],
  "value": [
   {
    "key": "第 1 顆",
+   "open": false,
    "current": 0,
    "avgs": [
     {
@@ -1123,10 +1199,13 @@
     2,
     19,
     0
-   ]
+   ],
+   "histSum": 56935,
+   "histCount": 5887
   },
   {
    "key": "第 2 顆",
+   "open": false,
    "current": 1,
    "avgs": [
     {
@@ -1166,10 +1245,13 @@
     11,
     0,
     1
-   ]
+   ],
+   "histSum": 54092,
+   "histCount": 5886
   },
   {
    "key": "第 3 顆",
+   "open": false,
    "current": 2,
    "avgs": [
     {
@@ -1209,10 +1291,13 @@
     2,
     0,
     4
-   ]
+   ],
+   "histSum": 73248,
+   "histCount": 5889
   },
   {
    "key": "第 4 顆",
+   "open": false,
    "current": 1,
    "avgs": [
     {
@@ -1252,10 +1337,13 @@
     0,
     2,
     10
-   ]
+   ],
+   "histSum": 66291,
+   "histCount": 5887
   },
   {
    "key": "第 5 顆",
+   "open": false,
    "current": 1,
    "avgs": [
     {
@@ -1295,7 +1383,9 @@
     26,
     0,
     7
-   ]
+   ],
+   "histSum": 59923,
+   "histCount": 5887
   }
  ],
  "yCounts": [

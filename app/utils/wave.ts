@@ -1,5 +1,5 @@
 /**
- * 波段均值（2026-10-12 使用者拍板）：以「最新一期開完的盤面」為基礎，算隔期、值、位置 y 的四種均值。
+ * 波段均值（2026-10-12 使用者拍板）：以「最新一期開完的盤面」為基礎，算隔期、值、位置 y。
  *
  * - 隔期 0～19：每格的記錄（/draws 的 record，最左最新）。目前的值 = 第一個數字（這格已幾期沒開出，還在加）；
  *   均值 = 往前已結束的 5／10／15 個數字、歷史 = 第 101 期之後開始的已結束數字。
@@ -10,21 +10,17 @@
  * - 值盤面：同一格的號碼值一定相同，所以把盤面翻過來看「每種值有幾顆號碼帶著」。
  * - 前 100 期是盤面剛開始累積的期間，不算進歷史。
  *
- * 算法照定義直接逐期算（與 app/utils/analysis.ts processDraw 等價，但不維護越來越長的 record 字串，
- * 5,990 期 processDraw 要 5 秒多，這裡幾十毫秒）：
- *   隔期格 g = 上次開出在 g+1 期前的號碼（g < 60）；這格「開出」＝本期有號碼來自這格。
- *   值 = 來源格到上一期為止已連續幾期沒開出；y = 這顆在來源格剩餘號碼（由小到大）排第幾。
- * docs/wave/wave.json 由 processDraw 版產生、並經 Python 獨立重算核對，測試要求逐值一致。
- * scripts/wave-stats.ts 用這裡寫 docs/wave。
+ * 底稿與每期狀態在 app/utils/wave-series.ts。docs/wave/wave.json 由 processDraw 版產生、
+ * 並經 Python 獨立重算核對，測試要求逐值一致。scripts/wave-stats.ts 用這裡寫 docs/wave。
  */
 import type { AnalysisDrawInput } from './analysis'
+import {
+  ballSeries, gapSeries, snapshotAt, walk,
+  WAVE_LENGTHS, WAVE_RECENT, WAVE_WARM,
+  type BallInfo, type WaveSeries
+} from './wave-series'
 
-export const WAVE_WARM = 100
-export const WAVE_GAP_SLOTS = 20
-export const WAVE_BALLS = 5
-export const WAVE_RECENT = 15
-const LENGTHS = [5, 10, 15] as const
-const SLOT_COUNT = 60
+export { WAVE_RECENT } from './wave-series'
 
 export interface WaveAvg {
   label: string
@@ -34,10 +30,14 @@ export interface WaveAvg {
 
 export interface WaveRow {
   key: string
+  /** 隔期格（目前 = 還在加的等待期數）；否則是第 1～5 顆 */
+  open: boolean
   current: number
   avgs: WaveAvg[]
-  /** 往前已結束的數字（最新在前，最多 WAVE_RECENT 個），給人工驗證用 */
+  /** 平均用的數字（最新在前，最多 WAVE_RECENT 個），給人工驗證與輸入預期數字用 */
   recent: number[]
+  histSum: number
+  histCount: number
 }
 
 export interface WaveResult {
@@ -80,111 +80,29 @@ export interface ValueGroup {
   numbers: number[]
 }
 
-const sum = (a: number[]): number => a.reduce((x, y) => x + y, 0)
-
-function average(label: string, current: number, part: number[]): WaveAvg {
-  const total = sum(part)
-  // 用整數乘法比大小，避免小數誤差
-  return { label, avg: total / part.length, above: current * part.length > total }
+/** 平均＝total／count；目前的值大於平均 → above（用整數乘法比，避免小數誤差） */
+function average(label: string, current: number, total: number, count: number): WaveAvg {
+  return { label, avg: total / count, above: current * count > total }
 }
 
-/** current 與往前已結束的數字（最新在前）→ 5／10／15／歷史 四種均值 */
-export function buildWaveRow(key: string, current: number, done: number[], history: number[]): WaveRow {
+/** 某一列在第 t 期（期序）開完時的表格列；數字不夠回 null */
+export function rowAt(s: WaveSeries, t: number): WaveRow | null {
+  const snap = snapshotAt(s, t)
+  if (!snap || snap.histCount === 0) return null
+  const sums = WAVE_LENGTHS.map(n => snap.recent.length >= n ? snap.recent.slice(0, n).reduce((a, b) => a + b, 0) : null)
+  if (sums.some(x => x === null)) return null
   return {
-    key,
-    current,
+    key: s.key,
+    open: s.open,
+    current: snap.current,
     avgs: [
-      ...LENGTHS.map(n => average(String(n), current, done.slice(0, n))),
-      average('歷史', current, history)
+      ...WAVE_LENGTHS.map((n, k) => average(String(n), snap.current, sums[k]!, n)),
+      average('歷史', snap.current, snap.histSum, snap.histCount)
     ],
-    recent: done.slice(0, WAVE_RECENT)
+    recent: snap.recent,
+    histSum: snap.histSum,
+    histCount: snap.histCount
   }
-}
-
-/** 每期每顆（由小到大）的隔期、值與 y；找不到來源格（第一次出現或隔 60 期以上）為 null */
-interface BallInfo {
-  gap: number | null
-  value: number | null
-  y: number | null
-}
-
-interface Walk {
-  /** 隔期格 0～19 每次開出的期序 */
-  slotHits: number[][]
-  balls: BallInfo[][]
-  /** 號碼 → 最後開出的期序 */
-  lastSeen: Map<number, number>
-  /** 隔期格 → 最後一次有號碼開出的期序 */
-  lastHit: Map<number, number>
-}
-
-function walk(draws: AnalysisDrawInput[]): Walk {
-  const lastSeen = new Map<number, number>()
-  const lastHit = new Map<number, number>()
-  /** 期序 → 那期開出、到現在還沒再開的號碼 */
-  const remaining = new Map<number, Set<number>>()
-  const slotHits: number[][] = Array.from({ length: WAVE_GAP_SLOTS }, () => [])
-  const balls: BallInfo[][] = []
-
-  draws.forEach((d, i) => {
-    const prizes = [...new Set(d.prizes)].sort((a, b) => a - b)
-    const hitSlots = new Set<number>()
-    balls.push(prizes.map((p) => {
-      const seen = lastSeen.get(p)
-      if (seen === undefined || i - seen - 1 >= SLOT_COUNT) return { gap: null, value: null, y: null }
-      const g = i - seen - 1
-      hitSlots.add(g)
-      const box = [...remaining.get(seen)!].sort((a, b) => a - b)
-      return { gap: g, value: i - 1 - (lastHit.get(g) ?? 0), y: box.indexOf(p) + 1 }
-    }))
-    for (const g of hitSlots) {
-      lastHit.set(g, i)
-      if (g < WAVE_GAP_SLOTS) slotHits[g]!.push(i)
-    }
-    for (const p of prizes) {
-      const seen = lastSeen.get(p)
-      if (seen !== undefined) remaining.get(seen)!.delete(p)
-      lastSeen.set(p, i)
-    }
-    remaining.set(i, new Set(prizes))
-  })
-  return { slotHits, balls, lastSeen, lastHit }
-}
-
-function gapRows(slotHits: number[][], lastIndex: number): WaveRow[] {
-  return slotHits.map((hits, k) => {
-    const waits: number[] = []
-    const history: number[] = []
-    for (let j = hits.length - 1; j >= 1; j--) {
-      const w = hits[j]! - hits[j - 1]! - 1
-      waits.push(w)
-      if (hits[j - 1]! >= WAVE_WARM) history.push(w)
-    }
-    return buildWaveRow(String(k), lastIndex - hits.at(-1)!, waits, history)
-  })
-}
-
-/** 第 b 顆的每期數字（最新在前；找不到來源格的略過），fromWarm = 其中屬於第 101 期之後的個數 */
-function ballSeries(balls: BallInfo[][], b: number, pick: (x: BallInfo) => number | null) {
-  const newest: number[] = []
-  let fromWarm = 0
-  for (let i = balls.length - 1; i >= 0; i--) {
-    const v = pick(balls[i]![b] ?? { gap: null, value: null, y: null })
-    if (v === null) continue
-    newest.push(v)
-    if (i >= WAVE_WARM) fromWarm = newest.length
-  }
-  return { newest, fromWarm }
-}
-
-const ballKey = (b: number) => `第 ${b + 1} 顆`
-
-function ballRows(balls: BallInfo[][], pick: (b: BallInfo) => number | null): WaveRow[] {
-  return Array.from({ length: WAVE_BALLS }, (_, b) => {
-    const { newest, fromWarm } = ballSeries(balls, b, pick)
-    const done = newest.slice(1)
-    return buildWaveRow(ballKey(b), newest[0]!, done, done.slice(0, fromWarm - 1))
-  })
 }
 
 function countY(ys: number[]): number[] {
@@ -194,21 +112,20 @@ function countY(ys: number[]): number[] {
 }
 
 /** 最近 5／10／15 期（含最新一期）與歷史（第 101 期之後，含最新一期）的 y 次數；比例比歷史高 → above */
-function yCountRows(balls: BallInfo[][]): YCountRow[] {
-  return Array.from({ length: WAVE_BALLS }, (_, b) => {
-    const { newest, fromWarm } = ballSeries(balls, b, x => x.y)
-    const hist = countY(newest.slice(0, fromWarm))
-    const histTotal = fromWarm
+function yCountRows(series: WaveSeries[]): YCountRow[] {
+  return series.map((s) => {
+    const newest = [...s.values].reverse()
+    const histTotal = s.values.length - s.histFrom
+    const hist = countY(newest.slice(0, histTotal))
     const window = (label: string, ys: number[]): YWindow => {
       const counts = countY(ys)
-      // 用整數乘法比比例，避免小數誤差
       return { label, total: ys.length, counts, above: counts.map((c, k) => c * histTotal > hist[k]! * ys.length) }
     }
     return {
-      key: ballKey(b),
+      key: s.key,
       latest: newest[0]!,
       windows: [
-        ...LENGTHS.map(n => window(String(n), newest.slice(0, n))),
+        ...WAVE_LENGTHS.map(n => window(String(n), newest.slice(0, n))),
         { label: '歷史', total: histTotal, counts: hist, above: hist.map(() => false) }
       ]
     }
@@ -220,7 +137,7 @@ function valueBoardOf(lastSeen: Map<number, number>, lastHit: Map<number, number
   const groups = new Map<number, { slots: Set<number>, numbers: number[] }>()
   for (const [p, seen] of [...lastSeen.entries()].sort((a, b) => a[0] - b[0])) {
     const g = nextIndex - seen - 1
-    if (g >= SLOT_COUNT) continue
+    if (g >= 60) continue
     const value = nextIndex - 1 - (lastHit.get(g) ?? 0)
     const group = groups.get(value) ?? { slots: new Set<number>(), numbers: [] }
     group.slots.add(g)
@@ -232,20 +149,55 @@ function valueBoardOf(lastSeen: Map<number, number>, lastHit: Map<number, number
     .map(([value, g]) => ({ value, slots: [...g.slots].sort((a, b) => a - b), numbers: g.numbers }))
 }
 
-/** draws 由舊到新。期數不夠（暖機 100 期 + 至少 16 期）回 null。 */
-export function computeWave(draws: AnalysisDrawInput[]): WaveResult | null {
+/** 每一列的數字串（今天的表、走勢圖都從這裡算） */
+export interface WaveContext {
+  draws: AnalysisDrawInput[]
+  gap: WaveSeries[]
+  gapBall: WaveSeries[]
+  value: WaveSeries[]
+  y: WaveSeries[]
+  lastSeen: Map<number, number>
+  lastHit: Map<number, number>
+}
+
+export function buildWaveContext(draws: AnalysisDrawInput[]): WaveContext | null {
   if (draws.length < WAVE_WARM + WAVE_RECENT + 1) return null
-  const { slotHits, balls, lastSeen, lastHit } = walk(draws)
-  if (slotHits.some(h => h.length === 0)) return null
-  const latest = draws.at(-1)!
+  const w = walk(draws)
+  if (w.slotHits.some(h => h.length < 2)) return null
+  const pick = (f: (b: BallInfo) => number | null) => ballSeries(w.balls, f)
+  return {
+    draws,
+    gap: gapSeries(w.slotHits),
+    gapBall: pick(b => b.gap),
+    value: pick(b => b.value),
+    y: pick(b => b.y),
+    lastSeen: w.lastSeen,
+    lastHit: w.lastHit
+  }
+}
+
+export function waveFromContext(ctx: WaveContext): WaveResult | null {
+  const t = ctx.draws.length - 1
+  const rowsOf = (list: WaveSeries[]) => list.map(s => rowAt(s, t))
+  const gap = rowsOf(ctx.gap)
+  const gapBall = rowsOf(ctx.gapBall)
+  const value = rowsOf(ctx.value)
+  if ([...gap, ...gapBall, ...value].some(r => r === null)) return null
+  const latest = ctx.draws[t]!
   return {
     issue: String(latest.drawTerm),
     date: latest.drawDate,
     prizes: [...latest.prizes].sort((a, b) => a - b).join(','),
-    gap: gapRows(slotHits, draws.length - 1),
-    gapBall: ballRows(balls, b => b.gap),
-    value: ballRows(balls, b => b.value),
-    yCounts: yCountRows(balls),
-    valueBoard: valueBoardOf(lastSeen, lastHit, draws.length)
+    gap: gap as WaveRow[],
+    gapBall: gapBall as WaveRow[],
+    value: value as WaveRow[],
+    yCounts: yCountRows(ctx.y),
+    valueBoard: valueBoardOf(ctx.lastSeen, ctx.lastHit, ctx.draws.length)
   }
+}
+
+/** draws 由舊到新。期數不夠（暖機 100 期 + 至少 16 期）回 null。 */
+export function computeWave(draws: AnalysisDrawInput[]): WaveResult | null {
+  const ctx = buildWaveContext(draws)
+  return ctx ? waveFromContext(ctx) : null
 }
