@@ -3,7 +3,7 @@
  *
  * - 隔期 0～19：每格的記錄（/draws 的 record，最左最新）。目前的值 = 第一個數字（這格已幾期沒開出，還在加）；
  *   均值 = 往前已結束的 5／10／15 個數字、歷史 = 第 101 期之後開始的已結束數字。
- * - 值、位置 y：第 1～5 顆（號碼由小到大）各自一串，每期一個數字。目前的值 = 最新一期那顆；
+ * - 隔期（第 1～5 顆）、值、位置 y：第 1～5 顆（號碼由小到大）各自一串，每期一個數字。目前的值 = 最新一期那顆；
  *   均值 = 最新一期之前的 5／10／15 期、歷史 = 第 101 期之後全部（不含最新一期）。
  * - 目前的值大於均值 → above。
  * - 前 100 期是盤面剛開始累積的期間，不算進歷史。
@@ -43,6 +43,8 @@ export interface WaveResult {
   date: string
   prizes: string
   gap: WaveRow[]
+  /** 隔期：第 1～5 顆（號碼由小到大）各自一串 */
+  gapBall: WaveRow[]
   value: WaveRow[]
   y: WaveRow[]
 }
@@ -68,8 +70,9 @@ export function buildWaveRow(key: string, current: number, done: number[], histo
   }
 }
 
-/** 每期每顆（由小到大）的值與 y；找不到來源格（第一次出現或隔 60 期以上）為 null */
+/** 每期每顆（由小到大）的隔期、值與 y；找不到來源格（第一次出現或隔 60 期以上）為 null */
 interface BallInfo {
+  gap: number | null
   value: number | null
   y: number | null
 }
@@ -93,11 +96,11 @@ function walk(draws: AnalysisDrawInput[]): Walk {
     const hitSlots = new Set<number>()
     balls.push(prizes.map((p) => {
       const seen = lastSeen.get(p)
-      if (seen === undefined || i - seen - 1 >= SLOT_COUNT) return { value: null, y: null }
+      if (seen === undefined || i - seen - 1 >= SLOT_COUNT) return { gap: null, value: null, y: null }
       const g = i - seen - 1
       hitSlots.add(g)
       const box = [...remaining.get(seen)!].sort((a, b) => a - b)
-      return { value: i - 1 - (lastHit.get(g) ?? 0), y: box.indexOf(p) + 1 }
+      return { gap: g, value: i - 1 - (lastHit.get(g) ?? 0), y: box.indexOf(p) + 1 }
     }))
     for (const g of hitSlots) {
       lastHit.set(g, i)
@@ -131,7 +134,7 @@ function ballRows(balls: BallInfo[][], pick: (b: BallInfo) => number | null): Wa
     const newest: number[] = []
     let fromWarm = 0
     for (let i = balls.length - 1; i >= 0; i--) {
-      const v = pick(balls[i]![b] ?? { value: null, y: null })
+      const v = pick(balls[i]![b] ?? { gap: null, value: null, y: null })
       if (v === null) continue
       newest.push(v)
       if (i >= WAVE_WARM) fromWarm = newest.length
@@ -152,6 +155,7 @@ export function computeWave(draws: AnalysisDrawInput[]): WaveResult | null {
     date: latest.drawDate,
     prizes: [...latest.prizes].sort((a, b) => a - b).join(','),
     gap: gapRows(slotHits, draws.length - 1),
+    gapBall: ballRows(balls, b => b.gap),
     value: ballRows(balls, b => b.value),
     y: ballRows(balls, b => b.y)
   }

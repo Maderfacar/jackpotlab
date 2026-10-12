@@ -99,6 +99,7 @@ const aboveCount = (r: WaveRow) => r.avgs.filter(a => a.above).length
       <div class="space-y-6">
         <section
           v-for="part in [
+            { title: '隔期（第 1～5 顆，小→大）', note: '目前 = 最新一期這顆的隔期；平均 = 這之前的期數', rows: wave.gapBall },
             { title: '值（第 1～5 顆，小→大）', note: '目前 = 最新一期這顆的值；平均 = 這之前的期數', rows: wave.value },
             { title: '位置 y（第 1～5 顆，小→大）', note: '目前 = 最新一期這顆的 y；平均 = 這之前的期數', rows: wave.y }
           ]"
