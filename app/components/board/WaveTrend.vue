@@ -28,14 +28,21 @@ const PAD = { top: 14, right: 58, bottom: 26, left: 34 }
 const root = ref<HTMLElement | null>(null)
 const width = ref(320)
 let observer: ResizeObserver | null = null
+function measure() {
+  if (root.value) width.value = Math.max(280, Math.round(root.value.clientWidth))
+}
 onMounted(() => {
   if (!root.value) return
-  observer = new ResizeObserver(([entry]) => {
-    width.value = Math.max(280, Math.round(entry!.contentRect.width))
-  })
+  // 先直接量一次（頁面暫停繪圖時 ResizeObserver 不會回報），之後跟著卡片寬度變
+  measure()
+  observer = new ResizeObserver(measure)
   observer.observe(root.value)
+  window.addEventListener('resize', measure)
 })
-onBeforeUnmount(() => observer?.disconnect())
+onBeforeUnmount(() => {
+  observer?.disconnect()
+  window.removeEventListener('resize', measure)
+})
 
 const innerW = computed(() => width.value - PAD.left - PAD.right)
 const innerH = HEIGHT - PAD.top - PAD.bottom
