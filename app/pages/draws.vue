@@ -2,7 +2,7 @@
 import { BINGO_LIVE_ENABLED, CA_FANTASY5, GAME_IDS, drawsTabMeta, type StoredGameId } from '~~/shared/lotto/games'
 import type { DrawResult, DrawQueryResponse } from '~~/shared/lotto/types'
 import {
-  type AnalysisState, type AnalysisDrawInput,
+  type AnalysisState, type AnalysisDrawInput, type HistoryEntry,
   hydrateFromDraws, applyNewDraws, loadState, saveState, stateKey,
   sweepStaleAnalysisStorage,
   defaultD, defaultN, clampD, clampN, averageOfCsvFirst
@@ -382,15 +382,32 @@ const tailsRows = computed(() => {
   const start = Math.max(0, h.length - rangeN.value)
   return h.slice(start).map((row, i) => ({
     ...row,
-    // 上一期（時間較早）同尾數開 2 顆以上 → 這期該尾數是連莊
-    prevTails: h[start + i - 1]?.tails ?? null
+    streakDigits: streakTailDigits(h[start + i - 1], row)
   })).reverse()
 })
 
-function tailCellClass(count: number, prevCount: number | undefined): string {
+function parsePrizes(csv: string): number[] {
+  return csv ? csv.split(',').map(Number) : []
+}
+
+/**
+ * 連莊尾：上一期（時間較早）該尾數開 2 顆以上，這期該尾數只開 1 顆，
+ * 而且這顆就是上一期開過的號碼（例：上期 01、11 → 這期 01 或 11；21、31 不算）。
+ */
+function streakTailDigits(prev: HistoryEntry | undefined, row: HistoryEntry): Set<number> {
+  const digits = new Set<number>()
+  if (!prev) return digits
+  const prevPrizes = new Set(parsePrizes(prev.prizes))
+  for (const p of parsePrizes(row.prizes)) {
+    const d = p % 10
+    if ((prev.tails[d] ?? 0) >= 2 && row.tails[d] === 1 && prevPrizes.has(p)) digits.add(d)
+  }
+  return digits
+}
+
+function tailCellClass(count: number, isStreak: boolean): string {
   if (count <= 0) return ''
   if (count === 1) {
-    const isStreak = (prevCount ?? 0) >= 2
     return isStreak
       ? 'bg-fuchsia-300 text-fuchsia-950 font-black text-sm'
       : 'bg-fuchsia-300 text-fuchsia-900'
@@ -940,7 +957,7 @@ function tailCellClass(count: number, prevCount: number | undefined): string {
                   v-for="(count, digit) in row.tails"
                   :key="`t-${row.issue}-${digit}`"
                   class="px-2 py-2 text-center font-mono text-xs"
-                  :class="tailCellClass(count, row.prevTails?.[digit])"
+                  :class="tailCellClass(count, row.streakDigits.has(digit))"
                 >
                   {{ count === 0 ? '' : count }}
                 </td>
