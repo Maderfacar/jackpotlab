@@ -379,12 +379,22 @@ const relationsRows = computed(() => {
 
 const tailsRows = computed(() => {
   const h = analysisState.value?.history ?? []
-  return h.slice(-rangeN.value).reverse()
+  const start = Math.max(0, h.length - rangeN.value)
+  return h.slice(start).map((row, i) => ({
+    ...row,
+    // 上一期（時間較早）同尾數開 2 顆以上 → 這期該尾數是連莊
+    prevTails: h[start + i - 1]?.tails ?? null
+  })).reverse()
 })
 
-function tailCellClass(count: number): string {
+function tailCellClass(count: number, prevCount: number | undefined): string {
   if (count <= 0) return ''
-  if (count === 1) return 'bg-fuchsia-300 text-fuchsia-900'
+  if (count === 1) {
+    const isStreak = (prevCount ?? 0) >= 2
+    return isStreak
+      ? 'bg-fuchsia-300 text-fuchsia-950 font-black text-sm'
+      : 'bg-fuchsia-300 text-fuchsia-900'
+  }
   if (count === 2) return 'bg-fuchsia-500 text-white'
   return 'bg-red-600 text-white'
 }
@@ -930,7 +940,7 @@ function tailCellClass(count: number): string {
                   v-for="(count, digit) in row.tails"
                   :key="`t-${row.issue}-${digit}`"
                   class="px-2 py-2 text-center font-mono text-xs"
-                  :class="tailCellClass(count)"
+                  :class="tailCellClass(count, row.prevTails?.[digit])"
                 >
                   {{ count === 0 ? '' : count }}
                 </td>
