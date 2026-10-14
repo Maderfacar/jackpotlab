@@ -406,14 +406,15 @@ function streakTailDigits(prev: HistoryEntry | undefined, row: HistoryEntry): Se
 }
 
 function tailCellClass(count: number, isStreak: boolean): string {
-  if (count <= 0) return ''
+  if (count <= 0) return 'text-xs'
   if (count === 1) {
+    // 連莊尾：字要大到一眼看得出來（text-xs 的粗細差別看不到）
     return isStreak
-      ? 'bg-fuchsia-300 text-fuchsia-950 font-black text-sm'
-      : 'bg-fuchsia-300 text-fuchsia-900'
+      ? 'bg-fuchsia-300 text-black font-black text-lg leading-none'
+      : 'bg-fuchsia-300 text-fuchsia-900 text-xs'
   }
-  if (count === 2) return 'bg-fuchsia-500 text-white'
-  return 'bg-red-600 text-white'
+  if (count === 2) return 'bg-fuchsia-500 text-white text-xs'
+  return 'bg-red-600 text-white text-xs'
 }
 </script>
 
@@ -956,7 +957,7 @@ function tailCellClass(count: number, isStreak: boolean): string {
                 <td
                   v-for="(count, digit) in row.tails"
                   :key="`t-${row.issue}-${digit}`"
-                  class="px-2 py-2 text-center font-mono text-xs"
+                  class="px-2 py-2 text-center font-mono"
                   :class="tailCellClass(count, row.streakDigits.has(digit))"
                 >
                   {{ count === 0 ? '' : count }}
