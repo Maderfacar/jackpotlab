@@ -46,6 +46,28 @@ function quantile(values: number[], q: number): number {
   return sorted[Math.floor(q * (sorted.length - 1))]!
 }
 
+// 年內樣本少於這個數時，另附 2007 年起全史的分布當參考
+const MIN_YEAR_SAMPLE = 20
+const WARMUP = 100
+const allDraws = state.history.slice(WARMUP).map(e => metric.pick(e))
+
+/** 上一期是 last 顆時，下一期各是幾顆的次數 */
+function nextDistribution(counts: number[], last: number): Map<number, number> {
+  const dist = new Map<number, number>()
+  for (let i = 0; i < counts.length - 1; i++) {
+    if (counts[i] !== last) continue
+    dist.set(counts[i + 1]!, (dist.get(counts[i + 1]!) ?? 0) + 1)
+  }
+  return dist
+}
+
+function formatDistribution(dist: Map<number, number>): string {
+  const n = [...dist.values()].reduce((a, b) => a + b, 0)
+  const mean = [...dist].reduce((a, [k, c]) => a + k * c, 0) / n
+  const parts = [...dist].sort((a, b) => a[0] - b[0]).map(([k, c]) => `${k}顆 ${c}次(${Math.round(100 * c / n)}%)`)
+  return `${parts.join('、')}｜共 ${n} 次，平均 ${mean.toFixed(2)} 顆`
+}
+
 function trendWord(sums: number[]): string {
   const [a, b, c] = sums as [number, number, number]
   if (a < b && b < c) return '一路往上'
@@ -83,5 +105,21 @@ for (const y of metric.keys) {
   console.log(`${metric.label}=${y}｜平均每期 ${mean.toFixed(2)} 顆｜看 ${w} 期合計（平均 ${(sums.reduce((a, b) => a + b, 0) / sums.length).toFixed(1)}，高 ≥${hi}、低 ≤${lo}）`)
   console.log(`  最近 ${recentN} 期：${recent}`)
   console.log(`  最近三個 ${w} 期合計：${lastSums.join('、')} → ${zone}，${trendWord(lastSums)}`)
-  console.log(`  上一期 ${last} 顆之後的下一期：比較多 ${more}、比較少 ${less}、一樣 ${same}｜大小交替 ${Math.round(100 * alt / (dirs.length - 1))}%\n`)
+  console.log(`  上一期 ${last} 顆之後的下一期：比較多 ${more}、比較少 ${less}、一樣 ${same}｜大小交替 ${Math.round(100 * alt / (dirs.length - 1))}%`)
+
+  const yearDist = nextDistribution(counts, last)
+  console.log(`  下一期幾顆（今年）：${formatDistribution(yearDist)}`)
+  const yearN = [...yearDist.values()].reduce((a, b) => a + b, 0)
+  const allDist = nextDistribution(allDraws.map(vs => vs.filter(v => v === y).length), last)
+  if (yearN < MIN_YEAR_SAMPLE) {
+    console.log(`  下一期幾顆（2007 起全史參考）：${formatDistribution(allDist)}`)
+  }
+  // 下一期開完：最舊那期移出視窗，加上下一期的顆數
+  const base = now - counts[counts.length - w]!
+  const options = [...new Set([...yearDist.keys(), ...allDist.keys()])].sort((a, b) => a - b).map((k) => {
+    const s = base + k
+    const z = s >= hi ? '高' : s <= lo ? '低' : '中'
+    return `開${k}顆→${s}(${z})`
+  })
+  console.log(`  下一期開完的 ${w} 期合計：移出 ${draws.at(-w)!.no} 期的 ${counts[counts.length - w]} 顆，${options.join('、')}\n`)
 }
