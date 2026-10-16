@@ -85,6 +85,19 @@ function formatDistribution(dist: Map<number, number>): string {
   return `${parts.join('、')}｜共 ${n} 次，平均 ${mean.toFixed(2)} 顆`
 }
 
+/** 每一期當下的波段（W 期合計對照該序列自己的前後 20%）；前 W-1 期為 '' */
+function zonesFor(counts: number[], w: number): string[] {
+  const sums = counts.map((_, i) => i < w - 1 ? null : counts.slice(i - w + 1, i + 1).reduce((a, b) => a + b, 0))
+  const valid = sums.filter((s): s is number => s !== null)
+  const hi = quantile(valid, HIGH_Q)
+  const lo = quantile(valid, LOW_Q)
+  return sums.map(s => s === null ? '' : s >= hi ? '高' : s <= lo ? '低' : '中')
+}
+
+function formatDistributionSafe(dist: Map<number, number>): string {
+  return dist.size === 0 ? '無' : formatDistribution(dist)
+}
+
 function trendWord(sums: number[]): string {
   const [a, b, c] = sums as [number, number, number]
   if (a < b && b < c) return '一路往上'
@@ -140,15 +153,21 @@ for (const y of metric.keys) {
   })
   console.log(`  下一期開完的 ${w} 期合計：移出 ${draws.at(-w)!.no} 期的 ${counts[counts.length - w]} 顆，${options.join('、')}`)
 
+  // 同盤面：上一期同樣顆數＋同樣在高／中／低波段（使用者：要以目前盤面結合目前波段來看）
+  const yearZones = zonesFor(counts, w)
+  const nowZone = yearZones.at(-1)!
+  const allCounts = allDraws.map(vs => vs.filter(v => v === y).length)
+  const allZones = zonesFor(allCounts, w)
+  const sameYear = distWhere(counts, i => counts[i] === last && yearZones[i] === nowZone)
+  const sameAll = distWhere(allCounts, i => allCounts[i] === last && allZones[i] === nowZone)
+  console.log(`  ★同盤面（上一期${last}顆＋${nowZone}波段）今年：${formatDistributionSafe(sameYear)}`)
+  console.log(`  ★同盤面（上一期${last}顆＋${nowZone}波段）全史：${formatDistributionSafe(sameAll)}`)
+
   if (metric.label === '值') {
     // 加條件：上一期的值總和 <10（使用者問「波段遇上值總和小於 10 時」）
-    const zoneOf = (i: number): string => {
-      if (i < w - 1) return ''
-      const s = sums[i - (w - 1)]!
-      return s >= hi ? '高' : s <= lo ? '低' : '中'
-    }
-    const nowZone = zoneOf(counts.length - 1)
-    const allCounts = allDraws.map(vs => vs.filter(v => v === y).length)
+    const zoneOf = (i: number): string => yearZones[i]!
+    console.log(`  ★同盤面＋值總和<10 全史：${formatDistributionSafe(distWhere(allCounts, i => allCounts[i] === last && allZones[i] === nowZone && allValueSums[i]! < LOW_VALUE_SUM))}`)
+    console.log(`  ★同盤面＋值總和≥10 全史：${formatDistributionSafe(distWhere(allCounts, i => allCounts[i] === last && allZones[i] === nowZone && allValueSums[i]! >= LOW_VALUE_SUM))}`)
     const lines: [string, Map<number, number>][] = [
       [`今年 上一期${last}顆＋值總和<10`, distWhere(counts, i => counts[i] === last && draws[i]!.valueSum < LOW_VALUE_SUM)],
       [`今年 上一期${last}顆＋值總和≥10`, distWhere(counts, i => counts[i] === last && draws[i]!.valueSum >= LOW_VALUE_SUM)],
