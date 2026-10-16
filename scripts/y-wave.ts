@@ -27,6 +27,12 @@ const METRICS = {
     pick: (e: HistoryEntry) => (e.values ?? '').split(',').filter(v => v !== '').map(Number)
   }
 } as const
+const LOW_VALUE_SUM = 10
+
+function valueSumOf(e: HistoryEntry): number {
+  return (e.values ?? '').split(',').filter(v => v !== '').reduce((a, v) => a + Number(v), 0)
+}
+
 const metric = METRICS[process.argv[2] === 'value' ? 'value' : 'y']
 const TARGET_WINDOW_SUM = 7.1
 const MIN_WINDOW = 3
@@ -39,7 +45,7 @@ const state = hydrateFromDraws('lotto539', SLOTS, file.rows.map(([t, d, p]) => (
 const year = state.history.at(-1)!.date.slice(0, 4)
 const draws = state.history
   .filter(e => e.date.startsWith(year))
-  .map(e => ({ no: e.issue.slice(-3), ys: metric.pick(e) }))
+  .map(e => ({ no: e.issue.slice(-3), ys: metric.pick(e), valueSum: valueSumOf(e) }))
 
 function quantile(values: number[], q: number): number {
   const sorted = [...values].sort((a, b) => a - b)
@@ -50,6 +56,17 @@ function quantile(values: number[], q: number): number {
 const MIN_YEAR_SAMPLE = 20
 const WARMUP = 100
 const allDraws = state.history.slice(WARMUP).map(e => metric.pick(e))
+const allValueSums = state.history.slice(WARMUP).map(valueSumOf)
+
+/** 符合條件的期，下一期各是幾顆的次數 */
+function distWhere(counts: number[], match: (i: number) => boolean): Map<number, number> {
+  const dist = new Map<number, number>()
+  for (let i = 0; i < counts.length - 1; i++) {
+    if (!match(i)) continue
+    dist.set(counts[i + 1]!, (dist.get(counts[i + 1]!) ?? 0) + 1)
+  }
+  return dist
+}
 
 /** 上一期是 last 顆時，下一期各是幾顆的次數 */
 function nextDistribution(counts: number[], last: number): Map<number, number> {
@@ -121,5 +138,27 @@ for (const y of metric.keys) {
     const z = s >= hi ? '高' : s <= lo ? '低' : '中'
     return `開${k}顆→${s}(${z})`
   })
-  console.log(`  下一期開完的 ${w} 期合計：移出 ${draws.at(-w)!.no} 期的 ${counts[counts.length - w]} 顆，${options.join('、')}\n`)
+  console.log(`  下一期開完的 ${w} 期合計：移出 ${draws.at(-w)!.no} 期的 ${counts[counts.length - w]} 顆，${options.join('、')}`)
+
+  if (metric.label === '值') {
+    // 加條件：上一期的值總和 <10（使用者問「波段遇上值總和小於 10 時」）
+    const zoneOf = (i: number): string => {
+      if (i < w - 1) return ''
+      const s = sums[i - (w - 1)]!
+      return s >= hi ? '高' : s <= lo ? '低' : '中'
+    }
+    const nowZone = zoneOf(counts.length - 1)
+    const allCounts = allDraws.map(vs => vs.filter(v => v === y).length)
+    const lines: [string, Map<number, number>][] = [
+      [`今年 上一期${last}顆＋值總和<10`, distWhere(counts, i => counts[i] === last && draws[i]!.valueSum < LOW_VALUE_SUM)],
+      [`今年 上一期${last}顆＋值總和≥10`, distWhere(counts, i => counts[i] === last && draws[i]!.valueSum >= LOW_VALUE_SUM)],
+      [`今年 同在${nowZone}波段＋值總和<10`, distWhere(counts, i => zoneOf(i) === nowZone && draws[i]!.valueSum < LOW_VALUE_SUM)],
+      [`今年 同在${nowZone}波段＋值總和≥10`, distWhere(counts, i => zoneOf(i) === nowZone && draws[i]!.valueSum >= LOW_VALUE_SUM)],
+      [`全史 上一期${last}顆＋值總和<10`, distWhere(allCounts, i => allCounts[i] === last && allValueSums[i]! < LOW_VALUE_SUM)],
+      [`全史 上一期${last}顆＋值總和≥10`, distWhere(allCounts, i => allCounts[i] === last && allValueSums[i]! >= LOW_VALUE_SUM)]
+    ]
+    console.log(`  目前值總和 ${draws.at(-1)!.valueSum}（${draws.at(-1)!.valueSum < LOW_VALUE_SUM ? '<10' : '≥10'}）`)
+    for (const [label, dist] of lines) console.log(`    ${label}：${formatDistribution(dist)}`)
+  }
+  console.log('')
 }
