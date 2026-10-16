@@ -1,20 +1,33 @@
 /**
- * 539 位置 y=1～5「近期波段的變化走勢」（使用者固定問法，2026-10-16 定案）。
+ * 539 位置 y=1～5／值 0～5「近期波段的變化走勢」（使用者固定問法，2026-10-16 定案）。
  *
- * 範圍：最新一期所在的年份（今年以來）。每期數這期 5 顆中位置 y=k 的顆數。
+ * 範圍：最新一期所在的年份（今年以來）。每期數這期 5 顆中位置 y=k（或值=v）的顆數。
  * 各 y 出現頻率不同，不能都用 3 期看：視窗 W = round(7.1 ÷ 該 y 每期平均)（至少 3 期），
  * 讓 W 期合計平均都在 7 左右；高波段 = 今年 W 期合計的前 20%，低波段 = 後 20%。
  * 另給「上一期是 c 顆之後，下一期比較多／少／一樣」的次數與大小交替率。
  *
  * 用法（先補歷史檔再算）：
  *   node --import tsx --env-file=.env.local scripts/export-539-history.ts
- *   node --import tsx scripts/y-wave.ts
+ *   node --import tsx scripts/y-wave.ts          # 位置 y=1～5
+ *   node --import tsx scripts/y-wave.ts value    # 值 0～5
  */
 import { readFileSync } from 'node:fs'
-import { hydrateFromDraws } from '../app/utils/analysis'
+import { hydrateFromDraws, type HistoryEntry } from '../app/utils/analysis'
 import type { HistoryFile } from '../shared/lotto/history-file'
 
-const Y_VALUES = [1, 2, 3, 4, 5]
+const METRICS = {
+  y: {
+    label: 'y',
+    keys: [1, 2, 3, 4, 5],
+    pick: (e: HistoryEntry) => (e.positions ?? '').split(',').map(p => Number(p.split('-')[1]))
+  },
+  value: {
+    label: '值',
+    keys: [0, 1, 2, 3, 4, 5],
+    pick: (e: HistoryEntry) => (e.values ?? '').split(',').filter(v => v !== '').map(Number)
+  }
+} as const
+const metric = METRICS[process.argv[2] === 'value' ? 'value' : 'y']
 const TARGET_WINDOW_SUM = 7.1
 const MIN_WINDOW = 3
 const HIGH_Q = 0.8
@@ -26,7 +39,7 @@ const state = hydrateFromDraws('lotto539', SLOTS, file.rows.map(([t, d, p]) => (
 const year = state.history.at(-1)!.date.slice(0, 4)
 const draws = state.history
   .filter(e => e.date.startsWith(year))
-  .map(e => ({ no: e.issue.slice(-3), ys: (e.positions ?? '').split(',').map(p => Number(p.split('-')[1])) }))
+  .map(e => ({ no: e.issue.slice(-3), ys: metric.pick(e) }))
 
 function quantile(values: number[], q: number): number {
   const sorted = [...values].sort((a, b) => a - b)
@@ -43,7 +56,7 @@ function trendWord(sums: number[]): string {
 }
 
 console.log(`${year} 年到第 ${state.history.at(-1)!.issue} 期，共 ${draws.length} 期\n`)
-for (const y of Y_VALUES) {
+for (const y of metric.keys) {
   const counts = draws.map(d => d.ys.filter(v => v === y).length)
   const mean = counts.reduce((a, b) => a + b, 0) / counts.length
   const w = Math.max(MIN_WINDOW, Math.round(TARGET_WINDOW_SUM / mean))
@@ -67,7 +80,7 @@ for (const y of Y_VALUES) {
   const recentN = Math.max(w, 5)
   const recent = draws.slice(-recentN).map((d, i) => `${d.no}:${counts[counts.length - recentN + i]}`).join(' ')
 
-  console.log(`y=${y}｜平均每期 ${mean.toFixed(2)} 顆｜看 ${w} 期合計（平均 ${(sums.reduce((a, b) => a + b, 0) / sums.length).toFixed(1)}，高 ≥${hi}、低 ≤${lo}）`)
+  console.log(`${metric.label}=${y}｜平均每期 ${mean.toFixed(2)} 顆｜看 ${w} 期合計（平均 ${(sums.reduce((a, b) => a + b, 0) / sums.length).toFixed(1)}，高 ≥${hi}、低 ≤${lo}）`)
   console.log(`  最近 ${recentN} 期：${recent}`)
   console.log(`  最近三個 ${w} 期合計：${lastSums.join('、')} → ${zone}，${trendWord(lastSums)}`)
   console.log(`  上一期 ${last} 顆之後的下一期：比較多 ${more}、比較少 ${less}、一樣 ${same}｜大小交替 ${Math.round(100 * alt / (dirs.length - 1))}%\n`)
