@@ -33,6 +33,7 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { label: '號碼走勢', icon: 'i-lucide-table-2', to: '/board' },
+  { label: '近期波段', icon: 'i-lucide-waves', to: '/trend' },
   { label: '我的查找', icon: 'i-lucide-scan-search', to: '/scan' },
   { label: '隔期篩選', icon: 'i-lucide-list-filter', to: '/gapfilter' },
   { label: '開獎號碼', icon: 'i-lucide-list-checks', to: '/draws' },
