@@ -857,9 +857,10 @@ function tailCellClass(count: number, isStreak: boolean): string {
                       v-if="row.record.split(',').length > RECORD_VISIBLE"
                       type="button"
                       class="ml-1 rounded bg-elevated px-1.5 text-muted hover:text-highlighted"
+                      :aria-label="expandedRecords.has(row.period) ? '收合' : '展開其餘記錄'"
                       @click="toggleRecord(row.period)"
                     >
-                      {{ expandedRecords.has(row.period) ? '收合' : `…還有 ${row.record.split(',').length - RECORD_VISIBLE} 個` }}
+                      {{ expandedRecords.has(row.period) ? '▲' : '▼' }}
                     </button>
                   </div>
                 </td>
