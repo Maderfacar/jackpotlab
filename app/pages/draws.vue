@@ -854,7 +854,11 @@ function tailCellClass(count: number, isStreak: boolean): string {
                   {{ row.prizes.length > 0 ? row.prizes.join(',') : '—' }}
                 </td>
                 <td class="px-3 py-2 font-mono text-xs">
-                  <div class="whitespace-pre-wrap break-all">
+                  <!-- 展開後跟以前一樣固定高度、在格子裡捲動 -->
+                  <div
+                    class="whitespace-pre-wrap break-all"
+                    :class="expandedRecords.has(row.period) ? 'max-h-[60px] overflow-y-auto' : ''"
+                  >
                     <template
                       v-for="(part, idx) in row.record.split(',')"
                       :key="idx"
@@ -866,15 +870,25 @@ function tailCellClass(count: number, isStreak: boolean): string {
                       </template>
                     </template>
                     <button
-                      v-if="row.record.split(',').length > RECORD_VISIBLE"
+                      v-if="row.record.split(',').length > RECORD_VISIBLE && !expandedRecords.has(row.period)"
                       type="button"
                       class="ml-1 rounded bg-elevated px-1.5 text-muted hover:text-highlighted"
-                      :aria-label="expandedRecords.has(row.period) ? '收合' : '展開其餘記錄'"
+                      aria-label="展開其餘記錄"
                       @click="toggleRecord(row.period)"
                     >
-                      {{ expandedRecords.has(row.period) ? '▲' : '▼' }}
+                      ▼
                     </button>
                   </div>
+                  <!-- 收合鈕放在捲動框外，不用捲到底才按得到 -->
+                  <button
+                    v-if="expandedRecords.has(row.period)"
+                    type="button"
+                    class="mt-1 rounded bg-elevated px-1.5 text-muted hover:text-highlighted"
+                    aria-label="收合"
+                    @click="toggleRecord(row.period)"
+                  >
+                    ▲
+                  </button>
                 </td>
               </tr>
             </tbody>
