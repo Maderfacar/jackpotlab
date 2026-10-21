@@ -409,6 +409,10 @@ function shortTerm(term: number | string): string {
   return m ? `${m[1]}${m[2]}` : s
 }
 
+/** 獎號關聯「位置」只顯示 y（"5-2,3-1" → "2,1"；2026-10-22） */
+const yOnly = (positions: string | undefined): string =>
+  (positions ?? '').split(',').map(p => p.split('-')[1] ?? '').join(',')
+
 /** 日期欄只顯示月-日（YYYY-MM-DD → MM-DD） */
 const monthDay = (date: string): string => (date.length >= 10 ? date.slice(5, 10) : date)
 
@@ -949,7 +953,7 @@ function tailCellClass(count: number, isStreak: boolean): string {
                   {{ row.values }}
                 </td>
                 <td class="px-3 py-2 font-mono text-xs">
-                  {{ row.positions }}
+                  {{ yOnly(row.positions) }}
                 </td>
               </tr>
             </tbody>
