@@ -386,6 +386,22 @@ const tailsRows = computed(() => {
   })).reverse()
 })
 
+/** 記錄欄：最新的值＋後面 4 個直接顯示，其餘收合（2026-10-21） */
+const RECORD_VISIBLE = 5
+const expandedRecords = ref<Set<number>>(new Set())
+
+function toggleRecord(period: number) {
+  const next = new Set(expandedRecords.value)
+  if (next.has(period)) next.delete(period)
+  else next.add(period)
+  expandedRecords.value = next
+}
+
+/** 日期欄只顯示月-日（YYYY-MM-DD → MM-DD） */
+const monthDay = (date: string): string => (date.length >= 10 ? date.slice(5, 10) : date)
+
+const noteOpen = ref(false)
+
 function parsePrizes(csv: string): number[] {
   return csv ? csv.split(',').map(Number) : []
 }
@@ -419,7 +435,7 @@ function tailCellClass(count: number, isStreak: boolean): string {
 </script>
 
 <template>
-  <UContainer class="py-10 space-y-6">
+  <UContainer class="pt-10 pb-24 space-y-6">
     <header class="flex flex-wrap items-end justify-between gap-3">
       <div class="space-y-2">
         <h1 class="text-3xl font-semibold tracking-tight">
@@ -820,21 +836,31 @@ function tailCellClass(count: number, isStreak: boolean): string {
                   class="px-3 py-2"
                   :class="showDateRed && row.hasEverMatched ? 'text-rose-600 font-semibold' : ''"
                 >
-                  {{ row.date || '—' }}
+                  {{ row.date ? monthDay(row.date) : '—' }}
                 </td>
                 <td class="px-3 py-2 font-mono text-xs">
                   {{ row.prizes.length > 0 ? row.prizes.join(',') : '—' }}
                 </td>
                 <td class="px-3 py-2 font-mono text-xs">
-                  <div class="max-h-[60px] overflow-y-auto whitespace-pre-wrap break-all">
+                  <div class="whitespace-pre-wrap break-all">
                     <template
                       v-for="(part, idx) in row.record.split(',')"
                       :key="idx"
                     >
-                      <span
-                        :class="idx === 0 && Number.parseInt(part || '0', 10) >= periodsAverage && row.record !== '' ? 'text-rose-600 font-bold' : ''"
-                      >{{ part }}</span><span v-if="idx < row.record.split(',').length - 1">,</span>
+                      <template v-if="idx < RECORD_VISIBLE || expandedRecords.has(row.period)">
+                        <span
+                          :class="idx === 0 && row.record !== '' ? ['text-sm font-black', Number.parseInt(part || '0', 10) >= periodsAverage ? 'text-rose-600' : 'text-highlighted'] : ''"
+                        >{{ part }}</span><span v-if="idx < row.record.split(',').length - 1">,</span>
+                      </template>
                     </template>
+                    <button
+                      v-if="row.record.split(',').length > RECORD_VISIBLE"
+                      type="button"
+                      class="ml-1 rounded bg-elevated px-1.5 text-muted hover:text-highlighted"
+                      @click="toggleRecord(row.period)"
+                    >
+                      {{ expandedRecords.has(row.period) ? '收合' : `…還有 ${row.record.split(',').length - RECORD_VISIBLE} 個` }}
+                    </button>
                   </div>
                 </td>
               </tr>
@@ -949,7 +975,7 @@ function tailCellClass(count: number, isStreak: boolean): string {
                   {{ row.issue }}
                 </td>
                 <td class="px-3 py-2 font-mono text-xs">
-                  {{ row.date }}
+                  {{ monthDay(row.date) }}
                 </td>
                 <td class="px-3 py-2 font-mono text-xs">
                   {{ row.prizes }}
@@ -974,5 +1000,28 @@ function tailCellClass(count: number, isStreak: boolean): string {
         <p>分析資料載入中或資料不足</p>
       </div>
     </template>
+
+    <!-- 便條紙：平常收成右下角按鈕，點開才蓋住畫面（同 /gapfilter 碰數） -->
+    <div class="fixed right-4 bottom-4 z-40">
+      <UButton
+        icon="i-lucide-sticky-note"
+        size="lg"
+        color="neutral"
+        class="rounded-full shadow-lg"
+        @click="noteOpen = true"
+      >
+        便條
+      </UButton>
+    </div>
+    <USlideover
+      v-model:open="noteOpen"
+      title="便條紙"
+      description="打字自動存在這台裝置"
+      :ui="{ body: 'p-0 sm:p-0' }"
+    >
+      <template #body>
+        <DrawsStickyNotes />
+      </template>
+    </USlideover>
   </UContainer>
 </template>
