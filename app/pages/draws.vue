@@ -397,6 +397,18 @@ function toggleRecord(period: number) {
   expandedRecords.value = next
 }
 
+/**
+ * 期數縮短（2026-10-21）：台彩慢彩種 115000255 = 民國 115 年第 255 期，一年不到一千期，
+ * 中間三個 0 拿掉 → 115255。賓果（一年上萬期）、加州（YYYYMMDD）照原樣。
+ */
+function shortTerm(term: number | string): string {
+  const s = String(term)
+  if (isBingo.value || isCa.value) return s
+  // 民國 96～99 年只有兩位數年份：96000001 → 96001
+  const m = /^(\d{2,3})000(\d{3})$/.exec(s)
+  return m ? `${m[1]}${m[2]}` : s
+}
+
 /** 日期欄只顯示月-日（YYYY-MM-DD → MM-DD） */
 const monthDay = (date: string): string => (date.length >= 10 ? date.slice(5, 10) : date)
 
@@ -668,7 +680,7 @@ function tailCellClass(count: number, isStreak: boolean): string {
             <div class="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
               <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
                 <span class="text-xs uppercase tracking-wider text-muted">期別</span>
-                <span class="font-mono text-base font-semibold">{{ result.drawTerm }}</span>
+                <span class="font-mono text-base font-semibold">{{ shortTerm(result.drawTerm) }}</span>
                 <span class="text-xs text-muted">{{ result.drawDate }}</span>
                 <span
                   v-if="isBingo"
@@ -830,7 +842,7 @@ function tailCellClass(count: number, isStreak: boolean): string {
                   {{ row.period }}
                 </td>
                 <td class="px-3 py-2 font-mono">
-                  {{ row.issue || '—' }}
+                  {{ row.issue ? shortTerm(row.issue) : '—' }}
                 </td>
                 <td
                   class="px-3 py-2"
@@ -911,7 +923,7 @@ function tailCellClass(count: number, isStreak: boolean): string {
                 class="border-t border-default"
               >
                 <td class="px-3 py-2 font-mono">
-                  {{ row.issue }}
+                  {{ shortTerm(row.issue) }}
                 </td>
                 <td class="px-3 py-2 font-mono text-xs">
                   {{ row.periods }}
@@ -973,7 +985,7 @@ function tailCellClass(count: number, isStreak: boolean): string {
                 class="border-t border-default"
               >
                 <td class="px-3 py-2 font-mono">
-                  {{ row.issue }}
+                  {{ shortTerm(row.issue) }}
                 </td>
                 <td class="px-3 py-2 font-mono text-xs">
                   {{ monthDay(row.date) }}
