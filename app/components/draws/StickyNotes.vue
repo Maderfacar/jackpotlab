@@ -87,6 +87,8 @@ function formatTime(iso: string): string {
   color: #fef3c7;
 }
 .note-text {
+  /* 一張便條至少佔大半個畫面，不用在小框裡捲（2026-10-22 使用者：七、八成螢幕） */
+  min-height: 65dvh;
   font-size: 0.95rem;
   line-height: 1.6;
 }
