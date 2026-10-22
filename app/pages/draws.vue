@@ -409,9 +409,18 @@ function shortTerm(term: number | string): string {
   return m ? `${m[1]}${m[2]}` : s
 }
 
-/** 獎號關聯「位置」只顯示 y（"5-2,3-1" → "2,1"；2026-10-22） */
-const yOnly = (positions: string | undefined): string =>
-  (positions ?? '').split(',').map(p => p.split('-')[1] ?? '').join(',')
+/** 獎號關聯「位置」只顯示 y（"5-2,3-1" → ["2","1"]；2026-10-22） */
+const yOnly = (positions: string | undefined): string[] =>
+  (positions ?? '').split(',').map(p => p.split('-')[1] ?? '')
+
+const csv = (s: string | undefined): string[] => (s ? s.split(',') : [])
+
+/** 獎號關聯的隔期、值：整欄取最長的字數當每格寬度，上下列才對得齊 */
+function widestOf(rows: HistoryEntry[], pick: (r: HistoryEntry) => string | undefined): number {
+  return rows.reduce((w, r) => Math.max(w, ...csv(pick(r)).map(x => x.length)), 1)
+}
+const periodsWidth = computed(() => widestOf(relationsRows.value, r => r.periods))
+const valuesWidth = computed(() => widestOf(relationsRows.value, r => r.values))
 
 /** 日期欄只顯示月-日（YYYY-MM-DD → MM-DD） */
 const monthDay = (date: string): string => (date.length >= 10 ? date.slice(5, 10) : date)
@@ -855,7 +864,12 @@ function tailCellClass(count: number, isStreak: boolean): string {
                   {{ row.date ? monthDay(row.date) : '—' }}
                 </td>
                 <td class="px-3 py-2 font-mono text-xs">
-                  {{ row.prizes.length > 0 ? row.prizes.join(',') : '—' }}
+                  <DrawsCells
+                    v-if="row.prizes.length > 0"
+                    :items="row.prizes"
+                    :width="2"
+                    pad
+                  /><span v-else>—</span>
                 </td>
                 <td class="px-3 py-2 font-mono text-xs">
                   <!-- 展開後跟以前一樣固定高度、在格子裡捲動 -->
@@ -944,16 +958,25 @@ function tailCellClass(count: number, isStreak: boolean): string {
                   {{ shortTerm(row.issue) }}
                 </td>
                 <td class="px-3 py-2 font-mono text-xs">
-                  {{ row.periods }}
+                  <DrawsCells
+                    :items="csv(row.periods)"
+                    :width="periodsWidth"
+                  />
                 </td>
                 <td class="px-3 py-2 text-right font-mono">
                   {{ row.sum === '' || row.sum === undefined ? '' : row.sum }}
                 </td>
                 <td class="px-3 py-2 font-mono text-xs">
-                  {{ row.values }}
+                  <DrawsCells
+                    :items="csv(row.values)"
+                    :width="valuesWidth"
+                  />
                 </td>
                 <td class="px-3 py-2 font-mono text-xs">
-                  {{ yOnly(row.positions) }}
+                  <DrawsCells
+                    :items="yOnly(row.positions)"
+                    :width="1"
+                  />
                 </td>
               </tr>
             </tbody>
@@ -1009,7 +1032,11 @@ function tailCellClass(count: number, isStreak: boolean): string {
                   {{ monthDay(row.date) }}
                 </td>
                 <td class="px-3 py-2 font-mono text-xs">
-                  {{ row.prizes }}
+                  <DrawsCells
+                    :items="csv(row.prizes)"
+                    :width="2"
+                    pad
+                  />
                 </td>
                 <td
                   v-for="(count, digit) in row.tails"
