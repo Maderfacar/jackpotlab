@@ -2,11 +2,12 @@
 /**
  * 一頁總覽（2026-10-27 使用者：問過的、建議的、可探索的都放進一頁；不要往下捲那麼多，大破大立改版）。
  *
- * 像 App：頂部固定最新一期球條，底部四個按鈕切畫面，一次只看一個。
+ * 像 App：頂部固定最新一期球條，底部五個按鈕切畫面，一次只看一個。
  * - 盤面：13 種看法一張看盤表，點一列滑出「連 N 期之後」「等多久」
  * - 位置波段：第 1～5 顆（由小到大）的隔期／值波形＋相似波形引出的下一期
  * - 號碼：同幾顆、整組重覆、4 顆、牽引
  * - 波段：原 /trend 近期波段與 /board 四種均值
+ * - 挖掘：交叉、回拉、例外前兆
  * 計算：shared/lotto/overview/*（測試 shared/lotto/__tests__/overview.test.ts）。
  */
 import { OVERVIEW_VIEWS, type OverviewView } from '~/utils/overview-format'
@@ -95,6 +96,13 @@ const view = computed<OverviewView>({
             </h2>
             <OverviewNumbers :draws="draws" />
           </section>
+          <OverviewDigView
+            v-else-if="view === 'dig'"
+            key="dig"
+            :summaries="summaries"
+            :draws="draws"
+            :feats="feats"
+          />
           <section
             v-else
             key="waves"
@@ -165,6 +173,18 @@ const view = computed<OverviewView>({
   color: var(--ov-paper);
   box-shadow: 0 2px 6px -2px rgb(0 0 0 / 0.4);
 }
+.ov-root .ov-select {
+  appearance: none;
+  border-radius: 0.6rem;
+  border: 1px solid var(--ov-line);
+  background: var(--ov-card) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' fill='none' stroke='%2378716c' stroke-width='1.6'%3E%3Cpath d='M1 1l4 4 4-4'/%3E%3C/svg%3E") no-repeat right 0.55rem center;
+  padding: 0.3rem 1.6rem 0.3rem 0.65rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--ov-ink);
+}
+.ov-root .ov-select.is-small { padding: 0.15rem 1.4rem 0.15rem 0.5rem; font-size: 0.75rem; }
+.ov-root .ov-select:focus-visible { outline: 2px solid var(--ov-warm); outline-offset: 1px; }
 .ov-view-enter-active, .ov-view-leave-active { transition: opacity 160ms ease, transform 200ms cubic-bezier(0.16, 1, 0.3, 1); }
 .ov-view-enter-from { opacity: 0; transform: translateY(8px); }
 .ov-view-leave-to { opacity: 0; }

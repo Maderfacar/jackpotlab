@@ -144,14 +144,14 @@ const valueLine = (s: CoordSummary) => {
 
     <details class="rounded-xl border border-dashed border-[var(--ov-line)] px-3 py-2 text-xs text-[var(--ov-ink-soft)]">
       <summary class="cursor-pointer font-semibold">
-        還在挖的 4 項
+        還沒做的 1 項
       </summary>
       <ul class="mt-1 list-disc space-y-0.5 pl-5">
         <li>實際開出順序（球掉出來的先後）</li>
-        <li>交叉：連開 4單 時，那幾顆單號是從哪幾個隔期格出來的</li>
-        <li>回拉的力道和速度</li>
-        <li>例外前兆：常見配置不成立的那幾期，前面是什麼盤面</li>
       </ul>
+      <p class="mt-1">
+        交叉、回拉、例外前兆在底部「挖掘」。
+      </p>
     </details>
 
     <UDrawer

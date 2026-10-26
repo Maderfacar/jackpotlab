@@ -8,6 +8,9 @@ import { buildCoords, gapShape, hasConsecutive, hasSameTail, thirdShape, zoneSha
 import { bucketOf, positionStats, positionValues, similar, spread } from '../overview/position'
 import { byTimes, combos, follows, groupRepeats, latestOverlap, perYear } from '../overview/numbers'
 import { currentRun, ladder, runStats, waits } from '../overview/streak'
+import { ballClass, crossTable, runLengths, sameSituation } from '../overview/cross'
+import { pullback, returnGroup, trips } from '../overview/pullback'
+import { exceptionSplit, precursors, rateOf } from '../overview/precursor'
 
 const draw = (i: number, nums: number[], date = `2020-01-${String(i + 1).padStart(2, '0')}`): OverviewDraw => ({ issue: String(i + 1), date, nums })
 
@@ -134,5 +137,73 @@ describe('位置波段', () => {
     assert.deepEqual(s.fan[0], spread([7, 8]))
     assert.deepEqual(s.fan[2], spread([4, 5]))
     assert.equal(similar([null, 1], 'gap', 2), null)
+  })
+})
+
+describe('交叉', () => {
+  it('每期往前連幾期；以前一樣的盤面（連到 ≥ N 期，不含最新一期）與它們的下一期', () => {
+    const seq = ['A', 'A', 'B', 'A', 'A', 'A', null, 'A', 'A']
+    assert.deepEqual(runLengths(seq), [1, 2, 1, 1, 2, 3, 0, 1, 2])
+    assert.deepEqual(sameSituation(seq, 'A', 2), [1, 4, 5])
+    assert.deepEqual(sameSituation(seq, 'A', 2, 1), [2, 5, 6])
+  })
+
+  it('每顆球用兩種分法歸類；有一顆分不出類的期整期不算', () => {
+    const nums = [[1, 3, 14, 27, 30], [2, 4, 6, 8, 10]]
+    const feats = [
+      { gaps: [0, 6, 12, 1, 2], values: [], xs: [], ys: [1, 2, 3, 4, 5] },
+      { gaps: [0, null, 1, 2, 3], values: [], xs: [], ys: [] }
+    ]
+    assert.equal(ballClass('y', 30, feats[0]!, 4), 3)
+    assert.equal(ballClass('head', 30, feats[0]!, 4), 3)
+    const t = crossTable(nums, feats, [0, 1], 'oddEven', 'gap')
+    assert.equal(t.draws, 1)
+    // 單：1(隔0)、3(隔6)、27(隔1) → 0~5 兩顆、6~9 一顆；雙：14(隔12)、30(隔2)
+    assert.deepEqual(t.cells, [[2, 1, 0], [1, 0, 1]])
+    assert.deepEqual(crossTable(nums, feats, [0, 1], 'oddEven', 'third'), { cells: [[2, 0, 1], [5, 1, 1]], draws: 2 })
+  })
+})
+
+describe('回拉', () => {
+  it('衝到高處（≥ p90）到回到中位數隔幾期；還在外面的算目前這趟', () => {
+    const band = { p10: 1, p25: 2, p50: 3, p75: 5, p90: 8 }
+    // 索引 2 衝到 9 → 索引 4 回到 3（2 期）；索引 6 掉到 0 → 索引 7 回到 4（1 期）；索引 9 衝到 10 還沒回
+    const vals = [3, 4, 9, 8, 3, 2, 0, 4, 3, 10, 6]
+    const ts = trips(vals, band)
+    assert.deepEqual(ts.map(t => [t.side, t.start, t.end, t.nextValue]), [['high', 2, 4, 8], ['low', 6, 7, 4], ['high', 9, null, 6]])
+    assert.equal(returnGroup(2), 1)
+    assert.equal(returnGroup(7), 4)
+  })
+
+  it('速度、力道、撐過幾期還沒回的那些趟後來再幾期回', () => {
+    // 中位數 3、p90 = 9：索引 10（2 期回）、13（1 期回）、15（3 期回）、19（還在外面 1 期）
+    const vals = [3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 9, 9, 3, 9, 3, 9, 9, 9, 3, 9, 9]
+    const pb = pullback(vals)!
+    assert.deepEqual(pb.band, spread(vals))
+    assert.equal(pb.high.count, 3)
+    assert.deepEqual(pb.high.groups, [1, 1, 1, 0, 0, 0])
+    assert.equal(pb.high.medianLen, 2)
+    assert.deepEqual(pb.ongoing, { side: 'high', start: 19, elapsed: 1, survived: 2, remaining: [1, 1, 0, 0, 0, 0] })
+    // 21 期裡 13 期是 3（小於 9）
+    assert.equal(pb.rank, 62)
+  })
+})
+
+describe('例外前兆', () => {
+  it('常見 = 多到少累加到 ≥ 60%，其餘是例外', () => {
+    const seq = ['A', 'A', 'A', 'B', 'B', 'C', 'A', 'B', 'C', 'D']
+    assert.deepEqual(exceptionSplit(seq), { common: ['A', 'B'], rare: ['C', 'D'], rareShare: 0.30000000000000004 })
+    assert.equal(exceptionSplit(['A', 'A']), null)
+  })
+
+  it('前一期是某個狀態時，下一期出例外的次數', () => {
+    const def = { id: 't', name: 't', hint: '', states: [], tone: () => ({ side: 0 as const, strength: 0 }) }
+    const target = { def, seq: ['A', 'X', 'A', 'A', 'X', 'A'] }
+    const other = { def: { ...def, id: 'o' }, seq: ['p', 'q', 'p', 'q', 'p', 'q'] }
+    const res = precursors(target, { common: ['A'], rare: ['X'], rareShare: 2 / 6 }, [other])
+    assert.deepEqual(res.base, { n: 5, e: 2 })
+    const row = (s: string) => res.rows.find(r => r.state === s)
+    assert.deepEqual([row('p')!.n, row('p')!.e, row('q')!.n, row('q')!.e], [3, 1, 2, 1])
+    assert.equal(rateOf(row('q')!), 0.5)
   })
 })

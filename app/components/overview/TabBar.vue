@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * 底部固定四個按鈕：盤面／位置波段／號碼／波段。
+ * 底部固定五個按鈕：盤面／位置波段／號碼／波段／挖掘。
  */
 import type { OverviewView } from '~/utils/overview-format'
 
@@ -11,7 +11,8 @@ const ITEMS: { value: OverviewView, label: string, icon: string }[] = [
   { value: 'board', label: '盤面', icon: 'i-lucide-layout-grid' },
   { value: 'position', label: '位置波段', icon: 'i-lucide-chart-spline' },
   { value: 'numbers', label: '號碼', icon: 'i-lucide-hash' },
-  { value: 'waves', label: '波段', icon: 'i-lucide-waves' }
+  { value: 'waves', label: '波段', icon: 'i-lucide-waves' },
+  { value: 'dig', label: '挖掘', icon: 'i-lucide-pickaxe' }
 ]
 </script>
 
@@ -20,7 +21,7 @@ const ITEMS: { value: OverviewView, label: string, icon: string }[] = [
     class="ov-tabbar fixed inset-x-0 bottom-0 z-30"
     aria-label="切換畫面"
   >
-    <div class="mx-auto grid max-w-xl grid-cols-4 px-2 pb-[max(0.4rem,env(safe-area-inset-bottom))] pt-1.5">
+    <div class="mx-auto grid max-w-xl grid-cols-5 px-2 pb-[max(0.4rem,env(safe-area-inset-bottom))] pt-1.5">
       <button
         v-for="it in ITEMS"
         :key="it.value"

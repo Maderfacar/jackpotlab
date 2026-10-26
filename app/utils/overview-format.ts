@@ -3,9 +3,9 @@
  */
 import type { StateTone } from '~~/shared/lotto/overview/coords'
 
-/** 一頁總覽底部四個畫面 */
-export type OverviewView = 'board' | 'position' | 'numbers' | 'waves'
-export const OVERVIEW_VIEWS: OverviewView[] = ['board', 'position', 'numbers', 'waves']
+/** 一頁總覽底部五個畫面 */
+export type OverviewView = 'board' | 'position' | 'numbers' | 'waves' | 'dig'
+export const OVERVIEW_VIEWS: OverviewView[] = ['board', 'position', 'numbers', 'waves', 'dig']
 
 /** 115000259 → 115259（一年不會超過一千期；同 /draws） */
 export function shortIssue(issue: string): string {
