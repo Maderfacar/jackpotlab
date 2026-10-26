@@ -32,6 +32,7 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
+  { label: '一頁總覽', icon: 'i-lucide-layout-dashboard', to: '/overview' },
   { label: '號碼走勢', icon: 'i-lucide-table-2', to: '/board' },
   { label: '近期波段', icon: 'i-lucide-waves', to: '/trend' },
   { label: '我的查找', icon: 'i-lucide-scan-search', to: '/scan' },
