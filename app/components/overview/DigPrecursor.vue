@@ -37,7 +37,8 @@ const ranked = computed(() => (result.value?.rows ?? []).filter(r => r.n >= MIN_
 const top = computed(() => ranked.value.slice(0, TOP))
 const bottom = computed(() => ranked.value.slice(-BOTTOM).reverse())
 const aboveNow = computed(() => nowRows.value.filter(r => r.n >= MIN_N && rateOf(r) > baseRate.value).length)
-const scale = computed(() => Math.min(1, Math.max(baseRate.value * 1.6, ...[...nowRows.value, ...top.value].map(rateOf)) * 1.05))
+/** 條的一半代表差多少：取畫面上差最多的那列，至少 5 個百分點 */
+const span = computed(() => 1.1 * Math.max(0.05, ...[...nowRows.value.filter(r => r.n >= MIN_N), ...top.value, ...bottom.value].map(r => Math.abs(rateOf(r) - baseRate.value))))
 const pctOf = (x: number) => `${Math.round(x * 100)}%`
 </script>
 
@@ -88,12 +89,12 @@ const pctOf = (x: number) => `${Math.round(x * 100)}%`
             :row="r"
             :def="defOf(r.coordId)"
             :base-rate="baseRate"
-            :scale="scale"
+            :span="span"
             :thin="r.n < MIN_N"
           />
         </div>
         <p class="text-[11px] text-[var(--ov-ink-soft)]">
-          黑線 = 平常 {{ pctOf(baseRate) }}。淡色的列：以前這個盤面出現不到 {{ MIN_N }} 次。
+          中間黑線 = 平常 {{ pctOf(baseRate) }}，往右橘色 = 比平常高、往左藍色 = 比平常低。淡色的列：以前這個盤面出現不到 {{ MIN_N }} 次。
         </p>
       </section>
 
@@ -113,7 +114,7 @@ const pctOf = (x: number) => `${Math.round(x * 100)}%`
             :row="r"
             :def="defOf(r.coordId)"
             :base-rate="baseRate"
-            :scale="scale"
+            :span="span"
           />
         </div>
       </section>

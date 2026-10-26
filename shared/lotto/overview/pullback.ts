@@ -44,11 +44,10 @@ export function trips(values: readonly (number | null)[], band: Spread): Trip[] 
     if (v == null) return
     if (open) {
       const back = open.side === 'high' ? v <= band.p50 : v >= band.p50
-      if (back) {
-        open.end = i
-        open = null
-      }
-      return
+      if (!back) return
+      open.end = i
+      open = null
+      // 拉回的這一期本身可能就衝到另一端（例：高處直接掉到 0），接著算新的一趟
     }
     const side: Side | null = band.p90 > band.p50 && v >= band.p90 ? 'high' : band.p10 < band.p50 && v <= band.p10 ? 'low' : null
     if (!side) return

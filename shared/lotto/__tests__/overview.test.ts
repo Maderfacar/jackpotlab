@@ -171,6 +171,8 @@ describe('回拉', () => {
     const vals = [3, 4, 9, 8, 3, 2, 0, 4, 3, 10, 6]
     const ts = trips(vals, band)
     assert.deepEqual(ts.map(t => [t.side, t.start, t.end, t.nextValue]), [['high', 2, 4, 8], ['low', 6, 7, 4], ['high', 9, null, 6]])
+    // 高處直接掉到低處：同一期結束上一趟、開始新的一趟
+    assert.deepEqual(trips([3, 9, 0, 3], band).map(t => [t.side, t.start, t.end]), [['high', 1, 2], ['low', 2, 3]])
     assert.equal(returnGroup(2), 1)
     assert.equal(returnGroup(7), 4)
   })
