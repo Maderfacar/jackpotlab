@@ -30,9 +30,9 @@ function bar(w: Wait) {
         :key="w.state"
         class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-1"
       >
-        <OverviewStateChip
-          :label="w.state"
-          :tone="def.tone(w.state)"
+        <OverviewStateView
+          :def="def"
+          :state="w.state"
           size="sm"
           class="row-span-2"
         />

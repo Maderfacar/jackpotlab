@@ -32,13 +32,17 @@ const ctx = computed(() => (tab.value === 'avg' ? buildWaveContext(inputs.value)
 
 <template>
   <div class="space-y-4">
-    <UTabs
-      v-model="tab"
-      :items="tabs"
-      :content="false"
-      size="sm"
-      class="w-full sm:w-auto"
-    />
+    <div class="ov-seg-group">
+      <button
+        v-for="t in tabs"
+        :key="t.value"
+        type="button"
+        :class="{ 'is-on': tab === t.value }"
+        @click="tab = t.value as Tab"
+      >
+        {{ t.label }}
+      </button>
+    </div>
     <div
       v-if="tab !== 'avg'"
       class="grid grid-cols-1 gap-4 lg:grid-cols-2 2xl:grid-cols-3"

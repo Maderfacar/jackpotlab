@@ -3,6 +3,10 @@
  */
 import type { StateTone } from '~~/shared/lotto/overview/coords'
 
+/** 一頁總覽底部四個畫面 */
+export type OverviewView = 'board' | 'position' | 'numbers' | 'waves'
+export const OVERVIEW_VIEWS: OverviewView[] = ['board', 'position', 'numbers', 'waves']
+
 /** 115000259 → 115259（一年不會超過一千期；同 /draws） */
 export function shortIssue(issue: string): string {
   const m = /^(\d{2,3})000(\d{3})$/.exec(issue)

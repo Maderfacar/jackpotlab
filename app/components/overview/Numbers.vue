@@ -30,13 +30,37 @@ const latestQuads = computed(() => {
 const pairs = computed(() => byTimes(groupRepeats(props.draws, 2)).slice(0, TOP_PAIRS))
 const pulls = computed(() => follows(props.draws, latest.value.nums))
 
+/** 手機一次只看一張卡；寬螢幕四張都排出來 */
+const SEGS = [
+  { id: 'overlap', label: '同幾顆' },
+  { id: 'repeat', label: '整組重覆' },
+  { id: 'quad', label: '4 顆' },
+  { id: 'pull', label: '牽引' }
+] as const
+const seg = ref<typeof SEGS[number]['id']>('overlap')
+const segClass = (id: string) => (seg.value === id ? '' : 'max-lg:hidden')
+
 const dateOf = (i: number) => props.draws[i]!.date
 const yearsOf = (at: number[]) => at.map(i => `${dateOf(i).slice(2, 4)}'${dateOf(i).slice(5, 7)}`).join('・')
 </script>
 
 <template>
+  <div class="ov-seg-group mb-3 lg:hidden">
+    <button
+      v-for="s in SEGS"
+      :key="s.id"
+      type="button"
+      :class="{ 'is-on': seg === s.id }"
+      @click="seg = s.id"
+    >
+      {{ s.label }}
+    </button>
+  </div>
   <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
-    <article class="ov-card space-y-3 rounded-2xl p-4">
+    <article
+      class="ov-card space-y-3 rounded-2xl p-4"
+      :class="segClass('overlap')"
+    >
       <h3 class="text-sm font-bold">
         最新一期跟以前每一期比
       </h3>
@@ -71,7 +95,10 @@ const yearsOf = (at: number[]) => at.map(i => `${dateOf(i).slice(2, 4)}'${dateOf
       </UButton>
     </article>
 
-    <article class="ov-card space-y-3 rounded-2xl p-4">
+    <article
+      class="ov-card space-y-3 rounded-2xl p-4"
+      :class="segClass('repeat')"
+    >
       <h3 class="text-sm font-bold">
         整組完全重覆
       </h3>
@@ -113,7 +140,10 @@ const yearsOf = (at: number[]) => at.map(i => `${dateOf(i).slice(2, 4)}'${dateOf
       </UButton>
     </article>
 
-    <article class="ov-card space-y-3 rounded-2xl p-4">
+    <article
+      class="ov-card space-y-3 rounded-2xl p-4"
+      :class="segClass('quad')"
+    >
       <h3 class="text-sm font-bold">
         4 顆一起開
       </h3>
@@ -148,7 +178,10 @@ const yearsOf = (at: number[]) => at.map(i => `${dateOf(i).slice(2, 4)}'${dateOf
       </ul>
     </article>
 
-    <article class="ov-card space-y-3 rounded-2xl p-4">
+    <article
+      class="ov-card space-y-3 rounded-2xl p-4"
+      :class="segClass('pull')"
+    >
       <h3 class="text-sm font-bold">
         牽引：這期的號碼開出後，下一期最常跟著誰
       </h3>

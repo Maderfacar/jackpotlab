@@ -29,6 +29,8 @@ export interface CoordDef {
   /** 所有可能的狀態（畫面排序用）；沒列到的照出現順序排在後面 */
   states: string[]
   tone: (state: string) => StateTone
+  /** 狀態是「各段幾顆」（例 2·2·1）時，每一段的名稱；畫面畫成小柱子 */
+  parts?: string[]
 }
 
 export interface CoordSeries {
@@ -40,7 +42,6 @@ export interface CoordSeries {
 }
 
 const ODD_STATES = ['5雙', '4雙', '3雙', '3單', '4單', '5單']
-const BIG_STATES = ['5小', '4小', '3小', '3大', '4大', '5大']
 const DIR_STATES = ['降', '平', '升']
 
 /** 5 顆裡有 k 顆是 A：k ≥ 3 → 「k A」，否則「(5-k) B」 */
@@ -78,7 +79,14 @@ export function gapShape(gaps: number[]): string {
   return `${a}·${b}·${5 - a - b}`
 }
 
-/** 四個區段 01~09、10~19、20~29、30~39 各幾顆 */
+/** 三段 01~13（小）、14~26（中）、27~39（大）各幾顆（2026-10-27 使用者：大小改三段） */
+export function thirdShape(nums: number[]): string {
+  const c = [0, 0, 0]
+  for (const n of nums) c[n <= 13 ? 0 : n <= 26 ? 1 : 2]! += 1
+  return c.join('·')
+}
+
+/** 頭數：0頭 01~09、1頭 10~19、2頭 20~29、3頭 30~39 各幾顆 */
 export function zoneShape(nums: number[]): string {
   const c = [0, 0, 0, 0]
   for (const n of nums) c[Math.min(3, Math.floor(n / 10))]! += 1
@@ -92,6 +100,13 @@ export function hasConsecutive(nums: number[]): boolean {
 
 export function hasSameTail(nums: number[]): boolean {
   return new Set(nums.map(n => n % 10)).size < nums.length
+}
+
+/** 各段幾顆：前段多 → -1、後段多 → 1 */
+const tiltTone = (s: string): StateTone => {
+  const c = s.split('·').map(Number)
+  const d = (c.at(-1) ?? 0) - (c[0] ?? 0)
+  return { side: d > 0 ? 1 : d < 0 ? -1 : 0, strength: Math.min(1, Math.abs(d) / 4) }
 }
 
 const shapeTone = (s: string): StateTone => {
@@ -120,11 +135,11 @@ export function buildCoords(draws: OverviewDraw[], feats: DrawFeatures[] = compu
       seq: nums.map(n => majority(n.filter(x => x % 2 === 1).length, '單', '雙'))
     },
     {
-      def: { id: 'bigSmall', name: '大小', hint: '小 = 01~19、大 = 20~39', states: BIG_STATES, tone: s => majorityTone(s, '大') },
-      seq: nums.map(n => majority(n.filter(x => x >= 20).length, '大', '小'))
+      def: { id: 'bigSmall', name: '大小三段', hint: '小 01~13 · 中 14~26 · 大 27~39 各幾顆', states: [], tone: tiltTone, parts: ['小', '中', '大'] },
+      seq: nums.map(thirdShape)
     },
     {
-      def: { id: 'gapShape', name: '隔期格局', hint: '五顆來自隔期 0~5 · 6~9 · 10 以上 各幾顆', states: [], tone: shapeTone },
+      def: { id: 'gapShape', name: '隔期格局', hint: '五顆來自隔期 0~5 · 6~9 · 10 以上 各幾顆', states: [], tone: shapeTone, parts: ['0~5', '6~9', '10+'] },
       seq: gaps.map(g => (g ? gapShape(g) : null))
     },
     {
@@ -146,7 +161,7 @@ export function buildCoords(draws: OverviewDraw[], feats: DrawFeatures[] = compu
       seq: ys.map(y => (y ? (y[0]! >= 4 ? 'y≥4' : `y=${y[0]}`) : null))
     },
     {
-      def: { id: 'zones', name: '區段', hint: '01~09 · 10~19 · 20~29 · 30~39 各幾顆', states: [], tone: () => ({ side: 0, strength: 0.3 }) },
+      def: { id: 'zones', name: '頭數', hint: '0頭 01~09 · 1頭 10~19 · 2頭 20~29 · 3頭 30~39 各幾顆', states: [], tone: tiltTone, parts: ['0頭', '1頭', '2頭', '3頭'] },
       seq: nums.map(zoneShape)
     },
     {

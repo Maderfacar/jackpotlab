@@ -78,9 +78,9 @@ const lastStep = computed(() => steps.value.at(-1))
                 v-if="j > 0"
                 class="text-[10px] text-[var(--ov-ink-soft)]"
               >›</span>
-              <OverviewStateChip
-                :label="s"
-                :tone="def.tone(s)"
+              <OverviewStateView
+                :def="def"
+                :state="s"
                 size="xs"
               />
             </template>
@@ -133,9 +133,9 @@ const lastStep = computed(() => steps.value.at(-1))
             v-if="j > 0"
             class="text-[var(--ov-ink-soft)]"
           >›</span>
-          <OverviewStateChip
-            :label="s"
-            :tone="def.tone(s)"
+          <OverviewStateView
+            :def="def"
+            :state="s"
           />
         </template>
         <span class="ml-1">以前出現 <b>{{ selected.hits.length }}</b> 次，之後開出：</span>
@@ -154,11 +154,11 @@ const lastStep = computed(() => steps.value.at(-1))
             <li
               v-for="r in rows(selected.next[a]!, selected.nextCount[a]!)"
               :key="r.s"
-              class="grid grid-cols-[3.25rem_minmax(0,1fr)_4.5rem] items-center gap-2 text-xs tabular-nums"
+              class="grid grid-cols-[4.5rem_minmax(0,1fr)_4.5rem] items-center gap-2 text-xs tabular-nums"
             >
-              <OverviewStateChip
-                :label="r.s"
-                :tone="def.tone(r.s)"
+              <OverviewStateView
+                :def="def"
+                :state="r.s"
                 size="xs"
               />
               <span class="h-2.5 overflow-hidden rounded-full bg-[var(--ov-line)]">
@@ -200,10 +200,10 @@ const lastStep = computed(() => steps.value.at(-1))
                 v-for="(s, a) in c.after"
                 :key="a"
               >
-                <OverviewStateChip
+                <OverviewStateView
                   v-if="s"
-                  :label="s"
-                  :tone="def.tone(s)"
+                  :def="def"
+                  :state="s"
                   size="xs"
                 />
                 <span
