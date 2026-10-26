@@ -7,9 +7,14 @@ import { isWaitHigh, type CoordSummary } from '~/composables/useOverview'
 const props = defineProps<{ summaries: CoordSummary[] }>()
 const emit = defineEmits<{ select: [id: string, target: 'ladder' | 'waits'] }>()
 
+/** 等待只提常見的狀態（出現過 ≥ 全部期數 5%），少見的區段組合等很久是常態，放進來只會很雜 */
+const WAIT_COMMON_SHARE = 0.05
+
 const runs = computed(() => props.summaries.filter(s => s.runHigh && s.run && s.stats))
-const longWaits = computed(() => props.summaries.flatMap(s =>
-  [...s.waits, ...s.rareWaits].filter(isWaitHigh).map(w => ({ s, w }))))
+const longWaits = computed(() => props.summaries.flatMap((s) => {
+  const total = s.series.seq.filter(x => x != null).length
+  return s.waits.filter(w => isWaitHigh(w) && w.count >= total * WAIT_COMMON_SHARE).map(w => ({ s, w }))
+}))
 </script>
 
 <template>

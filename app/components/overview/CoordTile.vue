@@ -81,9 +81,16 @@ const valueLine = computed(() => {
       class="text-xs leading-snug tabular-nums"
     >
       <b class="text-sm">連 {{ summary.run.length }} 期</b>
-      <span class="text-[var(--ov-ink-soft)]">
+      <span
+        v-if="summary.run.length > 1"
+        class="text-[var(--ov-ink-soft)]"
+      >
         ・以前連到這麼久 {{ summary.stats.reached.toLocaleString() }} 次・最長 {{ summary.stats.max }}
       </span>
+      <span
+        v-else
+        class="text-[var(--ov-ink-soft)]"
+      >・以前最長連過 {{ summary.stats.max }} 期</span>
     </p>
   </button>
 </template>

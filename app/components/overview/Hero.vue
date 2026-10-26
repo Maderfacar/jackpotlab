@@ -73,7 +73,7 @@ const balls = computed(() => props.draw.nums.map((n, i) => ({
   animation-delay: calc(var(--i) * 70ms);
 }
 @keyframes ov-drop {
-  from { opacity: 0; transform: translateY(-14px) scale(0.9); }
+  from { transform: translateY(-14px) scale(0.9); }
   to { opacity: 1; transform: none; }
 }
 @media (prefers-reduced-motion: reduce) {
