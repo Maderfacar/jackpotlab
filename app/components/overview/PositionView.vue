@@ -100,7 +100,8 @@ const drawerOpen = computed({
           />
           <span class="flex flex-col items-end gap-0.5 text-right">
             <template v-if="r.sim && r.sim.nextCount">
-              <span class="text-[10px] text-[var(--ov-ink-soft)]">相似 {{ r.sim.hits.length }} 次・下期</span>
+              <span class="whitespace-nowrap text-[10px] text-[var(--ov-ink-soft)]">相似 {{ r.sim.hits.length }} 次</span>
+              <span class="whitespace-nowrap text-[10px] text-[var(--ov-ink-soft)]">下一期最常</span>
               <span class="ov-next-chip">{{ BUCKETS[kind][r.best]!.label }}</span>
               <span class="text-[11px] font-bold tabular-nums">{{ pct(r.sim.nextBuckets[r.best]!, r.sim.nextCount) }}%</span>
             </template>

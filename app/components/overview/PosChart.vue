@@ -22,14 +22,21 @@ const PAD_TOP = 8
 const PAD_BOTTOM = 4
 
 const fanSteps = computed(() => (props.fan.some(f => f) ? props.fan : []))
-const slots = computed(() => props.values.length + fanSteps.value.length)
+/** 扇形固定佔右邊這麼寬（%），不然 30 期擠 3 格看不清楚 */
+const fanWidth = computed(() => (fanSteps.value.length ? (props.detail ? 18 : 24) : 0))
 const cap = computed(() => {
   const base = props.kind === 'gap' ? 20 : 15
   const p90 = props.band?.p90 ?? 0
   const fanTop = Math.max(0, ...fanSteps.value.map(f => f?.p90 ?? 0))
   return Math.max(base, Math.ceil(p90 * 1.4), Math.ceil(fanTop))
 })
-const x = (i: number) => (slots.value <= 1 ? 50 : (i / (slots.value - 1)) * 100)
+/** i < 期數：歷史那段；之後是扇形的第 1～3 期 */
+function x(i: number): number {
+  const n = props.values.length
+  const histW = 100 - fanWidth.value
+  if (i < n) return n <= 1 ? histW : (i / (n - 1)) * histW
+  return histW + ((i - n + 1) / fanSteps.value.length) * fanWidth.value
+}
 const y = (v: number) => PAD_TOP + (1 - Math.min(v, cap.value) / cap.value) * (100 - PAD_TOP - PAD_BOTTOM)
 
 const linePath = computed(() => {

@@ -102,7 +102,7 @@ const lastStep = computed(() => steps.value.at(-1))
               :key="seg.s"
               class="ov-seg flex items-center justify-center overflow-hidden text-[10px] font-semibold"
               :style="{ ...seg.style, width: `${seg.w}%` }"
-            >{{ seg.w >= LABEL_MIN ? seg.s : '' }}</span>
+            >{{ seg.w >= LABEL_MIN && !def.parts ? seg.s : '' }}</span>
           </span>
           <span
             v-else-if="st.hits.length === 0"
