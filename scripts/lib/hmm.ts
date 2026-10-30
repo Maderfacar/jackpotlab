@@ -1,6 +1,7 @@
 /**
  * 隱藏模式切換用：類別型隱藏馬可夫模型（HMM），Baum-Welch 擬合、Viterbi 找每期最可能的模式。
- * 每期有好幾個觀察（例如 0～5 幾顆、y=1 幾顆），各自是一個類別；同一個模式底下視為各自獨立。
+ * 每期有好幾個觀察，各自是一個類別；同一個模式底下視為各自獨立。
+ * tied = true：每期的觀察共用同一組類別比例（例如每期 5 顆各自從第幾格出來）。
  */
 
 export interface HmmFit {
@@ -10,12 +11,20 @@ export interface HmmFit {
   pi: number[]
   /** a[i][j]：這期是模式 i，下一期變成模式 j 的機會 */
   a: number[][]
-  /** b[模式][觀察][類別] */
+  /** b[模式][觀察][類別]；tied 時只有 b[模式][0] */
   b: number[][][]
   /** 最後一期在各模式的機會 */
   last: number[]
   /** 每期最可能的模式 */
   path: number[]
+}
+
+export interface HmmOptions {
+  /** 每個模式「下一期還是自己」的機會至少這麼多（平均至少待 1 / (1 − minStay) 期）；0 = 不限制 */
+  minStay?: number
+  /** 每期的觀察共用同一組類別比例 */
+  tied?: boolean
+  maxIter?: number
 }
 
 const FLOOR = 1e-6
@@ -25,14 +34,20 @@ function normalize(xs: number[]): number[] {
   return xs.map(x => x / s)
 }
 
-function marginals(obs: number[][], cats: number[]): number[][] {
-  return cats.map((n, f) => normalize(Array.from({ length: n }, (_, c) => FLOOR + obs.filter(o => o[f] === c).length)))
+function marginals(obs: number[][], cats: number[], fi: (f: number) => number): number[][] {
+  return cats.map((n, g) => {
+    const acc = new Array<number>(n).fill(FLOOR)
+    for (const o of obs) o.forEach((c, f) => {
+      if (fi(f) === g) acc[c]! += 1
+    })
+    return normalize(acc)
+  })
 }
 
-function emissions(obs: number[][], b: number[][][], k: number): Float64Array {
+function emissions(obs: number[][], b: number[][][], k: number, fi: (f: number) => number): Float64Array {
   const e = new Float64Array(obs.length * k)
   obs.forEach((o, t) => {
-    for (let s = 0; s < k; s++) e[t * k + s] = o.reduce((p, c, f) => p * b[s]![f]![c]!, 1)
+    for (let s = 0; s < k; s++) e[t * k + s] = o.reduce((p, c, f) => p * b[s]![fi(f)]![c]!, 1)
   })
   return e
 }
@@ -40,8 +55,7 @@ function emissions(obs: number[][], b: number[][][], k: number): Float64Array {
 interface Pass { ll: number, gamma: Float64Array, xi: number[][] }
 
 /** 前向後向（每期縮放避免下溢） */
-function forwardBackward(obs: number[][], pi: number[], a: number[][], e: Float64Array, k: number): Pass {
-  const n = obs.length
+function forwardBackward(n: number, pi: number[], a: number[][], e: Float64Array, k: number): Pass {
   const alpha = new Float64Array(n * k)
   const beta = new Float64Array(n * k)
   const c = new Float64Array(n)
@@ -78,8 +92,7 @@ function forwardBackward(obs: number[][], pi: number[], a: number[][], e: Float6
   return { ll, gamma, xi }
 }
 
-function viterbi(obs: number[][], pi: number[], a: number[][], e: Float64Array, k: number): number[] {
-  const n = obs.length
+function viterbi(n: number, pi: number[], a: number[][], e: Float64Array, k: number): number[] {
   const score = new Float64Array(n * k)
   const from = new Int32Array(n * k)
   for (let j = 0; j < k; j++) score[j] = Math.log(pi[j]!) + Math.log(e[j]!)
@@ -104,7 +117,7 @@ function viterbi(obs: number[][], pi: number[], a: number[][], e: Float64Array, 
   return path
 }
 
-/** 每個模式「下一期還是自己」的機會至少 minStay（平均至少待 1 / (1 − minStay) 期），只找慢慢換的模式 */
+/** 把每個模式「留在自己」的機會拉到至少 minStay，其餘照比例縮 */
 function sticky(a: number[][], minStay: number): number[][] {
   return a.map((row, i) => {
     if (row[i]! >= minStay || row.length === 1) return row
@@ -113,31 +126,31 @@ function sticky(a: number[][], minStay: number): number[][] {
   })
 }
 
-function fitOnce(obs: number[][], cats: number[], k: number, rng: () => number, minStay: number, maxIter: number): HmmFit {
-  const base = marginals(obs, cats)
+function fitOnce(obs: number[][], cats: number[], k: number, rng: () => number, opts: Required<HmmOptions>): HmmFit {
+  const fi = (f: number): number => (opts.tied ? 0 : f)
+  const n = obs.length
+  const base = marginals(obs, cats, fi)
   let pi = new Array<number>(k).fill(1 / k)
   let a = Array.from({ length: k }, (_, i) => Array.from({ length: k }, (_, j) => (k === 1 ? 1 : i === j ? 0.98 : 0.02 / (k - 1))))
   let b = Array.from({ length: k }, () => base.map(p => normalize(p.map(x => x * (0.6 + 0.8 * rng())))))
   let prev = -Infinity
-  let pass: Pass | null = null
-  for (let it = 0; it < maxIter; it++) {
-    pass = forwardBackward(obs, pi, a, emissions(obs, b, k), k)
+  for (let it = 0; it < opts.maxIter; it++) {
+    const pass = forwardBackward(n, pi, a, emissions(obs, b, k, fi), k)
     const g = pass.gamma
     pi = normalize(Array.from({ length: k }, (_, s) => g[s]! + FLOOR))
-    a = sticky(pass.xi.map(row => normalize(row.map(x => x + FLOOR))), minStay)
-    b = Array.from({ length: k }, (_, s) => cats.map((n, f) => {
-      const acc = new Array<number>(n).fill(FLOOR)
-      obs.forEach((o, t) => {
-        acc[o[f]!]! += g[t * k + s]!
-      })
+    a = sticky(pass.xi.map(row => normalize(row.map(x => x + FLOOR))), opts.minStay)
+    b = Array.from({ length: k }, (_, s) => cats.map((size, grp) => {
+      const acc = new Array<number>(size).fill(FLOOR)
+      obs.forEach((o, t) => o.forEach((c, f) => {
+        if (fi(f) === grp) acc[c]! += g[t * k + s]!
+      }))
       return normalize(acc)
     }))
     if (pass.ll - prev < 1e-6) break
     prev = pass.ll
   }
-  const e = emissions(obs, b, k)
-  const final = forwardBackward(obs, pi, a, e, k)
-  const n = obs.length
+  const e = emissions(obs, b, k, fi)
+  const final = forwardBackward(n, pi, a, e, k)
   return {
     k,
     ll: final.ll,
@@ -145,15 +158,16 @@ function fitOnce(obs: number[][], cats: number[], k: number, rng: () => number, 
     a,
     b,
     last: Array.from({ length: k }, (_, s) => final.gamma[(n - 1) * k + s]!),
-    path: viterbi(obs, pi, a, e, k)
+    path: viterbi(n, pi, a, e, k)
   }
 }
 
-/** 隨機起點擬合幾次，取對數概似最高的；minStay = 0 不限制換的速度 */
-export function fitHmm(obs: number[][], cats: number[], k: number, rng: () => number, restarts: number, minStay = 0, maxIter = 200): HmmFit {
+/** 隨機起點擬合幾次，取對數概似最高的 */
+export function fitHmm(obs: number[][], cats: number[], k: number, rng: () => number, restarts: number, opts: HmmOptions = {}): HmmFit {
+  const full: Required<HmmOptions> = { minStay: 0, tied: false, maxIter: 200, ...opts }
   let best: HmmFit | null = null
   for (let r = 0; r < (k === 1 ? 1 : restarts); r++) {
-    const fit = fitOnce(obs, cats, k, rng, minStay, maxIter)
+    const fit = fitOnce(obs, cats, k, rng, full)
     if (!best || fit.ll > best.ll) best = fit
   }
   return best!

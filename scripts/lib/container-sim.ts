@@ -63,8 +63,11 @@ export function slotOf(b: Board): number[] {
   return at
 }
 
-/** 號碼在第 slot 格（-1 = 不在盤面）、那格值 value、開獎日 date、第 t 期時，被抽中的權重 */
-export type Rule = (slot: number, value: number, date: string, t: number) => number
+/**
+ * 號碼在第 slot 格（-1 = 不在盤面）、那格值 value、開獎日 date、第 t 期、
+ * 那格剩 x 顆、這顆在那格由小到大排第 y 時，被抽中的權重
+ */
+export type Rule = (slot: number, value: number, date: string, t: number, x: number, y: number) => number
 
 export const FAIR: Rule = () => 1
 
@@ -76,7 +79,8 @@ export function simulate(dates: string[], rng: () => number, rule: Rule): number
     const at = b ? slotOf(b) : null
     const weights = [0, ...Array.from({ length: BALLS }, (_, i) => {
       const s = at ? at[i + 1]! : -1
-      return rule(s, b && s >= 0 ? b.values[s]! : 0, date, t)
+      const box = b && s >= 0 ? b.slots[s]! : []
+      return rule(s, b && s >= 0 ? b.values[s]! : 0, date, t, box.length, box.indexOf(i + 1) + 1)
     })]
     const nums = pick(weights, rng)
     out.push(nums)
