@@ -330,6 +330,8 @@ function decide(t: number): Decision {
 
 interface Result extends Decision { ok: Map<string, boolean>, hit1: number, hitF: number }
 const results: Result[] = []
+/** 每一期（不只盲測期）的決定，給其他腳本用 */
+export const allDecisions: Decision[] = []
 for (let t = 1; t < n; t++) {
   const drawn = draws[t]!
   const drawnSet = new Set(drawn)
@@ -345,6 +347,7 @@ for (let t = 1; t < n; t++) {
       ok.set(u.cond.id, pass)
       u.cond.wave.push(pass ? 1 : 0)
     }
+    allDecisions.push(dec)
     if (isTest) results.push({ ...dec, ok, hit1: dec.stage1.filter(x => drawnSet.has(x)).length, hitF: dec.final.filter(x => drawnSet.has(x)).length })
   }
   // 更新各條線與紀錄
@@ -392,9 +395,12 @@ for (let t = 1; t < n; t++) {
     boardsSeen++
   }
 }
-const next = decide(n)
+export const next = decide(n)
+export { draws, rows, conds }
+export type { Decision }
 
-// ---- 報告 ----
+// ---- 報告（直接執行這支才寫；被別的腳本 import 時不寫）----
+if (process.argv[1]?.replace(/\\/g, '/').endsWith('scripts/blind-test.ts')) {
 const sum = (a: number[]): number => a.reduce((x, y) => x + y, 0)
 const pct = (a: number, b: number): string => (b ? (100 * a / b).toFixed(1) : '—')
 const m = results.length
@@ -566,3 +572,4 @@ results.forEach((r, i) => {
 })
 writeFileSync(OUT, out.join('\n') + '\n')
 console.log(out.slice(0, out.indexOf('## 逐期紀錄')).join('\n'))
+}
