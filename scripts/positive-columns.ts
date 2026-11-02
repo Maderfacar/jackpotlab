@@ -172,6 +172,7 @@ const ticket = (balls: number[], k: number): string => {
   return `${cols}（${g.size} 柱 ${balls.length} 顆，${k} 星 ${esym([...g.values()].map(v => v.length), k)} 碰）`
 }
 const summary: string[] = []
+const sheetSummary: string[] = []
 
 for (const k of KS) {
   out.push(`## ${k} 星（${ODDS[k]} 倍）`)
@@ -227,6 +228,38 @@ for (const k of KS) {
   const nb = [...new Set(chosen.flatMap(n => nextSets.get(n) ?? []))]
   out.push(`下一期組合立柱：${nb.length >= k ? ticket(nb, k) : '這期不下'}`)
   out.push('')
+
+  // 每個在 2007～2020 正數的策略各自一張立柱單（不合併號碼），每期把成立的單都下
+  const sheets = { 找: emptyTally(), 驗: emptyTally() }
+  const sheetYears = new Map<string, number>()
+  for (const [, e] of found) {
+    for (const p of ['找', '驗'] as const) {
+      sheets[p].cost += e[p].cost
+      sheets[p].back += e[p].back
+    }
+    for (const [y, x] of e.years) sheetYears.set(y, (sheetYears.get(y) ?? 0) + x)
+  }
+  const sheetEval: Eval = { ...sheets, years: sheetYears }
+  out.push(`### 各自一張立柱單：2007～2020 正數的 ${found.length} 種，每期成立的都各下一張`)
+  out.push('')
+  out.push('| 合計 | 找：投入 | 找：拿回率 | 找：平均每期 | 驗：投入 | 驗：拿回率 | 驗：平均每期 | 驗：正的年數 | 驗：各年淨結果 |')
+  out.push('|---|---|---|---|---|---|---|---|---|')
+  out.push(`| ${found.length} 張單 | ${sheets.找.cost} | ${pct(sheets.找.back, sheets.找.cost)}% | ${fmt(per(sheets.找, '找'))} | ${sheets.驗.cost} | ${pct(sheets.驗.back, sheets.驗.cost)}% | ${fmt(per(sheets.驗, '驗'))} | ${posYears(sheetEval)}/${sheetEval.years.size} | ${yearsText(sheetEval)} |`)
+  out.push('')
+  out.push('下一期要下的單（這期條件成立的）：')
+  out.push('')
+  let nextCost = 0
+  for (const [n, e] of [...found].sort((a, b) => per(b[1].找, '找') - per(a[1].找, '找'))) {
+    const b = nextSets.get(n)
+    if (!b || b.length < k) continue
+    const g = columns(next, b)
+    if (g.size < k) continue
+    nextCost += esym([...g.values()].map(v => v.length), k)
+    out.push(`- ${n}（找 ${fmt(per(e.找, '找'))}／驗 ${fmt(per(e.驗, '驗'))}）：${ticket(b, k)}`)
+  }
+  out.push(`- 這期 ${k} 星合計 ${nextCost} 碰`)
+  out.push('')
+  sheetSummary.push(`| ${k} 星 | ${found.length} 張單各自下 | ${fmt(per(sheets.找, '找'))} | ${pct(sheets.驗.back, sheets.驗.cost)}% | ${fmt(per(sheets.驗, '驗'))} | ${posYears(sheetEval)}/${sheetEval.years.size} | ${nextCost} 碰 |`)
   summary.push(`| ${k} 星 | 組合：${chosen.join('＋')} | ${fmt(per(combo.找, '找'))} | ${pct(combo.驗.back, combo.驗.cost)}% | ${fmt(per(combo.驗, '驗'))} | ${posYears(combo)}/${combo.years.size} | ${nb.length >= k ? ticket(nb, k) : '這期不下'} |`)
   for (const [n, e] of [...held].sort((a, b) => per(b[1].驗, '驗') - per(a[1].驗, '驗')).slice(0, 3)) {
     const b = nextSets.get(n)
@@ -239,5 +272,11 @@ out.push('')
 out.push('| 玩法 | 策略 | 找：平均每期 | 驗：拿回率 | 驗：平均每期 | 驗：正的年數 | 下一期立柱 |')
 out.push('|---|---|---|---|---|---|---|')
 out.push(...summary)
+out.push('')
+out.push('## 各自一張立柱單的合計')
+out.push('')
+out.push('| 玩法 | 做法 | 找：平均每期 | 驗：拿回率 | 驗：平均每期 | 驗：正的年數 | 下一期 |')
+out.push('|---|---|---|---|---|---|---|')
+out.push(...sheetSummary)
 writeFileSync(OUT, out.join('\n') + '\n')
 console.log(out.join('\n'))
