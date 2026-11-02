@@ -20,6 +20,9 @@
  *     Y1 y=1 佔多數 → y=1
  *     Y2 y=2～5：距離上次出現已經等到平均間隔以上 → 這種 y
  *     Y3 每種 y（最小／中間／最大／單顆）自己的自然波段照週期判斷下一期多
+ *   少見狀況（不看成立線、出現就放進一篩和二篩名單）
+ *     R1 隔期 > 5 的格子還留著 5 顆
+ *     R2 某一格剩的顆數，歷史上同一格剩這麼多以上的期不到 RARE（到目前為止的盤面算）
  *
  * 週期與修正：每個條件都有一條「成立線」（每期條件成立記 1、不成立記 0 的自然波段）。
  *   決定時看這條線現在在上升或下降段、走了幾次，歷史上同方向走到這麼長還延續的比例 ≥ 一半 → 延續；
@@ -43,6 +46,8 @@ const H = 2
 const START = SLOTS
 const MIN1 = 10
 const MIN2 = 5
+const RARE = 0.05
+const RARE_MIN_HISTORY = 500
 const GAP_BINS: [number, number][] = [[0, 0], [1, 1], [2, 3], [4, 6], [7, 10], [11, 15], [16, 25], [26, 59]]
 const VAL_BINS: [number, number][] = [[0, 0], [1, 1], [2, 3], [4, 6], [7, 12], [13, 24], [25, Infinity]]
 const Y_NAMES = ['單顆', '最小', '中間', '最大']
@@ -279,7 +284,22 @@ const conds: Cond[] = [
 ]
 
 interface Used { cond: Cond, set: number[], why: string, apply: boolean, line: string }
-interface Decision { t: number, used: Used[], stage1: number[], final: number[] }
+interface Rare { id: 'R1' | 'R2', slot: number, balls: number[], why: string }
+interface Decision { t: number, used: Used[], rare: Rare[], stage1: number[], final: number[] }
+/** slotCount[i][k]：到目前為止的盤面，第 i 格剩 k 顆的期數 */
+const slotCount: number[][] = Array.from({ length: SLOTS }, () => new Array<number>(6).fill(0))
+let boardsSeen = 0
+function rareOf(b: Board): Rare[] {
+  const out: Rare[] = []
+  b.slots.forEach((s, i) => {
+    if (i > 5 && s.length === 5) out.push({ id: 'R1', slot: i, balls: [...s], why: `隔期 ${i} 還留 5 顆` })
+    if (boardsSeen >= RARE_MIN_HISTORY && s.length > 0) {
+      const ge = slotCount[i]!.slice(s.length).reduce((a, x) => a + x, 0)
+      if (ge / boardsSeen < RARE) out.push({ id: 'R2', slot: i, balls: [...s], why: `隔期 ${i} 剩 ${s.length} 顆，歷史上同格剩這麼多以上 ${(100 * ge / boardsSeen).toFixed(2)}%` })
+    }
+  })
+  return out
+}
 
 /** 票數最多的一層一層往下收，收到至少 min 顆 */
 function collect(pool: number[], votes: (x: number) => number, min: number): number[] {
@@ -301,9 +321,11 @@ function decide(t: number): Decision {
     if (p) used.push({ cond, set: p.set, why: p.why, apply: cond.wave.up(), line: cond.wave.label() })
   }
   const vote = (stage: 1 | 2) => (x: number): number => used.filter(u => u.apply && u.cond.stage === stage && u.set.includes(x)).length
-  const stage1 = collect(ALL, vote(1), MIN1)
-  const final = collect(stage1, vote(2), MIN2)
-  return { t, used, stage1, final }
+  const rare = rareOf(boardNow)
+  const rareBalls = [...new Set(rare.flatMap(r => r.balls))]
+  const stage1 = [...new Set([...collect(ALL, vote(1), MIN1), ...rareBalls])].sort((a, b) => a - b)
+  const final = [...new Set([...collect(stage1, vote(2), MIN2), ...rareBalls])].sort((a, b) => a - b)
+  return { t, used, rare, stage1, final }
 }
 
 interface Result extends Decision { ok: Map<string, boolean>, hit1: number, hitF: number }
@@ -365,6 +387,10 @@ for (let t = 1; t < n; t++) {
   }
   boardNow.slots.forEach((s, i) => { if (s.some(x => drawnSet.has(x))) slotRecords[i]!.push(boardNow.values[i]!) })
   boardNow = nextBoard(boardNow, drawn)
+  if (t >= START) {
+    boardNow.slots.forEach((s, i) => { slotCount[i]![s.length]! += 1 })
+    boardsSeen++
+  }
 }
 const next = decide(n)
 
@@ -410,6 +436,18 @@ for (const y of [...new Set(results.map(r => rows[r.t]![1].slice(0, 4)))]) {
   out.push(`| ${y} | ${rs.length} | ${a} | ${ha} | ${pct(ha, a)}% | ${b} | ${hb} | ${pct(hb, b)}% |`)
 }
 out.push('')
+out.push('## 少見狀況')
+out.push('')
+out.push('| 代號 | 狀況 | 出現期數 | 下一期至少開出 1 顆 | 比例 | 挑中顆數／挑出顆數 |')
+out.push('|---|---|---|---|---|---|')
+for (const id of ['R1', 'R2'] as const) {
+  const ev = results.flatMap(r => r.rare.filter(x => x.id === id).map(x => ({ x, actual: new Set(draws[r.t]!) })))
+  const hitAny = ev.filter(e => e.x.balls.some(b => e.actual.has(b))).length
+  const picked = sum(ev.map(e => e.x.balls.length))
+  const hit = sum(ev.map(e => e.x.balls.filter(b => e.actual.has(b)).length))
+  out.push(`| ${id} | ${id === 'R1' ? '隔期 > 5 還留 5 顆' : `某格剩的顆數歷史上不到 ${100 * RARE}%`} | ${ev.length} | ${hitAny} | ${pct(hitAny, ev.length)}% | ${hit}／${picked}（${pct(hit, picked)}%） |`)
+}
+out.push('')
 out.push('## 每個條件的成績')
 out.push('')
 out.push('「採用」＝成立線判斷下一次成立、那期有用它；「沒用」＝成立線判斷不成立、那期跳過。成立率看週期判斷有沒有挑對時機。')
@@ -431,6 +469,7 @@ out.push('')
 out.push(`開完 ${rows[n - 1]![0]}（${rows[n - 1]![1]}）後：`)
 out.push('')
 for (const s of usedText(next)) out.push(`- ${s}`)
+for (const r of next.rare) out.push(`- ${r.id} 少見：${r.why}（${r.balls.join(' ')}）→ 放進名單`)
 const skippedNow = conds.filter(c => !next.used.some(u => u.cond.id === c.id)).map(c => `${c.id} ${c.name}`)
 if (skippedNow.length) out.push(`- 這期不適用：${skippedNow.join('、')}`)
 out.push(`- 一篩 ${next.stage1.length} 顆：${next.stage1.join(' ')}`)
@@ -440,8 +479,8 @@ out.push('## 逐期紀錄')
 out.push('')
 out.push('採用＝這期有用的條件；不用＝成立線判斷這期不成立而跳過。比對＝開獎後每個適用條件成立 ✓／不成立 ✗（不管有沒有用都比）。命中的號碼加粗。')
 out.push('')
-out.push('| 期 | 採用 | 不用 | 一篩 | 二篩 | 開出 | 比對 | 下一期改了什麼 |')
-out.push('|---|---|---|---|---|---|---|---|')
+out.push('| 期 | 採用 | 不用 | 少見 | 一篩 | 二篩 | 開出 | 比對 | 下一期改了什麼 |')
+out.push('|---|---|---|---|---|---|---|---|---|')
 results.forEach((r, i) => {
   const actual = new Set(draws[r.t]!)
   const mark = (a: number[]): string => a.map(x => (actual.has(x) ? `**${x}**` : `${x}`)).join(' ')
@@ -452,7 +491,7 @@ results.forEach((r, i) => {
   const add = now.filter(x => !was.includes(x))
   const del = was.filter(x => !now.includes(x))
   const chg = [add.length ? `改用 ${add.join('、')}` : '', del.length ? `停用 ${del.join('、')}` : ''].filter(Boolean).join('；') || '採用的條件不變'
-  out.push(`| ${rows[r.t]![0]} | ${was.join(' ') || '無'} | ${r.used.filter(u => !u.apply).map(u => u.cond.id).join(' ') || '無'} | ${mark(r.stage1)}（中 ${r.hit1}） | ${mark(r.final)}（中 ${r.hitF}） | ${draws[r.t]!.join(' ')} | ${r.used.map(u => `${u.cond.id}${r.ok.get(u.cond.id) ? '✓' : '✗'}`).join(' ')} | ${chg} |`)
+  out.push(`| ${rows[r.t]![0]} | ${was.join(' ') || '無'} | ${r.used.filter(u => !u.apply).map(u => u.cond.id).join(' ') || '無'} | ${r.rare.map(x => `${x.id} 隔期${x.slot}：${mark(x.balls)}`).join('；') || '無'} | ${mark(r.stage1)}（中 ${r.hit1}） | ${mark(r.final)}（中 ${r.hitF}） | ${draws[r.t]!.join(' ')} | ${r.used.map(u => `${u.cond.id}${r.ok.get(u.cond.id) ? '✓' : '✗'}`).join(' ')} | ${chg} |`)
 })
 writeFileSync(OUT, out.join('\n') + '\n')
 console.log(out.slice(0, out.indexOf('## 逐期紀錄')).join('\n'))
