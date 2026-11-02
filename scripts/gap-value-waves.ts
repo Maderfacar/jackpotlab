@@ -140,3 +140,25 @@ for (const h of [2, 3]) {
   UP_BINS.forEach((b, k) => console.log(`${(UP_BINS[k - 1] ?? 0) + 1}～${b === Infinity ? '' : b} | ${all[k]} | ${sim[k]!.toFixed(1)} | ${e[k]} | ${l[k]}`))
   console.log('後段各上升段長度：' + late.join(' '))
 }
+
+// 回升滿 3：2021 起每段上升段＋接著的下降段（起訖、長度、段內值總和大的比例）
+{
+  const h = 3
+  const ts = turns(ev, h)
+  const rate = (a: number, b: number): string => {
+    const k = ev.slice(a + 1, b + 1).reduce((x, y) => x + y, 0)
+    return `${k}/${b - a}=${(100 * k / (b - a)).toFixed(0)}%`
+  }
+  console.log(`\n## 回升滿 ${h}：2021 起每段上升段 → 接著的下降段`)
+  console.log('上升段（低點 → 高點） | 長 | 段內值總和大 | 接著下降段（→ 低點） | 長 | 段內值總和大')
+  for (let k = 1; k < ts.length; k++) {
+    if (!ts[k]!.top || ts[k]!.i < SPLIT) continue
+    const lo = ts[k - 1]!.i
+    const hi = ts[k]!.i
+    const next = ts[k + 1]
+    const down = next ? `${label(next.i)} | ${next.i - hi} | ${rate(hi, next.i)}` : `（進行中）至今 | ${n - 1 - hi} | ${rate(hi, n - 1)}`
+    console.log(`${label(lo)} → ${label(hi)} | ${hi - lo}${hi - lo === 56 ? ' ★' : ''} | ${rate(lo, hi)} | ${down}`)
+  }
+  const last = ts[ts.length - 1]!
+  if (!last.top) console.log(`目前上升段：${label(last.i)} 起，至今 ${n - 1 - last.i} 期，段內 ${rate(last.i, n - 1)}`)
+}
