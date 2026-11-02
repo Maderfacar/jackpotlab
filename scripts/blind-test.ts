@@ -285,7 +285,7 @@ const conds: Cond[] = [
 
 interface Used { cond: Cond, set: number[], why: string, apply: boolean, line: string }
 interface Rare { id: 'R1' | 'R2', slot: number, balls: number[], why: string }
-interface Decision { t: number, used: Used[], rare: Rare[], stage1: number[], final: number[] }
+interface Decision { t: number, used: Used[], rare: Rare[], stage1: number[], final: number[], /** 每顆球決定時在第幾格 */ slotOf: number[] }
 /** slotCount[i][k]：到目前為止的盤面，第 i 格剩 k 顆的期數 */
 const slotCount: number[][] = Array.from({ length: SLOTS }, () => new Array<number>(6).fill(0))
 let boardsSeen = 0
@@ -325,7 +325,7 @@ function decide(t: number): Decision {
   const rareBalls = [...new Set(rare.flatMap(r => r.balls))]
   const stage1 = [...new Set([...collect(ALL, vote(1), MIN1), ...rareBalls])].sort((a, b) => a - b)
   const final = [...new Set([...collect(stage1, vote(2), MIN2), ...rareBalls])].sort((a, b) => a - b)
-  return { t, used, rare, stage1, final }
+  return { t, used, rare, stage1, final, slotOf: ctx.balls.map(b => b?.slot ?? -1) }
 }
 
 interface Result extends Decision { ok: Map<string, boolean>, hit1: number, hitF: number }
@@ -448,6 +448,71 @@ for (const id of ['R1', 'R2'] as const) {
   out.push(`| ${id} | ${id === 'R1' ? '隔期 > 5 還留 5 顆' : `某格剩的顆數歷史上不到 ${100 * RARE}%`} | ${ev.length} | ${hitAny} | ${pct(hitAny, ev.length)}% | ${hit}／${picked}（${pct(hit, picked)}%） |`)
 }
 out.push('')
+// ---- 一篩名單立柱：同一隔期格的號碼放同一柱（同柱不互碰）----
+const ODDS: Record<number, number> = { 2: 70, 3: 800, 4: 12500 }
+/** 各柱顆數的 k 階基本對稱多項式＝立柱 k 星碰數 */
+const esym = (sizes: number[], k: number): number => {
+  const e = new Array<number>(k + 1).fill(0)
+  e[0] = 1
+  for (const x of sizes) for (let j = k; j >= 1; j--) e[j]! += e[j - 1]! * x
+  return e[k]!
+}
+const columnsOf = (d: Decision): Map<number, number[]> => {
+  const g = new Map<number, number[]>()
+  for (const x of d.stage1) g.set(d.slotOf[x]!, [...(g.get(d.slotOf[x]!) ?? []), x])
+  return g
+}
+let sameList = 0
+let allList = 0
+let sameWin = 0
+let allWin = 0
+const bet = { 連碰: {} as Record<number, { cost: number, win: number, back: number, drawsWon: number }>, 立柱: {} as Record<number, { cost: number, win: number, back: number, drawsWon: number }> }
+for (const k of [2, 3, 4]) {
+  bet.連碰[k] = { cost: 0, win: 0, back: 0, drawsWon: 0 }
+  bet.立柱[k] = { cost: 0, win: 0, back: 0, drawsWon: 0 }
+}
+let colCount = 0
+for (const r of results) {
+  const actual = new Set(draws[r.t]!)
+  const cols = [...columnsOf(r).values()]
+  colCount += cols.length
+  const sizes = cols.map(c => c.length)
+  const hits = cols.map(c => c.filter(x => actual.has(x)).length)
+  const N = r.stage1.length
+  const Hn = sum(hits)
+  sameList += sum(sizes.map(x => choose(x, 2)))
+  allList += choose(N, 2)
+  sameWin += sum(hits.map(x => choose(x, 2)))
+  allWin += choose(Hn, 2)
+  for (const k of [2, 3, 4]) {
+    const a = choose(Hn, k)
+    const b = esym(hits, k)
+    const L = bet.連碰[k]!
+    const C = bet.立柱[k]!
+    L.cost += choose(N, k); L.win += a; L.back += a * (ODDS[k]! + 1); if (a) L.drawsWon++
+    C.cost += esym(sizes, k); C.win += b; C.back += b * (ODDS[k]! + 1); if (b) C.drawsWon++
+  }
+}
+function choose(a: number, b: number): number {
+  if (b > a) return 0
+  let r = 1
+  for (let i = 0; i < b; i++) r = r * (a - i) / (i + 1)
+  return r
+}
+out.push('## 一篩名單立柱（同一隔期格的號碼放同一柱）')
+out.push('')
+out.push(`- 一篩名單平均 ${(sum(results.map(r => r.stage1.length)) / m).toFixed(1)} 顆，分在平均 ${(colCount / m).toFixed(1)} 柱。`)
+out.push(`- 名單裡兩兩一對、同一格的佔 ${pct(sameList, allList)}%（${sameList}／${allList} 對）；開出的獎號兩兩一對、同一格的佔 ${pct(sameWin, allWin)}%（${sameWin}／${allWin} 對）。`)
+out.push('')
+out.push('| 玩法 | 下法 | 每期平均碰數（每碰 1 元） | 894 期投入 | 中獎碰數 | 有中獎的期 | 有中獎的期比例 | 拿回（含退本金） | 拿回率 |')
+out.push('|---|---|---|---|---|---|---|---|---|')
+for (const k of [2, 3, 4]) {
+  for (const way of ['連碰', '立柱'] as const) {
+    const e = bet[way][k]!
+    out.push(`| ${k} 星 ${ODDS[k]} 倍 | ${way} | ${(e.cost / m).toFixed(0)} | ${e.cost.toFixed(0)} | ${e.win} | ${e.drawsWon} | ${pct(e.drawsWon, m)}% | ${e.back} | ${pct(e.back, e.cost)}% |`)
+  }
+}
+out.push('')
 out.push('## 每個條件的成績')
 out.push('')
 out.push('「採用」＝成立線判斷下一次成立、那期有用它；「沒用」＝成立線判斷不成立、那期跳過。成立率看週期判斷有沒有挑對時機。')
@@ -474,6 +539,12 @@ const skippedNow = conds.filter(c => !next.used.some(u => u.cond.id === c.id)).m
 if (skippedNow.length) out.push(`- 這期不適用：${skippedNow.join('、')}`)
 out.push(`- 一篩 ${next.stage1.length} 顆：${next.stage1.join(' ')}`)
 out.push(`- 二篩 ${next.final.length} 顆：**${next.final.join(' ')}**`)
+{
+  const cols = [...columnsOf(next).entries()].sort((a, b) => a[0] - b[0])
+  const sizes = cols.map(([, c]) => c.length)
+  out.push(`- 一篩立柱（${cols.length} 柱）：${cols.map(([slot, c]) => `隔期${slot}［${c.join(' ')}］`).join(' ')}`)
+  out.push(`- 碰數：二星 ${esym(sizes, 2)}（連碰 ${choose(next.stage1.length, 2)}）、三星 ${esym(sizes, 3)}（連碰 ${choose(next.stage1.length, 3)}）、四星 ${esym(sizes, 4)}（連碰 ${choose(next.stage1.length, 4)}）`)
+}
 out.push('')
 out.push('## 逐期紀錄')
 out.push('')
