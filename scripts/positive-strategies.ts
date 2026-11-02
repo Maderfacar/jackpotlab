@@ -9,7 +9,8 @@
  * 用法：node --import tsx scripts/positive-strategies.ts  → docs/positive-strategies.md
  */
 import { writeFileSync } from 'node:fs'
-import { allDecisions, conds, draws, next, rows, type Decision } from './blind-test'
+import { allDecisions, draws, next, rows } from './blind-test'
+import { setsOf } from './lib/strategy-sets'
 
 const OUT = 'docs/positive-strategies.md'
 const SPLIT = '2021-01-01'
@@ -23,31 +24,6 @@ const choose = (a: number, b: number): number => {
   let r = 1
   for (let i = 0; i < b; i++) r = r * (a - i) / (i + 1)
   return r
-}
-
-/** 每期每個策略挑出的球 */
-function setsOf(d: Decision): Map<string, number[]> {
-  const m = new Map<string, number[]>()
-  for (const u of d.used) {
-    m.set(u.cond.id, u.set)
-    if (u.apply) m.set(`${u.cond.id}（採用時）`, u.set)
-  }
-  for (const id of ['R1', 'R2'] as const) {
-    const balls = [...new Set(d.rare.filter(r => r.id === id).flatMap(r => r.balls))]
-    if (balls.length) m.set(id, balls)
-  }
-  m.set('一篩', d.stage1)
-  m.set('二篩', d.final)
-  const base = [...conds.map(c => c.id), 'R1', 'R2']
-  for (let i = 0; i < base.length; i++) for (let j = i + 1; j < base.length; j++) {
-    const a = m.get(base[i]!)
-    const b = m.get(base[j]!)
-    if (!a || !b) continue
-    const bs = new Set(b)
-    const x = a.filter(v => bs.has(v))
-    if (x.length >= 2) m.set(`${base[i]}∩${base[j]}`, x)
-  }
-  return m
 }
 
 interface Acc { cost: number, back: number, bets: number, size: number }
