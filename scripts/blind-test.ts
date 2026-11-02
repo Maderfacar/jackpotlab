@@ -285,7 +285,7 @@ const conds: Cond[] = [
 
 interface Used { cond: Cond, set: number[], why: string, apply: boolean, line: string }
 interface Rare { id: 'R1' | 'R2', slot: number, balls: number[], why: string }
-interface Decision { t: number, used: Used[], rare: Rare[], stage1: number[], final: number[], /** 每顆球決定時在第幾格 */ slotOf: number[] }
+interface Decision { t: number, used: Used[], rare: Rare[], stage1: number[], final: number[], /** 每顆球決定時在第幾格 */ slotOf: number[], /** 每顆球決定時的格、值、y、尾數 */ ballOf: Ball[] }
 /** slotCount[i][k]：到目前為止的盤面，第 i 格剩 k 顆的期數 */
 const slotCount: number[][] = Array.from({ length: SLOTS }, () => new Array<number>(6).fill(0))
 let boardsSeen = 0
@@ -325,7 +325,7 @@ function decide(t: number): Decision {
   const rareBalls = [...new Set(rare.flatMap(r => r.balls))]
   const stage1 = [...new Set([...collect(ALL, vote(1), MIN1), ...rareBalls])].sort((a, b) => a - b)
   const final = [...new Set([...collect(stage1, vote(2), MIN2), ...rareBalls])].sort((a, b) => a - b)
-  return { t, used, rare, stage1, final, slotOf: ctx.balls.map(b => b?.slot ?? -1) }
+  return { t, used, rare, stage1, final, slotOf: ctx.balls.map(b => b?.slot ?? -1), ballOf: ctx.balls }
 }
 
 interface Result extends Decision { ok: Map<string, boolean>, hit1: number, hitF: number }
@@ -397,7 +397,7 @@ for (let t = 1; t < n; t++) {
 }
 export const next = decide(n)
 export { draws, rows, conds }
-export type { Decision }
+export type { Ball, Decision }
 
 // ---- 報告（直接執行這支才寫；被別的腳本 import 時不寫）----
 if (process.argv[1]?.replace(/\\/g, '/').endsWith('scripts/blind-test.ts')) {
