@@ -1,13 +1,15 @@
 /**
  * 使用者的選號策略，從 2024 年第一期起逐期盲測（2026-11-02 使用者）。只照使用者講的步驟，不另加規則：
  *
+ *   週期：「參照過往各項指標的走勢、波型、週期」
+ *     → 每條線現在在上升段或下降段、已經走了 L 期；看歷史上同方向、走到 L 期還沒結束的波段，
+ *       有一半以上再多走一期 → 判斷延續；不到一半 → 判斷轉折。得到下一期這條線是「多」還是「少」。
  *   一篩（隔期、值）：「目前上升中，再對照當前單獨隔期總和波動和值的總和波動，就可以大致抓出最新一期獎號的隔期方向」
- *     → 三條自然波段 A（值總和 ≥ 隔期總和）、G（隔期總和 > 中位）、V（值總和 > 中位）目前的方向；
- *       歷史上三條線方向跟現在一樣的期，下一期 5 顆的隔期、值落在各區的比例，比全部期高的區＝方向（同 gap-direction.ts）。
+ *     → 三條自然波段 A（值總和 ≥ 隔期總和）、G（隔期總和 > 中位）、V（值總和 > 中位）照週期判斷下一期多或少；
+ *       歷史上 A、G、V 剛好是這個組合的那些期，5 顆的隔期、值落在各區的比例，比全部期高的區＝方向。
  *       球的隔期在方向內、值也在方向內，才留下。
- *   二篩（尾數、位置 y）：「從尾數、位置 y 來判斷更進一步的明確獎號名單」，一樣參照過往走勢
- *     → 每個尾數、每種 y（最小／中間／最大／單顆）自己的自然波段目前方向；
- *       歷史上這條線方向跟現在一樣時，下一期這個尾數（這種 y）的球被開出的比例比平常高，就留下。
+ *   二篩（尾數、位置 y）：「從尾數、位置 y 來判斷更進一步的明確獎號名單」
+ *     → 每個尾數、每種 y（最小／中間／最大／單顆）自己的自然波段，一樣照週期判斷下一期多或少；判斷「多」的尾數、y 留下。
  *   比對與修正：每期開獎後比對命中，並把這一期加進歷史，下一期的方向就用更新後的歷史重新判斷。
  *
  * 每一期只用「開完上一期為止」的資料；波段方向只用當時已確認的轉折。名單幾顆由篩選結果決定，不固定。
@@ -47,6 +49,7 @@ class Wave {
   private loAt = 0
   dir = 0
   since = 0
+  private done: Record<'up' | 'down', number[]> = { up: [], down: [] }
   push(x: number, t: number): void {
     const mean = this.cnt ? this.sum / this.cnt : x
     this.sum += x
@@ -55,19 +58,35 @@ class Wave {
     if (this.c > this.hi) { this.hi = this.c; this.hiAt = t }
     if (this.c < this.lo) { this.lo = this.c; this.loAt = t }
     if (this.dir >= 0 && this.hi - this.c >= H) {
+      if (this.dir > 0) this.done.up.push(this.hiAt - this.since)
       this.dir = -1
       this.since = this.hiAt
       this.lo = this.c
       this.loAt = t
     } else if (this.dir <= 0 && this.c - this.lo >= H) {
+      if (this.dir < 0) this.done.down.push(this.loAt - this.since)
       this.dir = 1
       this.since = this.loAt
       this.hi = this.c
       this.hiAt = t
     }
   }
+  /** 歷史上同方向、走到現在這麼長還沒結束的波段，再多走一期的比例（沒有前例＝0） */
+  cont(t: number): number {
+    if (this.dir === 0) return 0
+    const L = t - this.since
+    const past = this.done[this.dir > 0 ? 'up' : 'down']
+    const alive = past.filter(x => x >= L).length
+    return alive ? past.filter(x => x > L).length / alive : 0
+  }
+  /** 照週期判斷下一期這條線是「多」（true）還是「少」：延續就照現在方向，轉折就反過來；方向未定當「少」 */
+  up(t: number): boolean {
+    if (this.dir === 0) return false
+    return this.cont(t) >= 0.5 ? this.dir > 0 : this.dir < 0
+  }
   label(t: number): string {
-    return this.dir === 0 ? '未定' : `${this.dir > 0 ? '上升' : '下降'}${t - this.since}期`
+    if (this.dir === 0) return '未定'
+    return `${this.dir > 0 ? '上升' : '下降'}${t - this.since}期（延續${(100 * this.cont(t)).toFixed(0)}%→${this.up(t) ? '多' : '少'}）`
   }
 }
 
@@ -104,13 +123,14 @@ function ballFeats(b: Board): BallFeat[] {
   return out
 }
 
-// 一篩：三條線狀態 → 下一期隔期、值各區的顆數
+// 一篩：A、G、V 多少組合 → 那些期 5 顆的隔期、值各區顆數
 const lineA = new Wave()
 const lineG = new Wave()
 const lineV = new Wave()
 const medG = new RunMedian(400)
 const medV = new RunMedian(5000)
-const stateKey = (): string => `${lineA.dir}${lineG.dir}${lineV.dir}`
+/** 開完 t−1 期後，照週期判斷下一期 A、G、V 各是多或少 */
+const predictKey = (t: number): string => `${+lineA.up(t - 1)}${+lineG.up(t - 1)}${+lineV.up(t - 1)}`
 const gapByState = new Map<string, number[]>()
 const valByState = new Map<string, number[]>()
 const gapAll = new Array<number>(GAP_NAMES.length).fill(0)
@@ -122,25 +142,9 @@ function favored(byState: number[] | undefined, all: number[]): boolean[] {
   return all.map((a, i) => ts > 0 && ta > 0 && byState![i]! / ts > a / ta)
 }
 
-// 二篩：每個尾數、每種 y 自己的波段；方向 → 下一期這類球被開出的次數／機會
+// 二篩：每個尾數、每種 y 自己的波段
 const tailWave = Array.from({ length: 10 }, () => new Wave())
 const yWave = Y_NAMES.map(() => new Wave())
-const tailStat = new Map<string, [number, number]>()
-const yStat = new Map<string, [number, number]>()
-const tailBase: [number, number][] = Array.from({ length: 10 }, () => [0, 0])
-const yBase: [number, number][] = Y_NAMES.map(() => [0, 0])
-const bump = (m: Map<string, [number, number]>, k: string, hit: number): void => {
-  const e = m.get(k) ?? [0, 0]
-  e[0] += hit
-  e[1] += 1
-  m.set(k, e)
-}
-/** 這條線方向跟現在一樣時，這類球下一期被開出的比例 > 這類球平常被開出的比例 */
-function keep(stat: Map<string, [number, number]>, base: [number, number], k: string): boolean {
-  const e = stat.get(k)
-  if (!e || e[1] === 0 || base[1] === 0) return false
-  return e[0] / e[1] > base[0] / base[1]
-}
 
 interface Decision {
   t: number
@@ -155,11 +159,11 @@ interface Decision {
 interface Result extends Decision { hit1: number, hitF: number }
 
 function decide(t: number, feats: BallFeat[]): Decision {
-  const s = stateKey()
+  const s = predictKey(t)
   const gk = favored(gapByState.get(s), gapAll)
   const vk = favored(valByState.get(s), valAll)
-  const tk = tailWave.map((w, d) => keep(tailStat, tailBase[d]!, `${d}|${w.dir}`))
-  const yk = yWave.map((w, c) => keep(yStat, yBase[c]!, `${c}|${w.dir}`))
+  const tk = tailWave.map(w => w.up(t - 1))
+  const yk = yWave.map(w => w.up(t - 1))
   const all = Array.from({ length: BALLS }, (_, i) => i + 1)
   const stage1 = all.filter(x => gk[feats[x]!.gap] && vk[feats[x]!.val])
   const final = stage1.filter(x => tk[feats[x]!.tail] && feats[x]!.y >= 0 && yk[feats[x]!.y])
@@ -187,30 +191,6 @@ for (let t = 1; t < n; t++) {
   // 開獎後：把這期加進歷史（下一期就用更新後的歷史判斷）
   if (t >= START) {
     const drawn = draws[t]!
-    const s = stateKey()
-    const gs = gapByState.get(s) ?? new Array<number>(GAP_NAMES.length).fill(0)
-    const vs = valByState.get(s) ?? new Array<number>(VAL_NAMES.length).fill(0)
-    for (const x of drawn) {
-      gs[feats[x]!.gap]! += 1
-      vs[feats[x]!.val]! += 1
-      gapAll[feats[x]!.gap]! += 1
-      valAll[feats[x]!.val]! += 1
-    }
-    gapByState.set(s, gs)
-    valByState.set(s, vs)
-    const drawnSet = new Set(drawn)
-    for (let x = 1; x <= BALLS; x++) {
-      const hit = drawnSet.has(x) ? 1 : 0
-      const f = feats[x]!
-      bump(tailStat, `${f.tail}|${tailWave[f.tail]!.dir}`, hit)
-      tailBase[f.tail]![0] += hit
-      tailBase[f.tail]![1] += 1
-      if (f.y >= 0) {
-        bump(yStat, `${f.y}|${yWave[f.y]!.dir}`, hit)
-        yBase[f.y]![0] += hit
-        yBase[f.y]![1] += 1
-      }
-    }
     const tc = new Array<number>(10).fill(0)
     const yc = new Array<number>(Y_NAMES.length).fill(0)
     for (const x of drawn) {
@@ -222,6 +202,18 @@ for (let t = 1; t < n; t++) {
     if (drawn.every(x => feats[x]!.slot >= 0)) {
       const G = drawn.reduce((a, x) => a + feats[x]!.slot, 0)
       const V = drawn.reduce((a, x) => a + board.values[feats[x]!.slot]!, 0)
+      // 這期自己的 A、G、V 是多或少 → 這期 5 顆的隔期、值記到這個組合
+      const s = `${V >= G ? 1 : 0}${G > medG.get() ? 1 : 0}${V > medV.get() ? 1 : 0}`
+      const gs = gapByState.get(s) ?? new Array<number>(GAP_NAMES.length).fill(0)
+      const vs = valByState.get(s) ?? new Array<number>(VAL_NAMES.length).fill(0)
+      for (const x of drawn) {
+        gs[feats[x]!.gap]! += 1
+        vs[feats[x]!.val]! += 1
+        gapAll[feats[x]!.gap]! += 1
+        valAll[feats[x]!.val]! += 1
+      }
+      gapByState.set(s, gs)
+      valByState.set(s, vs)
       lineA.push(V >= G ? 1 : 0, t)
       lineG.push(G > medG.get() ? 1 : 0, t)
       lineV.push(V > medV.get() ? 1 : 0, t)
@@ -277,9 +269,10 @@ out.push('> 每期只用開完上一期為止的資料做決定，決定後才�
 out.push('')
 out.push('## 步驟（照使用者的話）')
 out.push('')
-out.push('1. 一篩：A 線（值總和 ≥ 隔期總和）、G 線（隔期總和）、V 線（值總和）目前的波段方向；歷史上三條線方向一樣的期，下一期隔期、值落在哪些區比平常多 → 隔期方向、值方向。隔期和值都在方向內的球留下。')
-out.push('2. 二篩：每個尾數、每種 y 自己的波段方向；歷史上方向一樣時，下一期這類球比平常多開 → 留下。')
-out.push('3. 開獎後比對，把這期加進歷史，下一期重新判斷。')
+out.push('1. 週期：每條線現在在上升或下降段、走了幾期；歷史上同方向走到這麼長還沒結束的波段，一半以上再多走一期 → 延續，不到一半 → 轉折。得到下一期這條線多或少。')
+out.push('2. 一篩：A 線（值總和 ≥ 隔期總和）、G 線（隔期總和）、V 線（值總和）照週期判斷下一期多或少；歷史上剛好是這個組合的期，隔期、值落在哪些區比平常多 → 隔期方向、值方向。隔期和值都在方向內的球留下。')
+out.push('3. 二篩：每個尾數、每種 y 自己的波段照週期判斷下一期多或少；判斷「多」的尾數、y 留下。')
+out.push('4. 開獎後比對，把這期加進歷史（波長、組合比例都更新），下一期重新判斷。')
 out.push('')
 out.push('## 命中')
 out.push('')
@@ -321,6 +314,8 @@ out.push('')
 out.push('## 下一期的決定（還沒開）')
 out.push('')
 out.push(`- 開完 ${rows[n - 1]![0]}（${rows[n - 1]![1]}）後：${next.state}`)
+out.push(`- 尾數各線：${tailWave.map((w, d) => `${d} ${w.label(n - 1)}`).join('；')}`)
+out.push(`- y 各線：${yWave.map((w, c) => `${Y_NAMES[c]} ${w.label(n - 1)}`).join('；')}`)
 out.push(`- 隔期方向：${next.gapDir.join('、') || '無'}；值方向：${next.valDir.join('、') || '無'}`)
 out.push(`- 尾數留：${next.tailDir.join('、') || '無'}；y 留：${next.yDir.join('、') || '無'}`)
 out.push(`- 一篩 ${next.stage1.length} 顆：${next.stage1.join(' ') || '無'}`)
