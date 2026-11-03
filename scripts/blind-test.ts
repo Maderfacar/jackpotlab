@@ -12,6 +12,7 @@
  *     S7 隔期 0～19 每格：目前的值高於最近 5、10、15 個紀錄的平均（含目前）
  *     S8 A（值總和 ≥ 隔期總和）、G（隔期總和）、V（值總和）三條自然波段照週期判斷下一期多或少，
  *        歷史上同樣組合的期，隔期、值落在哪些區比平常多 → 隔期方向、值方向
+ *     S9 值 0～9、10 以上各一條自然波段（每期有沒有獎號來自這個值的隔期）→ 判斷會出現的值，留它的隔期（2026-11-03）
  *   二篩（尾數、位置 y）
  *     T1 幾乎每期都跟上一期同尾 → 上一期開出的尾數
  *     T2 上一期有 2 個以上同尾 → 下一期開出這個尾數
@@ -19,7 +20,7 @@
  *     T4 每個尾數自己的自然波段照週期判斷下一期多
  *     Y1 y=1 佔多數 → y=1
  *     Y2 y=2～5：距離上次出現已經等到平均間隔以上 → 這種 y
- *     Y3 每種 y（最小／中間／最大／單顆）自己的自然波段照週期判斷下一期多
+ *     Y3 y=1～5 每一種自己的自然波段（每期開出幾顆這種 y）照週期判斷下一期多（2026-11-03 改；v1 是單顆／最小／中間／最大）
  *   少見狀況（不看成立線、出現就放進一篩和二篩名單）
  *     R1 隔期 > 5 的格子還留著 5 顆
  *     R2 某一格剩的顆數，歷史上同一格剩這麼多以上的期不到 RARE（到目前為止的盤面算）
@@ -50,7 +51,11 @@ const RARE = 0.05
 const RARE_MIN_HISTORY = 500
 const GAP_BINS: [number, number][] = [[0, 0], [1, 1], [2, 3], [4, 6], [7, 10], [11, 15], [16, 25], [26, 59]]
 const VAL_BINS: [number, number][] = [[0, 0], [1, 1], [2, 3], [4, 6], [7, 12], [13, 24], [25, Infinity]]
-const Y_NAMES = ['單顆', '最小', '中間', '最大']
+const Y_KINDS = [1, 2, 3, 4, 5]
+/** 值分組：0～9 各一組、10 以上一組 */
+const VAL_GROUPS = 11
+const vGroup = (v: number): number => Math.min(v, VAL_GROUPS - 1)
+const vName = (g: number): string => (g === VAL_GROUPS - 1 ? '10以上' : String(g))
 
 const file = JSON.parse(readFileSync(SRC, 'utf8')) as HistoryFile
 const rows = file.rows
@@ -141,7 +146,6 @@ function ballsOf(b: Board): Ball[] {
   b.slots.forEach((s, i) => s.forEach((x, k) => { out[x] = { slot: i, value: b.values[i]!, rank: k + 1, size: s.length, tail: x % 10 } }))
   return out
 }
-const yCat = (b: Ball): number => (b.size === 1 ? 0 : b.rank === 1 ? 1 : b.rank === b.size ? 3 : 2)
 const ALL = Array.from({ length: BALLS }, (_, i) => i + 1)
 const gapSum = (t: number): number => feats[t]!.gaps.reduce<number>((a, g) => a + (g ?? SLOTS), 0)
 const valSum = (t: number): number => feats[t]!.values.reduce<number>((a, v) => a + (v ?? 0), 0)
@@ -157,7 +161,8 @@ const valByState = new Map<string, number[]>()
 const gapAll = new Array<number>(GAP_BINS.length + 1).fill(0)
 const valAll = new Array<number>(VAL_BINS.length + 1).fill(0)
 const tailWave = Array.from({ length: 10 }, () => new Wave())
-const yWave = Y_NAMES.map(() => new Wave())
+const yWave = Y_KINDS.map(() => new Wave())
+const valWave = Array.from({ length: VAL_GROUPS }, () => new Wave())
 /** 每格的值紀錄（被打中前等了幾期） */
 const slotRecords: number[][] = Array.from({ length: SLOTS }, () => [])
 /** y=2～5 上次出現在第幾期、歷次間隔 */
@@ -245,6 +250,11 @@ const conds: Cond[] = [
     })
     return s.length ? { set: s, why: `A${lineA.label()}、G${lineG.label()}、V${lineV.label()}` } : null
   }),
+  mk('S9', '值 0～9、10以上 各自波段', 1, c => {
+    const gs = valWave.map((w, g) => (w.up() ? g : -1)).filter(g => g >= 0)
+    const s = ALL.filter(x => c.balls[x]!.slot < SLOTS && gs.includes(vGroup(c.balls[x]!.value)))
+    return s.length ? { set: s, why: `判會出現的值：${gs.map(vName).join('、')}` } : null
+  }),
   mk('T1', '跟上一期同尾', 2, c => {
     const tails = [...new Set(draws[c.t - 1]!.map(x => x % 10))]
     return { set: ALL.filter(x => tails.includes(x % 10)), why: `上期尾數 ${tails.join('、')}` }
@@ -277,9 +287,9 @@ const conds: Cond[] = [
     }
     return ks.length ? { set: ALL.filter(x => ks.includes(c.balls[x]!.rank)), why: `y=${ks.join('、')} 已等到平均間隔` } : null
   }),
-  mk('Y3', 'y 波段', 2, c => {
-    const cats = yWave.map((w, i) => (w.up() ? i : -1)).filter(i => i >= 0)
-    return cats.length ? { set: ALL.filter(x => cats.includes(yCat(c.balls[x]!))), why: `判多的 y：${cats.map(i => Y_NAMES[i]).join('、')}` } : null
+  mk('Y3', 'y=1～5 各自波段', 2, c => {
+    const ks = Y_KINDS.filter((_, i) => yWave[i]!.up())
+    return ks.length ? { set: ALL.filter(x => ks.includes(c.balls[x]!.rank)), why: `判多的 y：${ks.map(k => `y=${k}`).join('、')}` } : null
   })
 ]
 
@@ -354,13 +364,16 @@ for (let t = 1; t < n; t++) {
   if (t >= START) {
     const balls = ballsOf(boardNow)
     const tc = new Array<number>(10).fill(0)
-    const yc = new Array<number>(Y_NAMES.length).fill(0)
+    const yc = new Array<number>(Y_KINDS.length).fill(0)
+    const vSeen = new Array<number>(VAL_GROUPS).fill(0)
     for (const x of drawn) {
       tc[x % 10]! += 1
-      yc[yCat(balls[x]!)]! += 1
+      yc[balls[x]!.rank - 1]! += 1
+      if (balls[x]!.slot < SLOTS) vSeen[vGroup(balls[x]!.value)] = 1
     }
     tailWave.forEach((w, d) => w.push(tc[d]!))
     yWave.forEach((w, i) => w.push(yc[i]!))
+    valWave.forEach((w, g) => w.push(vSeen[g]!))
     if (drawn.every(x => balls[x]!.slot < SLOTS)) {
       const G = drawn.reduce((a, x) => a + balls[x]!.slot, 0)
       const V = drawn.reduce((a, x) => a + balls[x]!.value, 0)
