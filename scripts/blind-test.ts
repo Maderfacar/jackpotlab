@@ -5,13 +5,15 @@
  *   一篩（隔期、值）
  *     S1 每期 5 顆隔期配置：0～5 有 2～3 顆、6～9 有 1～2 顆、10 以上 0～1 顆（三段各一條）
  *     S2 隔期 20 以上整段剩 ≥2 顆 → 從這幾顆開出
- *     S3 隔期總和大小交替：上一期比前一期大 → 這期變小（每顆隔期 < 上一期總和 ÷5），反之變大
- *     S4 值總和多數小於隔期總和 → 每顆值 < 隔期
  *     S5 值總和 < 10 → 下一期有單顆值 > 10
  *     S6 同一位置（第 1～5 顆）連 2 期以上隔期 > 5 → 下一期落在隔期 0～5
  *     S7 隔期 0～19 每格：目前的值高於最近 5、10、15 個紀錄的平均（含目前）
- *     S8 A（值總和 ≥ 隔期總和）、G（隔期總和）、V（值總和）三條自然波段照週期判斷下一期多或少，
- *        歷史上同樣組合的期，隔期、值落在哪些區比平常多 → 隔期方向、值方向
+ *     五顆組合推理（2026-11-03 conditions-v4：總和是五顆加起來的，不能拿單顆的隔期、值直接判斷；舊的 S3、S4、S8 拿掉）
+ *       值 0～9 每個（使用者 2026-11-03）：每 VAL_WAVE 期為一個波段，算這個值在最新一個波段（最近 VAL_WAVE 期）出現的百分比，
+ *         一期有獎號來自這個值的隔期格就算出現；再算最近 VAL_RECENT 期出現的百分比。
+ *         最近 VAL_RECENT 期比波段多 → 判下一期不會有這個值，它的隔期格號碼從一篩排除（少見號碼除外）；一樣或比較少 → 判會。值 10 以上不判。
+ *       隔期總和大小交替（上一期比前一期大 → 這期比上一期小，反之變大）；值總和 < 隔期總和。
+ *       只用沒被排除的格，兩樣總和都符合的五顆組合，用到的隔期格裡的號碼納入一篩。
  *   二篩（尾數、位置 y）
  *     T1 幾乎每期都跟上一期同尾 → 上一期開出的尾數
  *     T2 上一期有 2 個以上同尾 → 下一期開出這個尾數
@@ -25,12 +27,11 @@
  *     R2 某一格剩的顆數，歷史上同一格剩這麼多以上的期不到 RARE（到目前為止的盤面算）
  *
  * 週期與修正：每個條件都有一條「成立線」（每期條件成立記 1、不成立記 0 的自然波段）。
- *   決定時看這條線現在在上升或下降段、走了幾次，歷史上同方向走到這麼長還延續的比例 ≥ 一半 → 延續；
- *   判斷下一次「成立」才採用，判斷「不成立」這期就不用。開獎後把成不成立記進線裡，下一期重新判斷。
- *   成立＝這個條件挑出的球，開出的顆數多於「挑出顆數 × 5/39」（挑 1～7 顆時＝至少中 1 顆）。
+ *   決定時看這條線現在在上升或下降段、走了幾次，歷史上同方向走到這麼長還延續的比例 ≥ 一半 → 延續，判多或判少。
+ *   開獎後把成不成立記進線裡，下一期重新判斷。成立＝這個條件挑出的號碼至少中 1 顆（使用者 2026-11-03）。
+ *   判少不表示不會開：一篩不看判多判少；二篩尾數條件判少的不投票（見下）。
  * 留球（2026-11-03 conditions-v3，使用者：不能只憑尾數選、一篩不能留 39 顆）：
- *   一篩每顆球數有幾個採用的一篩條件挑到它，票數最多的一層一層往下收，收到至少 10 顆（少見的球也算在內）；
- *     這期一篩條件一條都沒採用時，改成全部一篩條件都投票（不然一篩等於沒篩）。
+ *   一篩（conditions-v4）：各一篩條件挑出的號碼、五顆組合推理用到的隔期格號碼、少見的號碼，全部合起來（符合就納入，不分層）。
  *   二篩把一篩的球照 y=1～5 分成五組，每組各自用尾數條件（T1～T4）的票數收：
  *     這種 y 判會多（y 波段判多、或 Y1／Y2 採用且挑到這種 y）→ 收票數最高的兩層；其他 → 只收最高的一層。
  *     尾數條件一條都沒採用時，同樣改成全部尾數條件都投票。
@@ -48,7 +49,6 @@ const OUT = 'docs/blind-test.md'
 const TEST_FROM = '2024-01-01'
 const H = 2
 const START = SLOTS
-const MIN1 = 10
 /** 判會多的 y 收幾層票數 */
 const Y_TIERS_UP = 2
 const RARE = 0.05
@@ -56,6 +56,12 @@ const RARE_MIN_HISTORY = 500
 const GAP_BINS: [number, number][] = [[0, 0], [1, 1], [2, 3], [4, 6], [7, 10], [11, 15], [16, 25], [26, 59]]
 const VAL_BINS: [number, number][] = [[0, 0], [1, 1], [2, 3], [4, 6], [7, 12], [13, 24], [25, Infinity]]
 const Y_KINDS = [1, 2, 3, 4, 5]
+/** 值 0～9 各自判斷 */
+const VALS = 10
+/** 一個波段幾期 */
+const VAL_WAVE = 30
+/** 拿最近幾期跟波段比 */
+const VAL_RECENT = 5
 
 const file = JSON.parse(readFileSync(SRC, 'utf8')) as HistoryFile
 const rows = file.rows
@@ -162,6 +168,8 @@ const gapAll = new Array<number>(GAP_BINS.length + 1).fill(0)
 const valAll = new Array<number>(VAL_BINS.length + 1).fill(0)
 const tailWave = Array.from({ length: 10 }, () => new Wave())
 const yWave = Y_KINDS.map(() => new Wave())
+/** 值 0～9：每期有沒有出現（1／0） */
+const valSeen = Array.from({ length: VALS }, (): number[] => [])
 /** 每格的值紀錄（被打中前等了幾期） */
 const slotRecords: number[][] = Array.from({ length: SLOTS }, () => [])
 /** y=2～5 上次出現在第幾期、歷次間隔 */
@@ -201,16 +209,6 @@ const conds: Cond[] = [
     const s = segCount(c, 20, SLOTS)
     return s.length >= 2 ? { set: s, why: `20 以上剩 ${s.length} 顆` } : null
   }),
-  mk('S3', '隔期總和大小交替', 1, c => {
-    const g1 = gapSum(c.t - 1)
-    const g2 = gapSum(c.t - 2)
-    if (g1 === g2) return null
-    const cut = g1 / PICK
-    return g1 > g2
-      ? { set: ALL.filter(x => c.balls[x]!.slot < cut), why: `上期 ${g1} > 前期 ${g2} → 這期變小，隔期 < ${cut.toFixed(1)}` }
-      : { set: ALL.filter(x => c.balls[x]!.slot > cut), why: `上期 ${g1} < 前期 ${g2} → 這期變大，隔期 > ${cut.toFixed(1)}` }
-  }),
-  mk('S4', '值總和小於隔期總和', 1, c => ({ set: ALL.filter(x => c.balls[x]!.value < c.balls[x]!.slot), why: '每顆值 < 隔期' })),
   mk('S5', '值總和<10 → 單顆值>10', 1, c => {
     const v = valSum(c.t - 1)
     if (v >= 10) return null
@@ -233,21 +231,6 @@ const conds: Cond[] = [
     }
     const s = ALL.filter(x => slots.includes(c.balls[x]!.slot))
     return s.length ? { set: s, why: `隔期 ${slots.join('、')}` } : null
-  }),
-  mk('S8', 'A/G/V 波段的隔期值方向', 1, c => {
-    const key = `${+lineA.up()}${+lineG.up()}${+lineV.up()}`
-    const fav = (by: number[] | undefined, all: number[]): boolean[] => {
-      const ts = by ? by.reduce((a, b) => a + b, 0) : 0
-      const ta = all.reduce((a, b) => a + b, 0)
-      return all.map((a, i) => ts > 0 && by![i]! / ts > a / ta)
-    }
-    const gk = fav(gapByState.get(key), gapAll)
-    const vk = fav(valByState.get(key), valAll)
-    const s = ALL.filter(x => {
-      const b = c.balls[x]!
-      return gk[b.slot >= SLOTS ? GAP_BINS.length : binOf(GAP_BINS, b.slot)] && vk[b.slot >= SLOTS ? VAL_BINS.length : binOf(VAL_BINS, b.value)]
-    })
-    return s.length ? { set: s, why: `A${lineA.label()}、G${lineG.label()}、V${lineV.label()}` } : null
   }),
   mk('T1', '跟上一期同尾', 2, c => {
     const tails = [...new Set(draws[c.t - 1]!.map(x => x % 10))]
@@ -289,7 +272,7 @@ const conds: Cond[] = [
 
 interface Used { cond: Cond, set: number[], why: string, apply: boolean, line: string }
 interface Rare { id: 'R1' | 'R2', slot: number, balls: number[], why: string }
-interface Decision { t: number, used: Used[], rare: Rare[], stage1: number[], final: number[], /** 判會多的 y */ yUp: number[], /** 每顆球決定時在第幾格 */ slotOf: number[], /** 每顆球決定時的格、值、y、尾數 */ ballOf: Ball[] }
+interface Decision { t: number, used: Used[], rare: Rare[], plan: Plan, stage1: number[], final: number[], /** 判會多的 y */ yUp: number[], /** 每顆球決定時在第幾格 */ slotOf: number[], /** 每顆球決定時的格、值、y、尾數 */ ballOf: Ball[] }
 /** slotCount[i][k]：到目前為止的盤面，第 i 格剩 k 顆的期數 */
 const slotCount: number[][] = Array.from({ length: SLOTS }, () => new Array<number>(6).fill(0))
 let boardsSeen = 0
@@ -306,15 +289,67 @@ function rareOf(b: Board): Rare[] {
 }
 
 /** 票數最多的一層一層往下收，收到至少 min 顆 */
-/** 票數最多的一層一層收，收到（連同 seed）至少 min 顆 */
-function collect(pool: number[], votes: (x: number) => number, min: number, seed: number[] = []): number[] {
-  const tiers = [...new Set(pool.map(votes))].sort((a, b) => b - a)
-  const out: number[] = []
-  for (const v of tiers) {
-    if (new Set([...out, ...seed]).size >= min) break
-    out.push(...pool.filter(x => votes(x) === v))
+const comb = (a: number, b: number): number => {
+  if (b < 0 || b > a) return 0
+  let r = 1
+  for (let i = 0; i < b; i++) r = r * (a - i) / (i + 1)
+  return r
+}
+interface ValJudge { v: number, wave: number, recent: number, appear: boolean }
+/** 值 v 下一期會不會出現：最近 VAL_RECENT 期出現的百分比比最新波段（最近 VAL_WAVE 期）多 → 不會 */
+function valJudge(v: number): ValJudge {
+  const h = valSeen[v]!
+  if (h.length < VAL_WAVE) return { v, wave: 0, recent: 0, appear: true }
+  const rate = (k: number): number => h.slice(-k).reduce((a, b) => a + b, 0) / k
+  const wave = rate(VAL_WAVE)
+  const recent = rate(VAL_RECENT)
+  return { v, wave, recent, appear: recent <= wave }
+}
+interface Plan {
+  /** 值 0～9 會不會出現 */ vals: ValJudge[]
+  /** 隔期總和：-1＝要比 gapCut 小、1＝要比 gapCut 大、0＝不限 */ gapDir: number, gapCut: number, gapWhy: string
+  /** 符合的五顆組合用到的隔期格、組合數 */ comboSlots: number[], combos: number
+}
+function comboPlan(t: number, balls: Ball[]): Plan {
+  const vals = Array.from({ length: VALS }, (_, v) => valJudge(v))
+  const out = vals.filter(j => !j.appear).map(j => j.v)
+  const g1 = gapSum(t - 1)
+  const g2 = gapSum(t - 2)
+  const gapDir = g1 > g2 ? -1 : g1 < g2 ? 1 : 0
+  const gapWhy = gapDir < 0 ? `上期 ${g1} > 前期 ${g2} → 這期 < ${g1}` : gapDir > 0 ? `上期 ${g1} < 前期 ${g2} → 這期 > ${g1}` : `上期＝前期 ${g1}，不限`
+  const info = [...new Set(ALL.map(x => balls[x]!.slot))].filter(sl => sl < SLOTS).sort((a, b) => a - b).map((sl) => {
+    const bs = ALL.filter(x => balls[x]!.slot === sl)
+    return { sl, v: balls[bs[0]!]!.value, size: bs.length }
+  }).filter(o => !out.includes(o.v))
+  const take = new Array<number>(info.length).fill(0)
+  const usedSlots = new Set<number>()
+  let combos = 0
+  const walk = (i: number, left: number, G: number, V: number): void => {
+    if (gapDir < 0 && G >= g1) return
+    if (left === 0) {
+      if ((gapDir > 0 && G <= g1) || V >= G) return
+      let ways = 1
+      info.forEach((o, k) => { if (take[k]) { usedSlots.add(o.sl); ways *= comb(o.size, take[k]!) } })
+      combos += ways
+      return
+    }
+    if (i === info.length) return
+    const o = info[i]!
+    for (let k = Math.min(left, o.size); k >= 0; k--) {
+      take[i] = k
+      walk(i + 1, left - k, G + k * o.sl, V + k * o.v)
+    }
+    take[i] = 0
   }
-  return out.sort((a, b) => a - b)
+  walk(0, PICK, 0, 0)
+  return { vals, gapDir, gapCut: g1, gapWhy, comboSlots: [...usedSlots].sort((a, b) => a - b), combos }
+}
+/** 實際開出的五顆，符不符合組合推理的三樣 */
+function fitOf(p: Plan, balls: Ball[], drawn: number[]): { v: boolean, g: boolean, a: boolean } {
+  const out = p.vals.filter(j => !j.appear).map(j => j.v)
+  const G = drawn.reduce((a, x) => a + Math.min(balls[x]!.slot, SLOTS), 0)
+  const V = drawn.reduce((a, x) => a + balls[x]!.value, 0)
+  return { v: !drawn.some(x => balls[x]!.slot < SLOTS && out.includes(balls[x]!.value)), g: p.gapDir < 0 ? G < p.gapCut : p.gapDir > 0 ? G > p.gapCut : true, a: V < G }
 }
 
 let boardNow: Board = firstBoard(draws[0]!)
@@ -333,7 +368,11 @@ function decide(t: number): Decision {
   }
   const rare = rareOf(boardNow)
   const rareBalls = [...new Set(rare.flatMap(r => r.balls))]
-  const stage1 = [...new Set([...collect(ALL, voter(u => u.cond.stage === 1), MIN1, rareBalls), ...rareBalls])].sort((a, b) => a - b)
+  const plan = comboPlan(t, ctx.balls)
+  const comboBalls = ALL.filter(x => plan.comboSlots.includes(ctx.balls[x]!.slot))
+  const valOut = plan.vals.filter(j => !j.appear).map(j => j.v)
+  const kept = [...used.filter(u => u.cond.stage === 1).flatMap(u => u.set), ...comboBalls].filter(x => !valOut.includes(ctx.balls[x]!.value))
+  const stage1 = [...new Set([...kept, ...rareBalls])].sort((a, b) => a - b)
   const tailVote = voter(u => u.cond.id.startsWith('T'))
   const yUp = Y_KINDS.filter((k, i) => yWave[i]!.up()
     || used.some(u => u.apply && (u.cond.id === 'Y1' || u.cond.id === 'Y2') && u.set.some(x => ctx.balls[x]!.rank === k)))
@@ -343,10 +382,10 @@ function decide(t: number): Decision {
     return pool.filter(x => tiers.includes(tailVote(x)))
   })
   const final = [...new Set([...byY, ...rareBalls])].sort((a, b) => a - b)
-  return { t, used, rare, stage1, final, yUp, slotOf: ctx.balls.map(b => b?.slot ?? -1), ballOf: ctx.balls }
+  return { t, used, rare, plan, stage1, final, yUp, slotOf: ctx.balls.map(b => b?.slot ?? -1), ballOf: ctx.balls }
 }
 
-interface Result extends Decision { ok: Map<string, boolean>, hit1: number, hitF: number }
+interface Result extends Decision { ok: Map<string, boolean>, hit1: number, hitF: number, fit: { v: boolean, g: boolean, a: boolean } }
 const results: Result[] = []
 /** 每一期（不只盲測期）的決定，給其他腳本用 */
 export const allDecisions: Decision[] = []
@@ -361,12 +400,12 @@ for (let t = 1; t < n; t++) {
     const ok = new Map<string, boolean>()
     for (const u of dec.used) {
       const hits = u.set.filter(x => drawnSet.has(x)).length
-      const pass = hits > u.set.length * PICK / BALLS
+      const pass = hits >= 1
       ok.set(u.cond.id, pass)
       u.cond.wave.push(pass ? 1 : 0)
     }
     allDecisions.push(dec)
-    if (isTest) results.push({ ...dec, ok, hit1: dec.stage1.filter(x => drawnSet.has(x)).length, hitF: dec.final.filter(x => drawnSet.has(x)).length })
+    if (isTest) results.push({ ...dec, ok, fit: fitOf(dec.plan, dec.ballOf, drawn), hit1: dec.stage1.filter(x => drawnSet.has(x)).length, hitF: dec.final.filter(x => drawnSet.has(x)).length })
   }
   // 更新各條線與紀錄
   if (t >= START) {
@@ -379,6 +418,7 @@ for (let t = 1; t < n; t++) {
     }
     tailWave.forEach((w, d) => w.push(tc[d]!))
     yWave.forEach((w, i) => w.push(yc[i]!))
+    for (let v = 0; v < VALS; v++) valSeen[v]!.push(drawn.some(x => balls[x]!.slot < SLOTS && balls[x]!.value === v) ? 1 : 0)
     if (drawn.every(x => balls[x]!.slot < SLOTS)) {
       const G = drawn.reduce((a, x) => a + balls[x]!.slot, 0)
       const V = drawn.reduce((a, x) => a + balls[x]!.value, 0)
@@ -434,9 +474,11 @@ out.push('| 代號 | 條件 | 篩 |')
 out.push('|---|---|---|')
 for (const c of conds) out.push(`| ${c.id} | ${c.name} | ${c.stage === 1 ? '一篩' : '二篩'} |`)
 out.push('')
-out.push('- 每個條件有一條成立線：這期條件挑出的球，開出的顆數多於「挑出顆數 × 5/39」就算成立（挑 1～7 顆時＝至少中 1 顆）。')
-out.push('- 決定時看成立線現在上升或下降、走了幾次；歷史上同方向走到這麼長還延續的比例 ≥ 一半 → 延續。判斷下一次「成立」就採用，判斷「不成立」這期不用。')
-out.push(`- 一篩：每顆球被幾個採用的一篩條件挑到，票數最多的一層一層收，收到至少 ${MIN1} 顆；這期一篩條件一條都沒採用時，改成全部一篩條件投票。`)
+out.push('- 每個條件有一條成立線：這期條件挑出的號碼至少中 1 顆就算成立。')
+out.push('- 決定時看成立線現在上升或下降、走了幾次；歷史上同方向走到這麼長還延續的比例 ≥ 一半 → 延續，判多或判少。判少不表示不會開。')
+out.push('- 一篩：各一篩條件挑出的號碼＋五顆組合推理用到的隔期格號碼＋少見號碼，全部合起來（不看判多判少、不分層）。')
+out.push(`- 值 0～9 每個：最近 ${VAL_WAVE} 期（最新波段）出現的百分比 vs 最近 ${VAL_RECENT} 期出現的百分比；最近 ${VAL_RECENT} 期比較多 → 判不會，它的隔期格號碼從一篩排除（少見號碼除外）；一樣或比較少 → 判會。`)
+out.push('- 五顆組合推理：只用沒被排除的格，隔期總和大小交替、值總和 < 隔期總和都符合的五顆組合，用到的隔期格號碼納入。')
 out.push(`- 二篩：一篩的球照 y=1～5 分五組，每組用尾數條件（T1～T4）的票數收；判會多的 y 收最高 ${Y_TIERS_UP} 層，其他只收最高 1 層。尾數條件一條都沒採用時改成全部投票。`)
 out.push('')
 out.push('## 命中')
@@ -459,6 +501,29 @@ for (const y of [...new Set(results.map(r => rows[r.t]![1].slice(0, 4)))]) {
   const ha = sum(rs.map(r => r.hit1))
   const hb = sum(rs.map(r => r.hitF))
   out.push(`| ${y} | ${rs.length} | ${a} | ${ha} | ${pct(ha, a)}% | ${b} | ${hb} | ${pct(hb, b)}% |`)
+}
+out.push('')
+out.push('## 五顆組合推理：實際開出的五顆符不符合')
+out.push('')
+out.push('| 項目 | 符合期數 | 比例 |')
+out.push('|---|---|---|')
+const fitRow = (name: string, f: (r: Result) => boolean): void => { const k = results.filter(f).length; out.push(`| ${name} | ${k} | ${pct(k, m)}% |`) }
+fitRow('實際開出的五顆都沒有判不會出現的值', r => r.fit.v)
+fitRow('隔期總和大小交替', r => r.fit.g)
+fitRow('值總和 < 隔期總和', r => r.fit.a)
+fitRow('三樣都符合', r => r.fit.v && r.fit.g && r.fit.a)
+out.push('')
+out.push(`平均每期組合推理用到 ${(sum(results.map(r => r.plan.comboSlots.length)) / m).toFixed(1)} 個隔期格。`)
+out.push('')
+out.push('### 值 0～9 判會／不會出現，實際有沒有開出')
+out.push('')
+out.push('| 值 | 判會出現 | 其中實際開出 | 判不會出現 | 其中實際開出 |')
+out.push('|---|---|---|---|---|')
+for (let v = 0; v < VALS; v++) {
+  const has = (r: Result): boolean => draws[r.t]!.some(x => r.ballOf[x]!.slot < SLOTS && r.ballOf[x]!.value === v)
+  const yes = results.filter(r => r.plan.vals[v]!.appear)
+  const no = results.filter(r => !r.plan.vals[v]!.appear)
+  out.push(`| ${v} | ${yes.length} | ${yes.filter(has).length}（${pct(yes.filter(has).length, yes.length)}%） | ${no.length} | ${no.filter(has).length}（${pct(no.filter(has).length, no.length)}%） |`)
 }
 out.push('')
 out.push('## 少見狀況')
