@@ -9,9 +9,12 @@
  *     S6 同一位置（第 1～5 顆）連 2 期以上隔期 > 5 → 下一期落在隔期 0～5
  *     S7 隔期 0～19 每格：目前的值高於最近 5、10、15 個紀錄的平均（含目前）
  *     五顆組合推理（2026-11-03 conditions-v4：總和是五顆加起來的，不能拿單顆的隔期、值直接判斷；舊的 S3、S4、S8 拿掉）
- *       值 0～9 每個（使用者 2026-11-03）：每 VAL_WAVE 期為一個波段，算這個值在最新一個波段（最近 VAL_WAVE 期）出現的百分比，
- *         一期有獎號來自這個值的隔期格就算出現；再算最近 VAL_RECENT 期出現的百分比。
- *         最近 VAL_RECENT 期比波段多 → 判下一期不會有這個值，它的隔期格號碼從一篩排除（少見號碼除外）；一樣或比較少 → 判會。值 10 以上不判。
+ *       值 0～9 每個（使用者 2026-11-03，conditions-v5）：各自用 VAL_RULES 的波段期數 W、近期期數 R 與方向，
+ *         算最近 W 期出現的百分比、最近 R 期出現的百分比（一期有獎號來自這個值的隔期格就算出現）。
+ *         方向「多→不會」：近 R 期比波段多 → 判不會；方向「少→不會」：近 R 期比波段少 → 判不會；一樣 → 判會。
+ *         判不會的值，它的隔期格號碼從一篩排除（少見號碼除外）。值 10 以上不判。
+ *         W、R、方向來自 scripts/value-window.ts：2007～2020 找最好的組合；使用者選「a」時看過 2021 起的驗證結果才定方向，
+ *         所以 2021 起的盲測對值的判斷不算完全盲。
  *       隔期總和大小交替（上一期比前一期大 → 這期比上一期小，反之變大）；值總和 < 隔期總和。
  *       只用沒被排除的格，兩樣總和都符合的五顆組合，用到的隔期格裡的號碼納入一篩。
  *   二篩（尾數、位置 y）
@@ -58,10 +61,19 @@ const VAL_BINS: [number, number][] = [[0, 0], [1, 1], [2, 3], [4, 6], [7, 12], [
 const Y_KINDS = [1, 2, 3, 4, 5]
 /** 值 0～9 各自判斷 */
 const VALS = 10
-/** 一個波段幾期 */
-const VAL_WAVE = 30
-/** 拿最近幾期跟波段比 */
-const VAL_RECENT = 5
+/** 值 0～9 各自的波段期數 w、近期期數 r、方向（1＝近期多→不會、-1＝近期少→不會），見 docs/value-window.md */
+const VAL_RULES: { w: number, r: number, dir: 1 | -1 }[] = [
+  { w: 10, r: 1, dir: -1 },
+  { w: 20, r: 15, dir: -1 },
+  { w: 25, r: 10, dir: -1 },
+  { w: 30, r: 3, dir: -1 },
+  { w: 10, r: 5, dir: -1 },
+  { w: 80, r: 6, dir: -1 },
+  { w: 60, r: 10, dir: -1 },
+  { w: 15, r: 5, dir: 1 },
+  { w: 60, r: 3, dir: 1 },
+  { w: 30, r: 15, dir: 1 },
+]
 
 const file = JSON.parse(readFileSync(SRC, 'utf8')) as HistoryFile
 const rows = file.rows
@@ -295,15 +307,16 @@ const comb = (a: number, b: number): number => {
   for (let i = 0; i < b; i++) r = r * (a - i) / (i + 1)
   return r
 }
-interface ValJudge { v: number, wave: number, recent: number, appear: boolean }
-/** 值 v 下一期會不會出現：最近 VAL_RECENT 期出現的百分比比最新波段（最近 VAL_WAVE 期）多 → 不會 */
+interface ValJudge { v: number, w: number, r: number, dir: 1 | -1, wave: number, recent: number, appear: boolean }
+/** 值 v 下一期會不會出現：照 VAL_RULES[v] 比最近 w 期與最近 r 期出現的百分比 */
 function valJudge(v: number): ValJudge {
+  const { w, r, dir } = VAL_RULES[v]!
   const h = valSeen[v]!
-  if (h.length < VAL_WAVE) return { v, wave: 0, recent: 0, appear: true }
+  if (h.length < w) return { v, w, r, dir, wave: 0, recent: 0, appear: true }
   const rate = (k: number): number => h.slice(-k).reduce((a, b) => a + b, 0) / k
-  const wave = rate(VAL_WAVE)
-  const recent = rate(VAL_RECENT)
-  return { v, wave, recent, appear: recent <= wave }
+  const wave = rate(w)
+  const recent = rate(r)
+  return { v, w, r, dir, wave, recent, appear: dir === 1 ? recent <= wave : recent >= wave }
 }
 interface Plan {
   /** 值 0～9 會不會出現 */ vals: ValJudge[]
@@ -477,7 +490,7 @@ out.push('')
 out.push('- 每個條件有一條成立線：這期條件挑出的號碼至少中 1 顆就算成立。')
 out.push('- 決定時看成立線現在上升或下降、走了幾次；歷史上同方向走到這麼長還延續的比例 ≥ 一半 → 延續，判多或判少。判少不表示不會開。')
 out.push('- 一篩：各一篩條件挑出的號碼＋五顆組合推理用到的隔期格號碼＋少見號碼，全部合起來（不看判多判少、不分層）。')
-out.push(`- 值 0～9 每個：最近 ${VAL_WAVE} 期（最新波段）出現的百分比 vs 最近 ${VAL_RECENT} 期出現的百分比；最近 ${VAL_RECENT} 期比較多 → 判不會，它的隔期格號碼從一篩排除（少見號碼除外）；一樣或比較少 → 判會。`)
+out.push(`- 值 0～9 每個用自己的組合（${VAL_RULES.map((x, v) => `值${v}：${x.w}／${x.r} ${x.dir === 1 ? '多→不會' : '少→不會'}`).join('、')}）：最近 W 期 vs 最近 R 期出現的百分比，判不會的值，它的隔期格號碼從一篩排除（少見號碼除外）。組合方向是看過 2021 起的結果才定，2021 起對值的判斷不算完全盲。`)
 out.push('- 五顆組合推理：只用沒被排除的格，隔期總和大小交替、值總和 < 隔期總和都符合的五顆組合，用到的隔期格號碼納入。')
 out.push(`- 二篩：一篩的球照 y=1～5 分五組，每組用尾數條件（T1～T4）的票數收；判會多的 y 收最高 ${Y_TIERS_UP} 層，其他只收最高 1 層。尾數條件一條都沒採用時改成全部投票。`)
 out.push('')
