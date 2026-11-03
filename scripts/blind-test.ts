@@ -467,7 +467,7 @@ for (let t = 1; t < n; t++) {
   }
 }
 export const next = decide(n)
-export { draws, rows, conds }
+export { draws, rows, conds, Wave }
 export type { Ball, Decision }
 
 // ---- 報告（直接執行這支才寫；被別的腳本 import 時不寫）----
