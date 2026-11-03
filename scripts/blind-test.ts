@@ -12,7 +12,6 @@
  *     S7 隔期 0～19 每格：目前的值高於最近 5、10、15 個紀錄的平均（含目前）
  *     S8 A（值總和 ≥ 隔期總和）、G（隔期總和）、V（值總和）三條自然波段照週期判斷下一期多或少，
  *        歷史上同樣組合的期，隔期、值落在哪些區比平常多 → 隔期方向、值方向
- *     S9 值 0～9、10 以上各一條自然波段（每期有沒有獎號來自這個值的隔期）→ 判斷會出現的值，留它的隔期（2026-11-03）
  *   二篩（尾數、位置 y）
  *     T1 幾乎每期都跟上一期同尾 → 上一期開出的尾數
  *     T2 上一期有 2 個以上同尾 → 下一期開出這個尾數
@@ -29,8 +28,12 @@
  *   決定時看這條線現在在上升或下降段、走了幾次，歷史上同方向走到這麼長還延續的比例 ≥ 一半 → 延續；
  *   判斷下一次「成立」才採用，判斷「不成立」這期就不用。開獎後把成不成立記進線裡，下一期重新判斷。
  *   成立＝這個條件挑出的球，開出的顆數多於「挑出顆數 × 5/39」（挑 1～7 顆時＝至少中 1 顆）。
- * 留球（使用者沒講怎麼合併，這裡補的）：一篩每顆球數有幾個採用的一篩條件挑到它，票數最多的一層一層往下收，收到至少 10 顆；
- *   二篩在一篩的球裡同樣用二篩條件的票數收，收到至少 5 顆。
+ * 留球（2026-11-03 conditions-v3，使用者：不能只憑尾數選、一篩不能留 39 顆）：
+ *   一篩每顆球數有幾個採用的一篩條件挑到它，票數最多的一層一層往下收，收到至少 10 顆（少見的球也算在內）；
+ *     這期一篩條件一條都沒採用時，改成全部一篩條件都投票（不然一篩等於沒篩）。
+ *   二篩把一篩的球照 y=1～5 分成五組，每組各自用尾數條件（T1～T4）的票數收：
+ *     這種 y 判會多（y 波段判多、或 Y1／Y2 採用且挑到這種 y）→ 收票數最高的兩層；其他 → 只收最高的一層。
+ *     尾數條件一條都沒採用時，同樣改成全部尾數條件都投票。
  * 每一期只用「開完上一期為止」的資料。
  *
  * 用法：node --import tsx scripts/blind-test.ts  → docs/blind-test.md
@@ -46,16 +49,13 @@ const TEST_FROM = '2024-01-01'
 const H = 2
 const START = SLOTS
 const MIN1 = 10
-const MIN2 = 5
+/** 判會多的 y 收幾層票數 */
+const Y_TIERS_UP = 2
 const RARE = 0.05
 const RARE_MIN_HISTORY = 500
 const GAP_BINS: [number, number][] = [[0, 0], [1, 1], [2, 3], [4, 6], [7, 10], [11, 15], [16, 25], [26, 59]]
 const VAL_BINS: [number, number][] = [[0, 0], [1, 1], [2, 3], [4, 6], [7, 12], [13, 24], [25, Infinity]]
 const Y_KINDS = [1, 2, 3, 4, 5]
-/** 值分組：0～9 各一組、10 以上一組 */
-const VAL_GROUPS = 11
-const vGroup = (v: number): number => Math.min(v, VAL_GROUPS - 1)
-const vName = (g: number): string => (g === VAL_GROUPS - 1 ? '10以上' : String(g))
 
 const file = JSON.parse(readFileSync(SRC, 'utf8')) as HistoryFile
 const rows = file.rows
@@ -162,7 +162,6 @@ const gapAll = new Array<number>(GAP_BINS.length + 1).fill(0)
 const valAll = new Array<number>(VAL_BINS.length + 1).fill(0)
 const tailWave = Array.from({ length: 10 }, () => new Wave())
 const yWave = Y_KINDS.map(() => new Wave())
-const valWave = Array.from({ length: VAL_GROUPS }, () => new Wave())
 /** 每格的值紀錄（被打中前等了幾期） */
 const slotRecords: number[][] = Array.from({ length: SLOTS }, () => [])
 /** y=2～5 上次出現在第幾期、歷次間隔 */
@@ -250,11 +249,6 @@ const conds: Cond[] = [
     })
     return s.length ? { set: s, why: `A${lineA.label()}、G${lineG.label()}、V${lineV.label()}` } : null
   }),
-  mk('S9', '值 0～9、10以上 各自波段', 1, c => {
-    const gs = valWave.map((w, g) => (w.up() ? g : -1)).filter(g => g >= 0)
-    const s = ALL.filter(x => c.balls[x]!.slot < SLOTS && gs.includes(vGroup(c.balls[x]!.value)))
-    return s.length ? { set: s, why: `判會出現的值：${gs.map(vName).join('、')}` } : null
-  }),
   mk('T1', '跟上一期同尾', 2, c => {
     const tails = [...new Set(draws[c.t - 1]!.map(x => x % 10))]
     return { set: ALL.filter(x => tails.includes(x % 10)), why: `上期尾數 ${tails.join('、')}` }
@@ -295,7 +289,7 @@ const conds: Cond[] = [
 
 interface Used { cond: Cond, set: number[], why: string, apply: boolean, line: string }
 interface Rare { id: 'R1' | 'R2', slot: number, balls: number[], why: string }
-interface Decision { t: number, used: Used[], rare: Rare[], stage1: number[], final: number[], /** 每顆球決定時在第幾格 */ slotOf: number[], /** 每顆球決定時的格、值、y、尾數 */ ballOf: Ball[] }
+interface Decision { t: number, used: Used[], rare: Rare[], stage1: number[], final: number[], /** 判會多的 y */ yUp: number[], /** 每顆球決定時在第幾格 */ slotOf: number[], /** 每顆球決定時的格、值、y、尾數 */ ballOf: Ball[] }
 /** slotCount[i][k]：到目前為止的盤面，第 i 格剩 k 顆的期數 */
 const slotCount: number[][] = Array.from({ length: SLOTS }, () => new Array<number>(6).fill(0))
 let boardsSeen = 0
@@ -312,11 +306,12 @@ function rareOf(b: Board): Rare[] {
 }
 
 /** 票數最多的一層一層往下收，收到至少 min 顆 */
-function collect(pool: number[], votes: (x: number) => number, min: number): number[] {
+/** 票數最多的一層一層收，收到（連同 seed）至少 min 顆 */
+function collect(pool: number[], votes: (x: number) => number, min: number, seed: number[] = []): number[] {
   const tiers = [...new Set(pool.map(votes))].sort((a, b) => b - a)
   const out: number[] = []
   for (const v of tiers) {
-    if (out.length >= min) break
+    if (new Set([...out, ...seed]).size >= min) break
     out.push(...pool.filter(x => votes(x) === v))
   }
   return out.sort((a, b) => a - b)
@@ -330,12 +325,25 @@ function decide(t: number): Decision {
     const p = cond.pick(ctx)
     if (p) used.push({ cond, set: p.set, why: p.why, apply: cond.wave.up(), line: cond.wave.label() })
   }
-  const vote = (stage: 1 | 2) => (x: number): number => used.filter(u => u.apply && u.cond.stage === stage && u.set.includes(x)).length
+  /** 這組條件有採用的就只用採用的；一條都沒採用 → 全部都投票 */
+  const voter = (pick: (u: Used) => boolean) => {
+    const group = used.filter(pick)
+    const voters = group.some(u => u.apply) ? group.filter(u => u.apply) : group
+    return (x: number): number => voters.filter(u => u.set.includes(x)).length
+  }
   const rare = rareOf(boardNow)
   const rareBalls = [...new Set(rare.flatMap(r => r.balls))]
-  const stage1 = [...new Set([...collect(ALL, vote(1), MIN1), ...rareBalls])].sort((a, b) => a - b)
-  const final = [...new Set([...collect(stage1, vote(2), MIN2), ...rareBalls])].sort((a, b) => a - b)
-  return { t, used, rare, stage1, final, slotOf: ctx.balls.map(b => b?.slot ?? -1), ballOf: ctx.balls }
+  const stage1 = [...new Set([...collect(ALL, voter(u => u.cond.stage === 1), MIN1, rareBalls), ...rareBalls])].sort((a, b) => a - b)
+  const tailVote = voter(u => u.cond.id.startsWith('T'))
+  const yUp = Y_KINDS.filter((k, i) => yWave[i]!.up()
+    || used.some(u => u.apply && (u.cond.id === 'Y1' || u.cond.id === 'Y2') && u.set.some(x => ctx.balls[x]!.rank === k)))
+  const byY = Y_KINDS.flatMap((k) => {
+    const pool = stage1.filter(x => ctx.balls[x]!.rank === k)
+    const tiers = [...new Set(pool.map(tailVote))].sort((a, b) => b - a).slice(0, yUp.includes(k) ? Y_TIERS_UP : 1)
+    return pool.filter(x => tiers.includes(tailVote(x)))
+  })
+  const final = [...new Set([...byY, ...rareBalls])].sort((a, b) => a - b)
+  return { t, used, rare, stage1, final, yUp, slotOf: ctx.balls.map(b => b?.slot ?? -1), ballOf: ctx.balls }
 }
 
 interface Result extends Decision { ok: Map<string, boolean>, hit1: number, hitF: number }
@@ -365,15 +373,12 @@ for (let t = 1; t < n; t++) {
     const balls = ballsOf(boardNow)
     const tc = new Array<number>(10).fill(0)
     const yc = new Array<number>(Y_KINDS.length).fill(0)
-    const vSeen = new Array<number>(VAL_GROUPS).fill(0)
     for (const x of drawn) {
       tc[x % 10]! += 1
       yc[balls[x]!.rank - 1]! += 1
-      if (balls[x]!.slot < SLOTS) vSeen[vGroup(balls[x]!.value)] = 1
     }
     tailWave.forEach((w, d) => w.push(tc[d]!))
     yWave.forEach((w, i) => w.push(yc[i]!))
-    valWave.forEach((w, g) => w.push(vSeen[g]!))
     if (drawn.every(x => balls[x]!.slot < SLOTS)) {
       const G = drawn.reduce((a, x) => a + balls[x]!.slot, 0)
       const V = drawn.reduce((a, x) => a + balls[x]!.value, 0)
@@ -431,7 +436,8 @@ for (const c of conds) out.push(`| ${c.id} | ${c.name} | ${c.stage === 1 ? '一�
 out.push('')
 out.push('- 每個條件有一條成立線：這期條件挑出的球，開出的顆數多於「挑出顆數 × 5/39」就算成立（挑 1～7 顆時＝至少中 1 顆）。')
 out.push('- 決定時看成立線現在上升或下降、走了幾次；歷史上同方向走到這麼長還延續的比例 ≥ 一半 → 延續。判斷下一次「成立」就採用，判斷「不成立」這期不用。')
-out.push(`- 留球（你沒講怎麼合併，這是我補的）：一篩看每顆球被幾個採用的一篩條件挑到，票數最多的一層一層收，收到至少 ${MIN1} 顆；二篩在一篩的球裡用二篩條件的票數收，收到至少 ${MIN2} 顆。`)
+out.push(`- 一篩：每顆球被幾個採用的一篩條件挑到，票數最多的一層一層收，收到至少 ${MIN1} 顆；這期一篩條件一條都沒採用時，改成全部一篩條件投票。`)
+out.push(`- 二篩：一篩的球照 y=1～5 分五組，每組用尾數條件（T1～T4）的票數收；判會多的 y 收最高 ${Y_TIERS_UP} 層，其他只收最高 1 層。尾數條件一條都沒採用時改成全部投票。`)
 out.push('')
 out.push('## 命中')
 out.push('')
