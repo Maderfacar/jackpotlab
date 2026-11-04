@@ -12,7 +12,7 @@
  * 用法：node --import tsx scripts/three-stage.ts  → docs/three-stage-backtest.md
  */
 import { writeFileSync } from 'node:fs'
-import { allDecisions, draws, rows } from './blind-test'
+import { allDecisions, draws, next, rows, type Ball, type Decision } from './blind-test'
 
 const OUT = 'docs/three-stage-backtest.md'
 const FROM = '2024-01-01'
@@ -65,11 +65,8 @@ const cross = new Map<number, number[]>()
 const dist = [0, 0, 0, 0, 0, 0]
 let totalSize = 0, n = 0
 const from = allDecisions.findIndex(d => rows[d.t]![1] >= FROM)
-for (let j = from; j < D; j++) {
-  const d = allDecisions[j]!
-  const t = d.t
-  const b = d.ballOf
-  const p = d.plan
+/** 第 j 個決策（盤面 b、一篩 plan p、要開的是第 t 期）的三篩名單 */
+function pickFor(j: number, t: number, b: Ball[], p: Decision['plan']): { list: number[], level: string } {
   // 一篩
   const ex = new Set(p.oneSlots)
   // 二篩：大於 10 的值過去三期出現過
@@ -126,8 +123,14 @@ for (let j = from; j < D; j++) {
   }
   const level = used.size ? '三篩' : used2.size ? '退回二篩' : used1.size ? '退回一篩' : '一篩排不出（全部）'
   const pick = used.size ? used : used2.size ? used2 : used1.size ? used1 : new Set(Array.from({ length: 39 }, (_, k) => k + 1))
+  return { list: [...pick].sort((a, c) => a - c), level }
+}
+for (let j = from; j < D; j++) {
+  const d = allDecisions[j]!
+  const t = d.t
+  const { list, level } = pickFor(j, t, d.ballOf, d.plan)
+  const pick = new Set(list)
   levels.set(level, (levels.get(level) ?? 0) + 1)
-  const list = [...pick].sort((a, c) => a - c)
   const hits = draws[t]!.filter(x => pick.has(x)).length
   const ck = Math.min(Math.floor(list.length / 5), 7)
   const row = cross.get(ck) ?? [0, 0, 0, 0, 0, 0]
@@ -156,6 +159,11 @@ out.push('')
 out.push('| 中幾顆 | 期數 |')
 out.push('|---|---|')
 for (let k = 5; k >= 0; k--) out.push(`| ${k} 顆 | ${dist[k]} |`)
+out.push('')
+const nx = pickFor(D, rows.length, next.ballOf, next.plan)
+out.push(`## 下一期（${rows[rows.length - 1]![0]} 開完後）`)
+out.push('')
+out.push(`- 名單 ${nx.list.length} 顆（${nx.level}）：${nx.list.join(' ')}`)
 out.push('')
 out.push('| 期 | 剩幾顆 | 中幾顆 | 名單來自 | 開出 |')
 out.push('|---|---|---|---|---|')
