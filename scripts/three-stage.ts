@@ -6,13 +6,16 @@
  *   二篩：頭數（0～3 頭）、三區（1～13、14～26、27～39）、總和，各自看「上期方向＋所在段」的歷史，判下一期變多／變少／一樣
  *     （補：一樣＝同顆數、變多＝比上期多、變少＝比上期少；總和另外要落在同樣狀況下一期的 25%～75%）；
  *     大於 10 的值過去三期出現過 → 盤面上這個值的格排除。
- *   三篩：第一個獎號 y＝1；A 連續 3 期以上剩下四顆都有 y＝4／5、B 近 3 期合計 4 顆以上、C 盤面 y＝4／5 剩 4～5 顆，
- *     三個一起成立 → 剩下四顆不能有 y＝4／5。
+ *   三篩：A 連續 3 期以上剩下四顆都有 y＝4／5、B 近 3 期合計 4 顆以上、C 盤面 y＝4／5 剩 4～5 顆，
+ *     三個一起成立 → 剩下四顆不能有 y＝4／5；
+ *     y 1～5、值 0～9 各自的走勢（item-trend.ts；y 不看盤面顆數、值加盤面顆數），判出來換成組合裡的顆數（同二篩）。
+ *     （2026-11-05 拿掉「第一個獎號必須 y＝1」：使用者沒定過這條，是我補成硬規定的。）
  *
  * 用法：node --import tsx scripts/three-stage.ts  → docs/three-stage-backtest.md
  */
 import { writeFileSync } from 'node:fs'
 import { allDecisions, draws, next, rows, type Ball, type Decision } from './blind-test'
+import { V_ITEMS, Y_ITEMS, ruleAt, seriesOf } from './item-trend'
 
 const OUT = 'docs/three-stage-backtest.md'
 const FROM = '2024-01-01'
@@ -59,6 +62,10 @@ const k45 = allDecisions.map(d => [...draws[d.t]!].sort((a, b) => a - b).slice(1
 const run45 = k45.map(() => 0)
 for (let j = 0; j < D; j++) run45[j] = k45[j]! > 0 ? (j ? run45[j - 1]! : 0) + 1 : 0
 
+// 三篩 y、值各自走勢
+const ySeries = Y_ITEMS.map(seriesOf)
+const vSeries = V_ITEMS.map(seriesOf)
+
 const lines: string[] = []
 const levels = new Map<string, number>()
 const cross = new Map<number, number[]>()
@@ -80,6 +87,19 @@ function pickFor(j: number, t: number, b: Ball[], p: Decision['plan']): { list: 
   // 三篩
   const sup45 = b.slice(1).filter(o => o!.rank >= 4).length
   const no45 = j >= 3 && run45[j - 1]! >= 3 && k45[j - 1]! + k45[j - 2]! + k45[j - 3]! >= 4 && sup45 >= 4 && sup45 <= 5
+  const yR = ySeries.map(s => ruleAt(s, j, false))
+  const vR = vSeries.map(s => ruleAt(s, j, true))
+  const stage3 = (x: number[]): boolean => {
+    if (no45 && x.slice(1).some(m => b[m]!.rank >= 4)) return false
+    const yc = [0, 0, 0, 0, 0]
+    const vc = new Array<number>(10).fill(0)
+    for (const m of x) {
+      const o = b[m]!
+      if (o.rank <= 5) yc[o.rank - 1]!++
+      if (o.value <= 9) vc[o.value]!++
+    }
+    return yc.every((c, k) => c >= yR[k]!.lo && c <= yR[k]!.hi) && vc.every((c, k) => c >= vR[k]!.lo && c <= vR[k]!.hi)
+  }
   const segOk = (cnt: number[]): boolean => cnt.every((c, si) => (p.segSum === 5 ? c === p.seg[si]!.top : p.segSum < 5 ? c >= p.seg[si]!.top : c <= p.seg[si]!.top))
   const used1 = new Set<number>()
   const used2 = new Set<number>()
@@ -114,7 +134,7 @@ function pickFor(j: number, t: number, b: Ball[], p: Decision['plan']): { list: 
             for (const m of x) z[zoneOf(m)]!++
             if (!z.every((c, k) => c >= zR[k]!.lo && c <= zR[k]!.hi)) continue
             for (const m of x) used2.add(m)
-            if (b[x[0]!]!.rank !== 1 || (no45 && x.slice(1).some(m => b[m]!.rank >= 4))) continue
+            if (!stage3(x)) continue
             for (const m of x) used.add(m)
           }
         }
@@ -147,6 +167,7 @@ out.push('# 三篩一起回測：2024 起每一期')
 out.push('')
 out.push(`> 由 \`scripts/three-stage.ts\` 產生。資料到第 ${rows[rows.length - 1]![0]} 期。每期只用開獎前的盤面與到上一期為止的資料。`)
 out.push('> 名單＝三篩都符合的五顆組合用到的號碼。做法見 docs/539-selection-direction.md；二篩、三篩的判斷換成組合規定是補的（見腳本開頭）。')
+out.push('> 三篩（2026-11-05 起）：y＝4／5 三個一起成立的規則＋y 1～5、值 0～9 各自走勢；已拿掉「第一個獎號必須 y＝1」。')
 out.push('')
 out.push(`共 ${n} 期，名單平均 ${(totalSize / n).toFixed(1)} 顆。名單來自：${[...levels.entries()].map(([k, v]) => `${k} ${v} 期`).join('、')}。`)
 out.push('')
