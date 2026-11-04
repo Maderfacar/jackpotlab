@@ -286,7 +286,7 @@ if (arg) {
     })
     if ((j - from) % 100 === 0) process.stderr.write(`${j - from}/${D - from} ${((Date.now() - t0) / 1000).toFixed(0)}s\n`)
   }
-  const prev = readFileSync('docs/live-backtest.md', 'utf8').split(/\r?\n/).filter(l => /^\| (死規矩版（三篩）|強 70%、不檢查|強 70%、整體 30%) \|/.test(l))
+  const prev = readFileSync('docs/live-backtest.md', 'utf8').split(/\r?\n/).filter(l => /^\| (死規矩版（三篩）|強 70%、不檢查|強 70%、整體 30%) \| \d+\.\d \|/.test(l))
   const out: string[] = []
   out.push('# 活的篩法第二版往前盲測：2024 起每一期')
   out.push('')
