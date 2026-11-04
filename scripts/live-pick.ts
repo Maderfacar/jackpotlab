@@ -152,7 +152,7 @@ const list = [...new Set(left.flat())].sort((x, y) => x - y)
 
 const pct = (x: number): string => `${(100 * x).toFixed(1)}%`
 const out: string[] = []
-const label = term || `${rows[rows.length - 1]![0]} 的下一期`
+const label = term || `${rows[rows.length - 1]![0] + 1}`
 out.push(`# 活的篩法：第 ${label} 期`)
 out.push('')
 out.push(`> 由 \`scripts/live-pick.ts\` 產生，只用開獎前的資料。強＝判的那一邊 ${STRONG * 100}% 以上、歷史 ${MIN_N} 次以上（補，使用者未定）。`)
