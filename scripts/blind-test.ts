@@ -34,13 +34,14 @@
  *   開獎後把成不成立記進線裡，下一期重新判斷。成立＝這個條件挑出的號碼至少中 1 顆（使用者 2026-11-03）。
  *   判少不表示不會開：一篩不看判多判少；二篩尾數條件判少的不投票（見下）。
  * 留球（2026-11-03 conditions-v3，使用者：不能只憑尾數選、一篩不能留 39 顆）：
- *   一篩（conditions-v8，使用者 2026-11-03）：隔期總和 G、值總和 V 各自獨立看波段，再合起來排組合——
- *     G、V 各畫一條自然波段（V 先把極端值壓到 V_CAP；轉折門檻 G 用 H_G、V 用 H_V，約一個標準差）。
- *     判下一期往上或往下：現在的方向、走了幾期，歷史上同方向走到這麼長還延續的比例 ≥ 一半 → 照現在方向，否則轉折。
- *     區間（上多少、下多少）：歷史上同樣判斷的期，(1) 數值本身的 25%～75%，(2) 這期比上一期增減的 25%～75% 加在上一期上，兩個取交集。
- *     G 另外照大小交替：上一期比前一期大 → 這期要比上一期小，反之變大。交集是空的就依序放寬（先拿掉增減、再拿掉交替）。
- *     G 大於 V 約七成：盤面所有五顆組合，G、V 都在區間內的留下；G 大於 V 的組合乘上歷史上 G 大於 V 的比例，其他乘上剩下的比例，
- *     算每一格出現在幾成（加權後）的組合裡；出現（至少 COMBO_MIN_SHARE）的隔期格號碼＋少見號碼＝一篩。
+ *   一篩（conditions-v9，使用者 2026-11-04，見 docs/539-selection-direction.md）：
+ *     G 的走勢：看上一期 G 的方向（比前一期大／小）和 G 的高低（每 G_BIN 一段），
+ *       歷史上同樣方向、同一段的期，下一期 G 的 25%～75% ＝ G 的區間。
+ *     V 的走勢兩條路：(1) 歷史上 G 落在上面區間的期，V 的 25%～75%；(2) 上一期 V 的方向和高低（V_BINS），
+ *       歷史上同樣的期下一期 V 的 25%～75%；兩個取交集，空的就只用 (1)。
+ *     G 與 V 的關係：歷史上 G 落在區間內的期，G 大於 V 的比例 p。
+ *     套回盤面：盤面所有五顆組合，G、V 都在區間內的留下；G 大於 V 的組合乘 p、其他乘 1－p，
+ *       算每一格出現在幾成（加權）的組合裡；出現在至少 COMBO_MIN_SHARE 的隔期格號碼＋少見號碼＝一篩。
  *     各一篩條件（S1、S2、S5～S7）與值 0～9 的判斷照算、記在報告，但不進一篩。每期都只用那一期開獎前的盤面與到上一期為止的資料。
  *   二篩把一篩的球照 y=1～5 分成五組，每組各自用尾數條件（T1～T4）的票數收：
  *     這種 y 判會多（y 波段判多、或 Y1／Y2 採用且挑到這種 y）→ 收票數最高的兩層；其他 → 只收最高的一層。
@@ -66,10 +67,9 @@ const RARE_MIN_HISTORY = 500
 const GAP_BINS: [number, number][] = [[0, 0], [1, 1], [2, 3], [4, 6], [7, 10], [11, 15], [16, 25], [26, 59]]
 const VAL_BINS: [number, number][] = [[0, 0], [1, 1], [2, 3], [4, 6], [7, 12], [13, 24], [25, Infinity]]
 const Y_KINDS = [1, 2, 3, 4, 5]
-/** G、V 波段的轉折門檻（約一個標準差）與 V 畫線時壓住極端值的上限 */
-const H_G = 16
-const H_V = 28
-const V_CAP = 100
+/** G 的高低每幾分一段；V 的高低分段 */
+const G_BIN = 10
+const V_BINS: [number, number][] = [[0, 9], [10, 19], [20, 29], [30, 49], [50, 99], [100, Infinity]]
 /** 同樣狀況的歷史不到這麼多期，放寬條件 */
 const PLAN_MIN_HIST = 30
 /** 一篩只留出現在至少這麼多比例組合裡的隔期格（0＝有出現就留） */
@@ -202,11 +202,6 @@ const gapAll = new Array<number>(GAP_BINS.length + 1).fill(0)
 const valAll = new Array<number>(VAL_BINS.length + 1).fill(0)
 const tailWave = Array.from({ length: 10 }, () => new Wave())
 const yWave = Y_KINDS.map(() => new Wave())
-/** G、V 各自的自然波段，與歷史上每期決定時的判斷＋實際數值＋比上一期增減 */
-const gWave = new Wave(H_G)
-const vWave = new Wave(H_V)
-const gHist: { up: boolean, x: number, d: number }[] = []
-const vHist: { up: boolean, x: number, d: number }[] = []
 /** 值 0～9：每期有沒有出現（1／0） */
 const valSeen = Array.from({ length: VALS }, (): number[] => [])
 /** 每格的值紀錄（被打中前等了幾期） */
@@ -346,12 +341,13 @@ function valJudge(v: number): ValJudge {
   return { v, w, r, dir, wave, recent, appear: dir === 1 ? recent <= wave : recent >= wave }
 }
 interface Range { lo: number, hi: number }
-interface SumPlan { wave: WaveStat, last: number, level: Range, change: Range, range: Range, n: number }
+/** 一條總和的下一期：上一期方向、所在的段、同樣狀況的歷史期數、下一期分布、區間、轉向的比例 */
+interface SumPlan { last: number, dir: number, band: string, n: number, q: number[], range: Range, turn: number }
 interface Plan {
   /** 值 0～9 會不會出現（參考，不進一篩） */ vals: ValJudge[]
-  /** G：波段、區間；alt＝大小交替的限制 */ g: SumPlan & { alt: Range, altWhy: string }
-  /** V：波段、區間 */ v: SumPlan
-  /** 歷史上 G 大於 V 的比例（組合加權用） */ pBelow: number
+  /** G 的走勢與區間 */ g: SumPlan
+  /** V：從 G 推、V 自己的走勢、合起來的區間 */ vFromG: Range & { n: number }, vSelf: SumPlan, v: Range
+  /** G 落在區間時，G 大於 V 的比例 */ pBelow: number
   /** 符合的組合數、每格出現在幾成（加權）的組合裡、留下的格 */ combos: number, share: { sl: number, v: number, size: number, share: number }[], comboSlots: number[]
 }
 const GS: number[] = draws.map((_, t) => (t ? gapSum(t) : 0))
@@ -362,31 +358,35 @@ const quant = (xs: number[], p: number): number => {
 }
 const meet = (a: Range, b: Range): Range => ({ lo: Math.max(a.lo, b.lo), hi: Math.min(a.hi, b.hi) })
 const ok = (r: Range): boolean => r.lo <= r.hi
-/** 一條總和線的下一期判斷與區間：同樣判斷的歷史期，數值本身與「比上一期增減」各取 25%～75%，再取交集 */
-function sumPlan(w: Wave, hist: { up: boolean, x: number, d: number }[], last: number): SumPlan {
-  const wave = w.stat()
-  const sameState = hist.filter(h => h.up === wave.next)
-  const hs = sameState.length >= PLAN_MIN_HIST ? sameState : hist
-  const level = { lo: quant(hs.map(h => h.x), 0.25), hi: quant(hs.map(h => h.x), 0.75) }
-  const change = { lo: last + quant(hs.map(h => h.d), 0.25), hi: last + quant(hs.map(h => h.d), 0.75) }
-  const both = meet(level, change)
-  return { wave, last, level, change, range: ok(both) ? both : level, n: hs.length }
+const QS = [0.1, 0.25, 0.5, 0.75, 0.9]
+/** 上一期（t－1）的方向與所在的段 → 歷史上同樣的期，下一期數值的分布 */
+function sumPlan(xs: number[], t: number, bandOf: (x: number) => number, bandName: (b: number) => string): SumPlan {
+  const last = xs[t - 1]!
+  const dir = Math.sign(last - xs[t - 2]!)
+  const b = bandOf(last)
+  const next: number[] = []
+  let turn = 0
+  for (let i = START + 2; i < t - 1; i++) {
+    if (Math.sign(xs[i]! - xs[i - 1]!) !== dir || bandOf(xs[i]!) !== b) continue
+    next.push(xs[i + 1]!)
+    if (dir && Math.sign(xs[i + 1]! - xs[i]!) === -dir) turn++
+  }
+  return { last, dir, band: bandName(b), n: next.length, q: QS.map(p => quant(next, p)), range: { lo: quant(next, 0.25), hi: quant(next, 0.75) }, turn: next.length ? turn / next.length : 0 }
 }
+const gBand = (x: number): number => Math.min(Math.floor(x / G_BIN), 6)
+const gBandName = (b: number): string => (b === 6 ? `${6 * G_BIN} 以上` : `${b * G_BIN}～${b * G_BIN + G_BIN - 1}`)
+const vBand = (x: number): number => V_BINS.findIndex(([lo, hi]) => x >= lo && x <= hi)
+const vBandName = (b: number): string => { const [lo, hi] = V_BINS[b]!; return hi === Infinity ? `${lo} 以上` : `${lo}～${hi}` }
 function comboPlan(t: number, balls: Ball[]): Plan {
   const vals = Array.from({ length: VALS }, (_, v) => valJudge(v))
-  const g1 = GS[t - 1]!
-  const g2 = GS[t - 2]!
-  const alt = g1 > g2 ? { lo: 0, hi: g1 - 1 } : g1 < g2 ? { lo: g1 + 1, hi: 9999 } : { lo: 0, hi: 9999 }
-  const altWhy = g1 > g2 ? `上期 ${g1} > 前期 ${g2} → 這期 < ${g1}` : g1 < g2 ? `上期 ${g1} < 前期 ${g2} → 這期 > ${g1}` : `上期＝前期 ${g1}，不限`
-  const gp = sumPlan(gWave, gHist, g1)
-  const gAll = meet(gp.range, alt)
-  const gLv = meet(gp.level, alt)
-  const g = { ...gp, alt, altWhy, range: ok(gAll) ? gAll : ok(gLv) ? gLv : gp.level }
-  const v = sumPlan(vWave, vHist, VS[t - 1]!)
-  let below = 0
-  let tot = 0
-  for (let i = START + 2; i < t; i++) { tot++; if (GS[i]! > VS[i]!) below++ }
-  const pBelow = tot ? below / tot : 0.7
+  const g = sumPlan(GS, t, gBand, gBandName)
+  const inG: number[] = []
+  for (let i = START + 2; i < t; i++) if (GS[i]! >= g.range.lo && GS[i]! <= g.range.hi) inG.push(i)
+  const vFromG = { lo: quant(inG.map(i => VS[i]!), 0.25), hi: quant(inG.map(i => VS[i]!), 0.75), n: inG.length }
+  const vSelf = sumPlan(VS, t, vBand, vBandName)
+  const both = meet(vFromG, vSelf.range)
+  const v = ok(both) ? both : { lo: vFromG.lo, hi: vFromG.hi }
+  const pBelow = inG.length ? inG.filter(i => GS[i]! > VS[i]!).length / inG.length : 0.7
   const info = [...new Set(ALL.map(x => balls[x]!.slot))].filter(sl => sl < SLOTS).sort((x, y) => x - y).map((sl) => {
     const bs = ALL.filter(x => balls[x]!.slot === sl)
     return { sl, v: balls[bs[0]!]!.value, size: bs.length }
@@ -396,9 +396,9 @@ function comboPlan(t: number, balls: Ball[]): Plan {
   let combos = 0
   let weight = 0
   const walk = (i: number, left: number, G: number, V: number): void => {
-    if (G > g.range.hi || V > v.range.hi) return
+    if (G > g.range.hi || V > v.hi) return
     if (left === 0) {
-      if (G < g.range.lo || V < v.range.lo) return
+      if (G < g.range.lo || V < v.lo) return
       let ways = 1
       info.forEach((o, k) => { if (take[k]) ways *= comb(o.size, take[k]!) })
       const wgt = ways * (G > V ? pBelow : 1 - pBelow)
@@ -418,13 +418,13 @@ function comboPlan(t: number, balls: Ball[]): Plan {
   walk(0, PICK, 0, 0)
   const share = info.map((o, k) => ({ ...o, share: weight ? use[k]! / weight : 0 }))
   const comboSlots = share.filter(x => x.share > 0 && x.share >= COMBO_MIN_SHARE).map(x => x.sl)
-  return { vals, g, v, pBelow, combos, share, comboSlots }
+  return { vals, g, vFromG, vSelf, v, pBelow, combos, share, comboSlots }
 }
 /** 實際開出的五顆：G、V 在不在區間 */
 function fitOf(p: Plan, balls: Ball[], drawn: number[]): { g: boolean, v: boolean } {
   const G = drawn.reduce((x, y) => x + Math.min(balls[y]!.slot, SLOTS), 0)
   const V = drawn.reduce((x, y) => x + balls[y]!.value, 0)
-  return { g: G >= p.g.range.lo && G <= p.g.range.hi, v: V >= p.v.range.lo && V <= p.v.range.hi }
+  return { g: G >= p.g.range.lo && G <= p.g.range.hi, v: V >= p.v.lo && V <= p.v.hi }
 }
 
 let boardNow: Board = firstBoard(draws[0]!)
@@ -478,8 +478,6 @@ for (let t = 1; t < n; t++) {
       u.cond.wave.push(pass ? 1 : 0)
     }
     allDecisions.push(dec)
-    gHist.push({ up: dec.plan.g.wave.next, x: GS[t]!, d: GS[t]! - GS[t - 1]! })
-    vHist.push({ up: dec.plan.v.wave.next, x: VS[t]!, d: VS[t]! - VS[t - 1]! })
     if (isTest) results.push({ ...dec, ok, fit: fitOf(dec.plan, dec.ballOf, drawn), hit1: dec.stage1.filter(x => drawnSet.has(x)).length, hitF: dec.final.filter(x => drawnSet.has(x)).length })
   }
   // 更新各條線與紀錄
@@ -493,8 +491,6 @@ for (let t = 1; t < n; t++) {
     }
     tailWave.forEach((w, d) => w.push(tc[d]!))
     yWave.forEach((w, i) => w.push(yc[i]!))
-    gWave.push(GS[t]!)
-    vWave.push(Math.min(VS[t]!, V_CAP))
     for (let v = 0; v < VALS; v++) valSeen[v]!.push(drawn.some(x => balls[x]!.slot < SLOTS && balls[x]!.value === v) ? 1 : 0)
     if (drawn.every(x => balls[x]!.slot < SLOTS)) {
       const G = drawn.reduce((a, x) => a + balls[x]!.slot, 0)
@@ -553,7 +549,7 @@ for (const c of conds) out.push(`| ${c.id} | ${c.name} | ${c.stage === 1 ? '一�
 out.push('')
 out.push('- 每個條件有一條成立線：這期條件挑出的號碼至少中 1 顆就算成立。')
 out.push('- 決定時看成立線現在上升或下降、走了幾次；歷史上同方向走到這麼長還延續的比例 ≥ 一半 → 延續，判多或判少。判少不表示不會開。')
-out.push(`- 一篩（v8）：G、V 各自的自然波段判下一期往上或往下（V 畫線壓到 ${V_CAP}），同樣判斷的歷史期取數值與增減的 25%～75% 交集；G 再加大小交替。盤面五顆組合 G、V 都在區間內的留下，G 大於 V 的組合乘上歷史比例（約七成）、其他乘上剩下的比例，用到的隔期格號碼${COMBO_MIN_SHARE ? `（出現在至少 ${100 * COMBO_MIN_SHARE}% 的組合裡）` : ''}＋少見號碼＝一篩。各一篩條件與值的判斷不進一篩。`)
+out.push(`- 一篩（v9，見 docs/539-selection-direction.md）：G 看上一期方向＋高低（每 ${G_BIN} 一段），同樣狀況的歷史下一期 G 取 25%～75%；V 兩條路（從 G 的區間推、V 自己的方向＋高低）取交集；盤面五顆組合 G、V 都在區間內的留下，G 大於 V 的組合乘上「G 在區間時 G 大於 V 的比例」、其他乘剩下的，用到的隔期格號碼${COMBO_MIN_SHARE ? `（出現在至少 ${100 * COMBO_MIN_SHARE}% 的組合裡）` : ''}＋少見號碼＝一篩。`)
 out.push(`- 值 0～9 每個用自己的組合（${VAL_RULES.map((x, v) => `值${v}：${x.w}／${x.r} ${x.dir === 1 ? '多→不會' : '少→不會'}`).join('、')}）：最近 W 期 vs 最近 R 期出現的百分比，判不會的值，它的隔期格號碼從一篩排除（少見號碼除外）。組合方向是看過 2021 起的結果才定，2021 起對值的判斷不算完全盲。`)
 out.push('- 五顆組合推理：只用沒被排除的格，隔期總和大小交替、值總和 < 隔期總和都符合的五顆組合，用到的隔期格號碼納入。')
 out.push(`- 二篩：一篩的球照 y=1～5 分五組，每組用尾數條件（T1～T4）的票數收；判會多的 y 收最高 ${Y_TIERS_UP} 層，其他只收最高 1 層。尾數條件一條都沒採用時改成全部投票。`)
@@ -589,15 +585,16 @@ fitRow('隔期總和 G 在區間內', r => r.fit.g)
 fitRow('值總和 V 在區間內', r => r.fit.v)
 fitRow('兩樣都在區間內', r => r.fit.g && r.fit.v)
 out.push('')
-out.push('### G、V 的波段判斷準不準')
+out.push('### G 的方向判斷準不準')
 out.push('')
-out.push('| 線 | 判往上的期 | 實際平均 | 判往下的期 | 實際平均 |')
-out.push('|---|---|---|---|---|')
-for (const [name, get, val] of [['G', (r: Result) => r.plan.g.wave.next, (r: Result) => GS[r.t]!], ['V（壓到上限）', (r: Result) => r.plan.v.wave.next, (r: Result) => Math.min(VS[r.t]!, V_CAP)]] as const) {
-  const a = results.filter(get)
-  const b = results.filter(r => !get(r))
-  const avg = (xs: Result[]): string => (xs.length ? (sum(xs.map(val)) / xs.length).toFixed(1) : '—')
-  out.push(`| ${name} | ${a.length} | ${avg(a)} | ${b.length} | ${avg(b)} |`)
+out.push('判「轉向」＝同樣狀況的歷史裡轉向比例過半；判「繼續」＝沒過半。')
+out.push('')
+out.push('| 判 | 期數 | 實際照判的走 |')
+out.push('|---|---|---|')
+for (const turnJudge of [true, false]) {
+  const rs = results.filter(r => r.plan.g.dir !== 0 && (r.plan.g.turn > 0.5) === turnJudge && GS[r.t]! !== r.plan.g.last)
+  const right = rs.filter(r => (Math.sign(GS[r.t]! - r.plan.g.last) === -r.plan.g.dir) === turnJudge).length
+  out.push(`| ${turnJudge ? '轉向' : '繼續'} | ${rs.length} | ${right}（${pct(right, rs.length)}%） |`)
 }
 out.push('')
 out.push(`平均每期一篩用到 ${(sum(results.map(r => r.plan.comboSlots.length)) / m).toFixed(1)} 個隔期格。`)
