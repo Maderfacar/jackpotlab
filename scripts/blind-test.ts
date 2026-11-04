@@ -43,7 +43,9 @@
  *     隔期四段（conditions-v10）：0～5、6～9、10～19、20 以上，每段看盤面這一段剩幾顆（相近一段，SEG_SUPPLY），
  *       歷史上同樣的期這一段最常開幾顆＝候選顆數；四段加起來剛好 5 → 每段照候選；不到 5 → 每段至少候選、缺的任一段補；
  *       超過 5 → 每段最多候選、多的任一段減。
- *     值只剩 1 顆（conditions-v10）：盤面上某個值的格合起來只剩 1 顆 → 那一格排除（少見號碼照放）。
+ *     值的出現比例（conditions-v11，使用者 2026-11-04）：盤面上每個值的格合起來剩幾顆（1、2、3、4、5 以上），
+ *       歷史上「同值、同顆數」時這個值出現的比例 < VAL_RATE_MIN → 這個值的格排除（少見號碼照放）。
+ *       值 0～15 各自、16 以上合併（同 docs/value-supply.md）；歷史不到 VAL_RATE_MIN_N 期的不排除（補）。
  *     套回盤面：盤面所有五顆組合，G、V 都在區間內、四段符合的留下；G 大於 V 的組合乘 p、其他乘 1－p，
  *       算每一格出現在幾成（加權）的組合裡；出現在至少 COMBO_MIN_SHARE 的隔期格號碼＋少見號碼＝一篩。
  *     各一篩條件（S1、S2、S5～S7）與值 0～9 的判斷照算、記在報告，但不進一篩。每期都只用那一期開獎前的盤面與到上一期為止的資料。
@@ -84,6 +86,12 @@ const SEG_SUPPLY: [number, number][][] = [
 ]
 const segOf = (sl: number): number => SEGS.findIndex(([lo, hi]) => sl >= lo && sl <= hi)
 const supBin = (s: number, n: number): number => SEG_SUPPLY[s]!.findIndex(([lo, hi]) => n >= lo && n <= hi)
+/** 值的出現比例低於這個就排除；歷史期數不到 VAL_RATE_MIN_N 不判 */
+const VAL_RATE_MIN = 0.3
+const VAL_RATE_MIN_N = 20
+const vrKey = (v: number, n: number): string => `${Math.min(v, 16)}-${Math.min(n, 5)}`
+/** 歷史上「同值、同顆數」的期數與這個值出現的期數 */
+const valRate = new Map<string, { n: number, hit: number }>()
 /** segHist[s][bin][k]：歷史上這一段剩的顆數落在 bin 時，這一段開出 k 顆的期數 */
 const segHist = SEG_SUPPLY.map(bins => bins.map(() => new Array<number>(6).fill(0)))
 /** 同樣狀況的歷史不到這麼多期，放寬條件 */
@@ -365,7 +373,7 @@ interface Plan {
   /** V：從 G 推、V 自己的走勢、合起來的區間 */ vFromG: Range & { n: number }, vSelf: SumPlan, v: Range
   /** G 落在區間時，G 大於 V 的比例 */ pBelow: number
   /** 四段：盤面剩幾顆、分段、候選顆數、歷史期數；合計與規則 */ seg: { sup: number, bin: string, top: number, n: number }[], segSum: number
-  /** 值只剩 1 顆而排除的格 */ oneSlots: number[]
+  /** 出現比例太低而排除的值與格 */ lowVals: { v: number, balls: number, rate: number, n: number }[], oneSlots: number[]
   /** 符合的組合數、每格出現在幾成（加權）的組合裡、留下的格 */ combos: number, share: { sl: number, v: number, size: number, share: number }[], comboSlots: number[]
 }
 const GS: number[] = draws.map((_, t) => (t ? gapSum(t) : 0))
@@ -417,7 +425,9 @@ function comboPlan(t: number, balls: Ball[]): Plan {
   const segOk = (cnt: number[]): boolean => cnt.every((c, si) => (segSum === PICK ? c === seg[si]!.top : segSum < PICK ? c >= seg[si]!.top : c <= seg[si]!.top))
   const valCount = new Map<number, number>()
   for (const x of ALL) if (balls[x]!.slot < SLOTS) valCount.set(balls[x]!.value, (valCount.get(balls[x]!.value) ?? 0) + 1)
-  const oneSlots = [...new Set(ALL.filter(x => balls[x]!.slot < SLOTS && valCount.get(balls[x]!.value) === 1).map(x => balls[x]!.slot))]
+  const lowVals = [...valCount.entries()].map(([v, c]) => { const r = valRate.get(vrKey(v, c)); return { v, balls: c, rate: r && r.n ? r.hit / r.n : 1, n: r?.n ?? 0 } })
+    .filter(x => x.n >= VAL_RATE_MIN_N && x.rate < VAL_RATE_MIN).sort((a, b) => a.v - b.v)
+  const oneSlots = [...new Set(ALL.filter(x => balls[x]!.slot < SLOTS && lowVals.some(l => l.v === balls[x]!.value)).map(x => balls[x]!.slot))]
   const info = [...new Set(ALL.map(x => balls[x]!.slot))].filter(sl => sl < SLOTS && !oneSlots.includes(sl)).sort((x, y) => x - y).map((sl) => {
     const bs = ALL.filter(x => balls[x]!.slot === sl)
     return { sl, v: balls[bs[0]!]!.value, size: bs.length, seg: segOf(sl) }
@@ -452,7 +462,7 @@ function comboPlan(t: number, balls: Ball[]): Plan {
   walk(0, PICK, 0, 0)
   const share = info.map((o, k) => ({ ...o, share: weight ? use[k]! / weight : 0 }))
   const comboSlots = share.filter(x => x.share > 0 && x.share >= COMBO_MIN_SHARE).map(x => x.sl)
-  return { vals, g, vFromG, vSelf, v, pBelow, seg, segSum, oneSlots, combos, share, comboSlots }
+  return { vals, g, vFromG, vSelf, v, pBelow, seg, segSum, lowVals, oneSlots, combos, share, comboSlots }
 }
 /** 實際開出的五顆：G、V 在不在區間 */
 function fitOf(p: Plan, balls: Ball[], drawn: number[]): { g: boolean, v: boolean, seg: boolean, one: boolean } {
@@ -527,6 +537,15 @@ for (let t = 1; t < n; t++) {
     }
     tailWave.forEach((w, d) => w.push(tc[d]!))
     yWave.forEach((w, i) => w.push(yc[i]!))
+    const vc = new Map<number, number>()
+    for (const x of ALL) if (balls[x]!.slot < SLOTS) vc.set(balls[x]!.value, (vc.get(balls[x]!.value) ?? 0) + 1)
+    for (const [v, c] of vc) {
+      const key = vrKey(v, c)
+      const r = valRate.get(key) ?? { n: 0, hit: 0 }
+      r.n++
+      if (drawn.some(x => balls[x]!.slot < SLOTS && balls[x]!.value === v)) r.hit++
+      valRate.set(key, r)
+    }
     SEGS.forEach((_, si) => {
       const sup = ALL.filter(x => segOf(balls[x]!.slot) === si).length
       segHist[si]![supBin(si, sup)]![drawn.filter(x => segOf(balls[x]!.slot) === si).length]! += 1
@@ -589,7 +608,7 @@ for (const c of conds) out.push(`| ${c.id} | ${c.name} | ${c.stage === 1 ? '一�
 out.push('')
 out.push('- 每個條件有一條成立線：這期條件挑出的號碼至少中 1 顆就算成立。')
 out.push('- 決定時看成立線現在上升或下降、走了幾次；歷史上同方向走到這麼長還延續的比例 ≥ 一半 → 延續，判多或判少。判少不表示不會開。')
-out.push(`- 一篩（v10，見 docs/539-selection-direction.md）：隔期四段照盤面剩幾顆（相近一段）取最常開的顆數限制組合；值只剩 1 顆的格排除。其餘同 v9：G 看上一期方向＋高低（每 ${G_BIN} 一段），同樣狀況的歷史下一期 G 取 25%～75%；V 兩條路（從 G 的區間推、V 自己的方向＋高低）取交集；盤面五顆組合 G、V 都在區間內的留下，G 大於 V 的組合乘上「G 在區間時 G 大於 V 的比例」、其他乘剩下的，用到的隔期格號碼${COMBO_MIN_SHARE ? `（出現在至少 ${100 * COMBO_MIN_SHARE}% 的組合裡）` : ''}＋少見號碼＝一篩。`)
+out.push(`- 一篩（v10，見 docs/539-selection-direction.md）：隔期四段照盤面剩幾顆（相近一段）取最常開的顆數限制組合；歷史上同值、同顆數時出現比例 < ${100 * VAL_RATE_MIN}% 的值，它的格排除。其餘同 v9：G 看上一期方向＋高低（每 ${G_BIN} 一段），同樣狀況的歷史下一期 G 取 25%～75%；V 兩條路（從 G 的區間推、V 自己的方向＋高低）取交集；盤面五顆組合 G、V 都在區間內的留下，G 大於 V 的組合乘上「G 在區間時 G 大於 V 的比例」、其他乘剩下的，用到的隔期格號碼${COMBO_MIN_SHARE ? `（出現在至少 ${100 * COMBO_MIN_SHARE}% 的組合裡）` : ''}＋少見號碼＝一篩。`)
 out.push(`- 值 0～9 每個用自己的組合（${VAL_RULES.map((x, v) => `值${v}：${x.w}／${x.r} ${x.dir === 1 ? '多→不會' : '少→不會'}`).join('、')}）：最近 W 期 vs 最近 R 期出現的百分比，判不會的值，它的隔期格號碼從一篩排除（少見號碼除外）。組合方向是看過 2021 起的結果才定，2021 起對值的判斷不算完全盲。`)
 out.push('- 五顆組合推理：只用沒被排除的格，隔期總和大小交替、值總和 < 隔期總和都符合的五顆組合，用到的隔期格號碼納入。')
 out.push(`- 二篩：一篩的球照 y=1～5 分五組，每組用尾數條件（T1～T4）的票數收；判會多的 y 收最高 ${Y_TIERS_UP} 層，其他只收最高 1 層。尾數條件一條都沒採用時改成全部投票。`)
@@ -625,7 +644,7 @@ fitRow('隔期總和 G 在區間內', r => r.fit.g)
 fitRow('值總和 V 在區間內', r => r.fit.v)
 fitRow('兩樣都在區間內', r => r.fit.g && r.fit.v)
 fitRow('四段顆數符合規則', r => r.fit.seg)
-fitRow('沒有開出「值只剩 1 顆」被排除的格', r => r.fit.one)
+fitRow('沒有開出「出現比例 < 30%」被排除的值的格', r => r.fit.one)
 fitRow('G、V、四段都符合，也沒開出被排除的格', r => r.fit.g && r.fit.v && r.fit.seg && r.fit.one)
 fitRow('組合排不出來（一篩改成全部 39 顆）', r => r.plan.combos === 0)
 out.push('')
