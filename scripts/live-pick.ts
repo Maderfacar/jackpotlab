@@ -9,13 +9,12 @@
  * 用法：node --import tsx scripts/live-pick.ts [期號]   （不給期號＝下一期）→ docs/live-pick.md
  */
 import { writeFileSync } from 'node:fs'
-import { allDecisions, draws, next, rows, type Ball, type Decision } from './blind-test'
+import { allDecisions, draws, next, rows, type Ball, type Decision, SLOTS } from './blind-test'
 import { V_ITEMS, Y_ITEMS, judgeAt, seriesOf } from './item-trend'
 
 const OUT = 'docs/live-pick.md'
 const STRONG = 0.6
 const MIN_N = 30
-const SLOTS = 60
 const SUM_BIN = 20
 const MOVE = ['變少', '一樣', '變多']
 const segOf = (sl: number): number => (sl <= 5 ? 0 : sl <= 9 ? 1 : sl <= 19 ? 2 : 3)

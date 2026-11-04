@@ -4,11 +4,10 @@
  *   同樣狀況：這期方向一樣、這期開出顆數一樣；加盤面時再加上盤面上這個 y（或值）剩的顆數在同一段
  *     （0～5 各自一段，6 以上每 3 顆一段）。
  *   判：同樣狀況的歷史期，下一期變多／變少／一樣哪個最多；一樣多時順序同二篩（一樣 > 變多 > 變少）。
- *   盤面上不在 60 格內的球不算。index 用 allDecisions 的 index；第 D 期＝下一期（next）。
+ *   盤面上不在格內的球不算（盤面不設上限後只有最早幾期會有）。index 用 allDecisions 的 index；第 D 期＝下一期（next）。
  */
-import { allDecisions, draws, next, type Ball } from './blind-test'
+import { allDecisions, draws, next, type Ball, SLOTS } from './blind-test'
 
-const SLOTS = 60
 export interface Item { name: string, of: (o: Ball) => boolean, withSupply: boolean }
 /** 使用者定（2026-11-05）：y 不看盤面顆數；值加盤面顆數 */
 export const Y_ITEMS: Item[] = [1, 2, 3, 4, 5].map(k => ({ name: `y=${k}`, of: (o: Ball) => o.rank === k, withSupply: false }))

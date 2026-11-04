@@ -14,13 +14,12 @@
  * 用法：node --import tsx scripts/three-stage.ts  → docs/three-stage-backtest.md
  */
 import { writeFileSync } from 'node:fs'
-import { allDecisions, draws, next, rows, type Ball, type Decision } from './blind-test'
+import { allDecisions, draws, next, rows, type Ball, type Decision, SLOTS } from './blind-test'
 import { V_ITEMS, Y_ITEMS, ruleAt, seriesOf } from './item-trend'
 
 const OUT = 'docs/three-stage-backtest.md'
 const FROM = '2024-01-01'
 const SUM_BIN = 20
-const SLOTS = 60
 const segOf = (sl: number): number => (sl <= 5 ? 0 : sl <= 9 ? 1 : sl <= 19 ? 2 : 3)
 const headOf = (x: number): number => Math.floor(x / 10)
 const zoneOf = (x: number): number => (x <= 13 ? 0 : x <= 26 ? 1 : 2)

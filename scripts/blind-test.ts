@@ -59,13 +59,16 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import type { HistoryFile } from '../shared/lotto/history-file'
 import { computeFeatures } from '../shared/lotto/patterns/features'
-import { BALLS, PICK, SLOTS, firstBoard, nextBoard, type Board } from './lib/container-sim'
+import { BALLS, PICK, firstBoard, nextBoard, type Board } from './lib/container-sim'
 
 const SRC = 'public/data/lotto539-history.json'
 const OUT = 'docs/blind-test.md'
 const TEST_FROM = '2024-01-01'
 const H = 2
-const START = SLOTS
+/** 盤面不設上限（使用者 2026-11-05）：格數取遠大於歷史上任何號碼會到的隔期；程式會檢查沒有球掉出盤面 */
+const SLOTS = 1000
+/** 前面這幾期只用來累積盤面，不判 */
+const START = 60
 /** 判會多的 y 收幾層票數 */
 const Y_TIERS_UP = 2
 const RARE = 0.05
@@ -473,7 +476,7 @@ function fitOf(p: Plan, balls: Ball[], drawn: number[]): { g: boolean, v: boolea
   return { g: G >= p.g.range.lo && G <= p.g.range.hi, v: V >= p.v.lo && V <= p.v.hi, seg, one: !drawn.some(x => p.oneSlots.includes(balls[x]!.slot)) }
 }
 
-let boardNow: Board = firstBoard(draws[0]!)
+let boardNow: Board = firstBoard(draws[0]!, SLOTS)
 function decide(t: number): Decision {
   const ctx: Ctx = { t, balls: ballsOf(boardNow) }
   const used: Used[] = []
@@ -586,7 +589,7 @@ for (let t = 1; t < n; t++) {
   }
 }
 export const next = decide(n)
-export { draws, rows, conds, Wave }
+export { draws, rows, conds, Wave, SLOTS }
 export type { Ball, Decision }
 
 // ---- 報告（直接執行這支才寫；被別的腳本 import 時不寫）----

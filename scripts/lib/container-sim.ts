@@ -41,17 +41,18 @@ export interface Board {
 }
 
 /** 第一期：computeFeatures 只把號碼放進最舊的格子、不更新值 */
-export function firstBoard(nums: number[]): Board {
-  const slots = Array.from({ length: SLOTS }, (): number[] => [])
-  slots[SLOTS - 1] = [...nums]
-  return { slots, values: new Array<number>(SLOTS).fill(0) }
+/** cap：盤面幾格（預設 SLOTS）；之後 nextBoard 沿用同樣格數 */
+export function firstBoard(nums: number[], cap = SLOTS): Board {
+  const slots = Array.from({ length: cap }, (): number[] => [])
+  slots[cap - 1] = [...nums]
+  return { slots, values: new Array<number>(cap).fill(0) }
 }
 
 export function nextBoard(b: Board, nums: number[]): Board {
   const drawn = new Set(nums)
   const values = b.slots.map((s, i) => (s.some(x => drawn.has(x)) ? 0 : b.values[i]! + 1))
   const kept = b.slots.map(s => s.filter(x => !drawn.has(x)))
-  return { slots: [[...nums], ...kept.slice(0, SLOTS - 1)], values }
+  return { slots: [[...nums], ...kept.slice(0, b.slots.length - 1)], values }
 }
 
 /** 每個號碼目前在哪一格（-1 = 不在任何格） */
