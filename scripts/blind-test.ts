@@ -372,7 +372,7 @@ interface Plan {
   /** G 的走勢與區間 */ g: SumPlan
   /** V：從 G 推、V 自己的走勢、合起來的區間 */ vFromG: Range & { n: number }, vSelf: SumPlan, v: Range
   /** G 落在區間時，G 大於 V 的比例 */ pBelow: number
-  /** 四段：盤面剩幾顆、分段、候選顆數、歷史期數；合計與規則 */ seg: { sup: number, bin: string, top: number, n: number }[], segSum: number
+  /** 四段：盤面剩幾顆、分段、候選顆數、歷史期數；合計與規則 */ seg: { sup: number, bin: string, top: number, n: number, share: number }[], segSum: number
   /** 出現比例太低而排除的值與格 */ lowVals: { v: number, balls: number, rate: number, n: number }[], oneSlots: number[]
   /** 符合的組合數、每格出現在幾成（加權）的組合裡、留下的格 */ combos: number, share: { sl: number, v: number, size: number, share: number }[], comboSlots: number[]
 }
@@ -419,7 +419,7 @@ function comboPlan(t: number, balls: Ball[]): Plan {
     const h = segHist[si]![b]!
     const n = h.reduce((x, y) => x + y, 0)
     const [lo, hi] = SEG_SUPPLY[si]![b]!
-    return { sup, bin: hi === Infinity ? `${lo} 以上` : lo === hi ? String(lo) : `${lo}～${hi}`, top: n ? h.indexOf(Math.max(...h)) : 0, n }
+    return { sup, bin: hi === Infinity ? `${lo} 以上` : lo === hi ? String(lo) : `${lo}～${hi}`, top: n ? h.indexOf(Math.max(...h)) : 0, n, share: n ? Math.max(...h) / n : 0 }
   })
   const segSum = seg.reduce((x, y) => x + y.top, 0)
   const segOk = (cnt: number[]): boolean => cnt.every((c, si) => (segSum === PICK ? c === seg[si]!.top : segSum < PICK ? c >= seg[si]!.top : c <= seg[si]!.top))
