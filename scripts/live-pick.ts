@@ -3,28 +3,31 @@
  *   做法見 live-core.ts。補：強＝判的那一邊佔 60% 以上、而且歷史 30 次以上（使用者還沒定，先用這個）。
  *   另列「用上的強判斷合起來，歷史上實際開出的五顆同時符合的比例」（整體檢查用，這支不拿來刪）。
  *
- * 用法：node --import tsx scripts/live-pick.ts [期號]   （不給期號＝下一期）→ docs/live-pick.md
+ * 用法：node --import tsx scripts/live-pick.ts [期號] [posy]   （不給期號＝下一期）→ docs/live-pick.md
+ *   加 posy＝再加「位置 y」線索（2026-11-05 使用者）→ docs/live-pick-posy.md
  */
 import { writeFileSync } from 'node:fs'
 import { allDecisions, draws, rows } from './blind-test'
 import { D, baseCombos, choose, ctxAt, failMasks, histMasks, judgmentsAt } from './live-core'
 
-const OUT = 'docs/live-pick.md'
+const args = process.argv.slice(2)
+const POSY = args.includes('posy')
+const OUT = POSY ? 'docs/live-pick-posy.md' : 'docs/live-pick.md'
 const STRONG = 0.6
 const MIN_N = 30
 
-const term = Number(process.argv[2] ?? 0)
+const term = Number(args.find(a => /^\d+$/.test(a)) ?? 0)
 const j = term ? allDecisions.findIndex(d => rows[d.t]![0] === term) : D
 if (j < 0) throw new Error(`找不到第 ${term} 期`)
 const c = ctxAt(j)
 const { b, p, t } = c
-const js = judgmentsAt(c, b)
+const js = judgmentsAt(c, b, { posY: POSY })
 const base = baseCombos(c)
 const pk = choose(js, base.combos, failMasks(base.combos, js, b), histMasks(j, js), { strong: STRONG, minN: MIN_N, jointMin: null })
 
 const pct = (x: number): string => `${(100 * x).toFixed(1)}%`
 const out: string[] = []
-out.push(`# 活的篩法：第 ${term || rows[rows.length - 1]![0] + 1} 期`)
+out.push(`# 活的篩法${POSY ? '＋位置 y' : ''}：第 ${term || rows[rows.length - 1]![0] + 1} 期`)
 out.push('')
 out.push(`> 由 \`scripts/live-pick.ts\` 產生，只用開獎前的資料。強＝判的那一邊 ${STRONG * 100}% 以上、歷史 ${MIN_N} 次以上（補，使用者未定）。`)
 out.push('')
