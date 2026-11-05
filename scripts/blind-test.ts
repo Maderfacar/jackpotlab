@@ -35,10 +35,12 @@
  *   判少不表示不會開：一篩不看判多判少；二篩尾數條件判少的不投票（見下）。
  * 留球（2026-11-03 conditions-v3，使用者：不能只憑尾數選、一篩不能留 39 顆）：
  *   一篩（conditions-v9，使用者 2026-11-04，見 docs/539-selection-direction.md）：
- *     G 的走勢：看上一期 G 的方向（比前一期大／小）和 G 的高低（每 G_BIN 一段），
- *       歷史上同樣方向、同一段的期，下一期 G 的 25%～75% ＝ G 的區間。
- *     V 的走勢兩條路：(1) 歷史上 G 落在上面區間的期，V 的 25%～75%；(2) 上一期 V 的方向和高低（V_BINS），
- *       歷史上同樣的期下一期 V 的 25%～75%；兩個取交集，空的就只用 (1)。
+ *     G 範圍（水位版，使用者 2026-11-06）：盤面水位＝開獎前盤面 39 顆的隔期平均 × 5；
+ *       歷史上開獎前水位跟現在相差 G_LEVEL_WIN 以內的期（不到 LEVEL_MIN_N 期就每次放寬 G_LEVEL_STEP），
+ *       它們開出的 G 去掉最小、最大各 10% ＝ G 的區間。見 docs/g-level-backtest.md。
+ *     V 範圍（水位版，使用者 2026-11-06）：V 水位＝開獎前盤面 39 顆所在格的值平均 × 5；
+ *       相差 V_LEVEL_WIN 以內（不夠就每次放寬 V_LEVEL_STEP），它們開出的 V 去掉最小、最大各 10% ＝ V 的區間。
+ *       水位算法、相差多少、放寬幅度、10%～90% 都是補的。盤面還有球不在盤面上（最早幾期）時用全部歷史。
  *     G 與 V 的關係：歷史上 G 落在區間內的期，G 大於 V 的比例 p。
  *     隔期四段（conditions-v10）：0～5、6～9、10～19、20 以上，每段看盤面這一段剩幾顆（相近一段，SEG_SUPPLY），
  *       歷史上同樣的期這一段最常開幾顆＝候選顆數；四段加起來剛好 5 → 每段照候選；不到 5 → 每段至少候選、缺的任一段補；
@@ -76,9 +78,14 @@ const RARE_MIN_HISTORY = 500
 const GAP_BINS: [number, number][] = [[0, 0], [1, 1], [2, 3], [4, 6], [7, 10], [11, 15], [16, 25], [26, 59]]
 const VAL_BINS: [number, number][] = [[0, 0], [1, 1], [2, 3], [4, 6], [7, 12], [13, 24], [25, Infinity]]
 const Y_KINDS = [1, 2, 3, 4, 5]
-/** G 的高低每幾分一段；V 的高低分段 */
-const G_BIN = 10
-const V_BINS: [number, number][] = [[0, 9], [10, 19], [20, 29], [30, 49], [50, 99], [100, Infinity]]
+/** 水位版 G／V 範圍（使用者 2026-11-06；門檻是補的） */
+const G_LEVEL_WIN = 1.5
+const G_LEVEL_STEP = 0.5
+const V_LEVEL_WIN = 1
+const V_LEVEL_STEP = 0.25
+const LEVEL_MIN_N = 30
+const LEVEL_LO = 0.1
+const LEVEL_HI = 0.9
 /** 隔期四段，與「盤面這一段剩幾顆」的相近分段（使用者定用相近一段；分段是補的） */
 const SEGS: [number, number][] = [[0, 5], [6, 9], [10, 19], [20, Infinity]]
 const SEG_SUPPLY: [number, number][][] = [
@@ -227,6 +234,8 @@ const gapByState = new Map<string, number[]>()
 const valByState = new Map<string, number[]>()
 const gapAll = new Array<number>(GAP_BINS.length + 1).fill(0)
 const valAll = new Array<number>(VAL_BINS.length + 1).fill(0)
+/** 水位版 G／V 範圍用：每期開獎前的盤面水位，與那期開出的 G、V */
+const lvHist: { gl: number, vl: number, g: number, v: number }[] = []
 const tailWave = Array.from({ length: 10 }, () => new Wave())
 const yWave = Y_KINDS.map(() => new Wave())
 /** 值 0～9：每期有沒有出現（1／0） */
@@ -385,36 +394,35 @@ const quant = (xs: number[], p: number): number => {
   const so = [...xs].sort((x, y) => x - y)
   return so.length ? so[Math.floor(p * (so.length - 1))]! : 0
 }
-const meet = (a: Range, b: Range): Range => ({ lo: Math.max(a.lo, b.lo), hi: Math.min(a.hi, b.hi) })
-const ok = (r: Range): boolean => r.lo <= r.hi
 const QS = [0.1, 0.25, 0.5, 0.75, 0.9]
-/** 上一期（t－1）的方向與所在的段 → 歷史上同樣的期，下一期數值的分布 */
-function sumPlan(xs: number[], t: number, bandOf: (x: number) => number, bandName: (b: number) => string): SumPlan {
-  const last = xs[t - 1]!
-  const dir = Math.sign(last - xs[t - 2]!)
-  const b = bandOf(last)
-  const next: number[] = []
-  let turn = 0
-  for (let i = START + 2; i < t - 1; i++) {
-    if (Math.sign(xs[i]! - xs[i - 1]!) !== dir || bandOf(xs[i]!) !== b) continue
-    next.push(xs[i + 1]!)
-    if (dir && Math.sign(xs[i + 1]! - xs[i]!) === -dir) turn++
-  }
-  return { last, dir, band: bandName(b), n: next.length, q: QS.map(p => quant(next, p)), range: { lo: quant(next, 0.25), hi: quant(next, 0.75) }, turn: next.length ? turn / next.length : 0 }
+/** 盤面水位：39 顆的隔期（slot）或所在格的值（value）平均 × 5；有球不在盤面上時回 null */
+const levelOf = (balls: Ball[], k: 'slot' | 'value'): number | null => {
+  let s = 0
+  for (const x of ALL) { if (balls[x]!.slot >= SLOTS) return null; s += balls[x]![k] }
+  return s * PICK / BALLS
 }
-const gBand = (x: number): number => Math.min(Math.floor(x / G_BIN), 6)
-const gBandName = (b: number): string => (b === 6 ? `${6 * G_BIN} 以上` : `${b * G_BIN}～${b * G_BIN + G_BIN - 1}`)
-const vBand = (x: number): number => V_BINS.findIndex(([lo, hi]) => x >= lo && x <= hi)
-const vBandName = (b: number): string => { const [lo, hi] = V_BINS[b]!; return hi === Infinity ? `${lo} 以上` : `${lo}～${hi}` }
+/** 水位版範圍：歷史上水位相近的期，它們開出的 G（或 V）去掉兩頭各 10%。turn 不再使用，固定 0 */
+function levelPlan(level: number | null, key: 'gl' | 'vl', val: 'g' | 'v', win: number, step: number, last: number, prev: number): SumPlan {
+  let w = win
+  let pool = lvHist.map(h => h[val])
+  if (level !== null && lvHist.length >= LEVEL_MIN_N) {
+    for (;; w += step) {
+      pool = lvHist.filter(h => Math.abs(h[key] - level) <= w).map(h => h[val])
+      if (pool.length >= LEVEL_MIN_N) break
+    }
+  }
+  const range = pool.length ? { lo: quant(pool, LEVEL_LO), hi: quant(pool, LEVEL_HI) } : { lo: 0, hi: Infinity }
+  const band = level === null || lvHist.length < LEVEL_MIN_N ? '全部歷史' : `水位 ${level.toFixed(1)}（前後 ${w}）`
+  return { last, dir: Math.sign(last - prev), band, n: pool.length, q: QS.map(p => quant(pool, p)), range, turn: 0 }
+}
 function comboPlan(t: number, balls: Ball[]): Plan {
   const vals = Array.from({ length: VALS }, (_, v) => valJudge(v))
-  const g = sumPlan(GS, t, gBand, gBandName)
+  const g = levelPlan(levelOf(balls, 'slot'), 'gl', 'g', G_LEVEL_WIN, G_LEVEL_STEP, GS[t - 1]!, GS[t - 2]!)
   const inG: number[] = []
   for (let i = START + 2; i < t; i++) if (GS[i]! >= g.range.lo && GS[i]! <= g.range.hi) inG.push(i)
   const vFromG = { lo: quant(inG.map(i => VS[i]!), 0.25), hi: quant(inG.map(i => VS[i]!), 0.75), n: inG.length }
-  const vSelf = sumPlan(VS, t, vBand, vBandName)
-  const both = meet(vFromG, vSelf.range)
-  const v = ok(both) ? both : { lo: vFromG.lo, hi: vFromG.hi }
+  const vSelf = levelPlan(levelOf(balls, 'value'), 'vl', 'v', V_LEVEL_WIN, V_LEVEL_STEP, VS[t - 1]!, VS[t - 2]!)
+  const v = vSelf.range
   const pBelow = inG.length ? inG.filter(i => GS[i]! > VS[i]!).length / inG.length : 0.7
   const seg = SEGS.map((_, si) => {
     const sup = ALL.filter(x => segOf(balls[x]!.slot) === si).length
@@ -557,6 +565,8 @@ for (let t = 1; t < n; t++) {
     if (drawn.every(x => balls[x]!.slot < SLOTS)) {
       const G = drawn.reduce((a, x) => a + balls[x]!.slot, 0)
       const V = drawn.reduce((a, x) => a + balls[x]!.value, 0)
+      const gl = levelOf(balls, 'slot'), vl = levelOf(balls, 'value')
+      if (gl !== null && vl !== null) lvHist.push({ gl, vl, g: G, v: V })
       const key = `${V >= G ? 1 : 0}${G > medG.get() ? 1 : 0}${V > medV.get() ? 1 : 0}`
       const gs = gapByState.get(key) ?? new Array<number>(GAP_BINS.length + 1).fill(0)
       const vs = valByState.get(key) ?? new Array<number>(VAL_BINS.length + 1).fill(0)
@@ -611,7 +621,7 @@ for (const c of conds) out.push(`| ${c.id} | ${c.name} | ${c.stage === 1 ? '一�
 out.push('')
 out.push('- 每個條件有一條成立線：這期條件挑出的號碼至少中 1 顆就算成立。')
 out.push('- 決定時看成立線現在上升或下降、走了幾次；歷史上同方向走到這麼長還延續的比例 ≥ 一半 → 延續，判多或判少。判少不表示不會開。')
-out.push(`- 一篩（v10，見 docs/539-selection-direction.md）：隔期四段照盤面剩幾顆（相近一段）取最常開的顆數限制組合；歷史上同值、同顆數時出現比例 < ${100 * VAL_RATE_MIN}% 的值，它的格排除。其餘同 v9：G 看上一期方向＋高低（每 ${G_BIN} 一段），同樣狀況的歷史下一期 G 取 25%～75%；V 兩條路（從 G 的區間推、V 自己的方向＋高低）取交集；盤面五顆組合 G、V 都在區間內的留下，G 大於 V 的組合乘上「G 在區間時 G 大於 V 的比例」、其他乘剩下的，用到的隔期格號碼${COMBO_MIN_SHARE ? `（出現在至少 ${100 * COMBO_MIN_SHARE}% 的組合裡）` : ''}＋少見號碼＝一篩。`)
+out.push(`- 一篩（v10，見 docs/539-selection-direction.md）：隔期四段照盤面剩幾顆（相近一段）取最常開的顆數限制組合；歷史上同值、同顆數時出現比例 < ${100 * VAL_RATE_MIN}% 的值，它的格排除。G、V 範圍用水位版（2026-11-06）：開獎前盤面水位相近的歷史期，開出的 G、V 去掉兩頭各 10%；盤面五顆組合 G、V 都在區間內的留下，G 大於 V 的組合乘上「G 在區間時 G 大於 V 的比例」、其他乘剩下的，用到的隔期格號碼${COMBO_MIN_SHARE ? `（出現在至少 ${100 * COMBO_MIN_SHARE}% 的組合裡）` : ''}＋少見號碼＝一篩。`)
 out.push(`- 值 0～9 每個用自己的組合（${VAL_RULES.map((x, v) => `值${v}：${x.w}／${x.r} ${x.dir === 1 ? '多→不會' : '少→不會'}`).join('、')}）：最近 W 期 vs 最近 R 期出現的百分比，判不會的值，它的隔期格號碼從一篩排除（少見號碼除外）。組合方向是看過 2021 起的結果才定，2021 起對值的判斷不算完全盲。`)
 out.push('- 五顆組合推理：只用沒被排除的格，隔期總和大小交替、值總和 < 隔期總和都符合的五顆組合，用到的隔期格號碼納入。')
 out.push(`- 二篩：一篩的球照 y=1～5 分五組，每組用尾數條件（T1～T4）的票數收；判會多的 y 收最高 ${Y_TIERS_UP} 層，其他只收最高 1 層。尾數條件一條都沒採用時改成全部投票。`)
