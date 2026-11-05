@@ -91,7 +91,7 @@ const SLOT_E = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 17, 21, 27, 35]
 const VAL_E = [1, 2, 3, 4, 5, 6, 8, 10, 13, 17, 25, 40]
 const SLOT_C = [1, 3, 6, 10, 15, 25]
 const VAL_C = [1, 3, 6, 11, 25]
-interface Ctx { i: number, t: number, b: Ball[], x: number, share: number[], gl: number, vl: number, lastV: number, segSup: number[] }
+interface Ctx { i: number, t: number, b: Ball[], x: number, share: number[], gl: number, vl: number, lastV: number, segSup: number[], pb: Ball[], lastG: number }
 type Feat = (c: Ctx) => string
 const GROUPS: Record<string, Feat> = {
   隔期: c => `s${cut(c.b[c.x]!.slot, SLOT_E)}`,
@@ -114,12 +114,46 @@ const GROUPS: Record<string, Feat> = {
   "水位×隔期": c => `gl${cut(c.gl, [29, 33, 37])}_${cut(c.b[c.x]!.slot, SLOT_C)}`,
   "V水位×值": c => `vl${cut(c.vl, [23, 33, 55])}_${cut(c.b[c.x]!.value, VAL_C)}`,
   "上期V×值": c => `lv${c.lastV < 10 ? 0 : c.lastV < 30 ? 1 : 2}_${cut(c.b[c.x]!.value, VAL_C)}`,
-  "段球數×段": c => { const s = segOf(c.b[c.x]!.slot); return `sg${s}_${cut(c.segSup[s]!, [[18, 21, 24], [6, 8, 10], [6, 8, 10], [1, 3, 5]][s]!)}` }
+  "段球數×段": c => { const s = segOf(c.b[c.x]!.slot); return `sg${s}_${cut(c.segSup[s]!, [[18, 21, 24], [6, 8, 10], [6, 8, 10], [1, 3, 5]][s]!)}` },
+  // ---- 第二輪：使用者其他線索、交叉組合 ----
+  "上期頭數×頭": c => { const h = Math.floor(c.x / 10); return `hc${h}_${draws[c.t - 1]!.filter(y => Math.floor(y / 10) === h).length}` },
+  "近3期頭數×頭": c => { const h = Math.floor(c.x / 10); let k = 0; for (let d = 1; d <= 3; d++) k += draws[c.t - d]!.filter(y => Math.floor(y / 10) === h).length; return `h3${h}_${Math.min(k, 7)}` },
+  "上期三區×區": c => { const z = (x: number): number => (x <= 13 ? 0 : x <= 26 ? 1 : 2); return `zc${z(c.x)}_${draws[c.t - 1]!.filter(y => z(y) === z(c.x)).length}` },
+  "上期號碼總和×頭": c => `ls${cut(draws[c.t - 1]!.reduce((a, y) => a + y, 0), [80, 90, 100, 110, 120])}_${Math.floor(c.x / 10)}`,
+  "y×上期同y顆數": c => { const y = Math.min(c.b[c.x]!.rank, 5); return `yy${y}_${draws[c.t - 1]!.filter(z => Math.min(c.pb[z]!.rank, 5) === y).length}` },
+  "值×上期有沒有開這個值": c => { const v = Math.min(c.b[c.x]!.value, 10); return `vv${v}_${draws[c.t - 1]!.some(z => c.pb[z]!.value === c.b[c.x]!.value) ? 1 : 0}` },
+  "值×近5期這個值開幾次": c => { const v = c.b[c.x]!.value; let k = 0; for (let d = 1; d <= 5 && c.i - d >= 0; d++) { const bd = boards[c.i - d]!; if (bd.t === c.t - d) k += draws[bd.t]!.filter(z => bd.b[z]!.value === v).length } return `v5${Math.min(v, 10)}_${Math.min(k, 4)}` },
+  "y×值": c => `yv${Math.min(c.b[c.x]!.rank, 5)}_${cut(c.b[c.x]!.value, VAL_C)}`,
+  "隔期×值×同格顆數": c => `svn${cut(c.b[c.x]!.slot, SLOT_C)}_${cut(c.b[c.x]!.value, [1, 3, 6])}_${Math.min(c.b[c.x]!.size, 3)}`,
+  "隔期×近30期": c => `s30${cut(c.b[c.x]!.slot, SLOT_C)}_${cut(recent(c.t, c.x, 30), [2, 4, 6])}`,
+  "上期G離水位×隔期": c => `gd${cut(c.lastG - c.gl, [-15, -5, 5, 15])}_${cut(c.b[c.x]!.slot, SLOT_C)}`,
+  "尾數×上期尾數有沒有開": c => `tt${c.x % 10}_${draws[c.t - 1]!.some(y => y % 10 === c.x % 10) ? 1 : 0}`,
+  "號碼×隔期": c => `xs${c.x}_${cut(c.b[c.x]!.slot, [1, 4, 10])}`
 }
 const GNAMES = Object.keys(GROUPS)
+/** 第三輪（樹）：同樣的線索，直接用數字，讓程式自己找交叉組合 */
+const zoneOf = (x: number): number => (x <= 13 ? 0 : x <= 26 ? 1 : 2)
+const NUM: [string, (c: Ctx) => number][] = [
+  ['隔期', c => c.b[c.x]!.slot], ['值', c => Math.min(c.b[c.x]!.value, 200)], ['y', c => c.b[c.x]!.rank], ['同格顆數', c => c.b[c.x]!.size],
+  ['號碼', c => c.x], ['尾數', c => c.x % 10], ['頭數', c => Math.floor(c.x / 10)], ['三區', c => zoneOf(c.x)],
+  ['近10期', c => recent(c.t, c.x, 10)], ['近30期', c => recent(c.t, c.x, 30)], ['近100期', c => recent(c.t, c.x, 100)],
+  ['隔期÷平均間隔', c => c.b[c.x]!.slot / Math.max(gapInfo.avg[c.t]![c.x]!, 1)], ['上一個間隔', c => gapInfo.prevGap[c.t]![c.x]!],
+  ['上期鄰號', c => (c.x > 1 && hitAt(c.t - 1, c.x - 1) ? 1 : 0) + (c.x < BALLS && hitAt(c.t - 1, c.x + 1) ? 1 : 0)],
+  ['上期同尾', c => draws[c.t - 1]!.filter(y => y % 10 === c.x % 10 && y !== c.x).length],
+  ['GV組合比例', c => c.share[c.x]!], ['水位', c => c.gl], ['V水位', c => c.vl], ['上期V', c => Math.min(c.lastV, 300)],
+  ['所在段', c => segOf(c.b[c.x]!.slot)], ['所在段球數', c => c.segSup[segOf(c.b[c.x]!.slot)]!],
+  ['段0~5球數', c => c.segSup[0]!], ['段20+球數', c => c.segSup[3]!],
+  ['上期同頭顆數', c => draws[c.t - 1]!.filter(y => Math.floor(y / 10) === Math.floor(c.x / 10)).length],
+  ['上期同區顆數', c => draws[c.t - 1]!.filter(y => zoneOf(y) === zoneOf(c.x)).length],
+  ['上期號碼總和', c => draws[c.t - 1]!.reduce((a, y) => a + y, 0)],
+  ['上期同y顆數', c => draws[c.t - 1]!.filter(z => Math.min(c.pb[z]!.rank, 5) === Math.min(c.b[c.x]!.rank, 5)).length],
+  ['上期有開這個值', c => (draws[c.t - 1]!.some(z => c.pb[z]!.value === c.b[c.x]!.value) ? 1 : 0)],
+  ['上期G離水位', c => c.lastG - c.gl], ['上期尾數有開', c => (draws[c.t - 1]!.some(y => y % 10 === c.x % 10) ? 1 : 0)]
+]
+const MODE_TREE = process.argv.includes('tree')
 
 // ---------- 做表 ----------
-interface Row { i: number, x: number, y: number, f: string[] }
+interface Row { i: number, x: number, y: number, f: string[], nf: number[] }
 const allRows: Row[] = []
 const t0 = Date.now()
 boards.forEach((bd, i) => {
@@ -128,10 +162,10 @@ boards.forEach((bd, i) => {
   const segSup = [0, 0, 0, 0]
   for (let x = 1; x <= BALLS; x++) segSup[segOf(bd.b[x]!.slot)]!++
   const prev = boards[i - 1]!
-  const c0 = { i, t: bd.t, b: bd.b, share, gl: level(bd.b, 'slot'), vl: level(bd.b, 'value'), lastV: prev.t === bd.t - 1 ? vSum(prev.t, prev.b) : 20, segSup }
+  const c0 = { i, t: bd.t, b: bd.b, share, gl: level(bd.b, 'slot'), vl: level(bd.b, 'value'), lastV: prev.t === bd.t - 1 ? vSum(prev.t, prev.b) : 20, segSup, pb: prev.b, lastG: draws[bd.t - 1]!.reduce((a, y) => a + Math.min(prev.b[y]!.slot, 200), 0) }
   for (let x = 1; x <= BALLS; x++) {
     const c: Ctx = { ...c0, x }
-    allRows.push({ i, x, y: hitAt(bd.t, x) ? 1 : 0, f: GNAMES.map(g => `${g}:${GROUPS[g]!(c)}`) })
+    allRows.push({ i, x, y: hitAt(bd.t, x) ? 1 : 0, f: MODE_TREE ? [] : GNAMES.map(g => `${g}:${GROUPS[g]!(c)}`), nf: MODE_TREE ? NUM.map(([, fn]) => fn(c)) : [] })
   }
   if (i % 1000 === 0) process.stderr.write(`做表 ${i}/${boards.length} ${((Date.now() - t0) / 1000).toFixed(0)}s\n`)
 })
@@ -176,6 +210,78 @@ const ge3 = (a: number[]): number => a.filter(h => h >= 3).length / a.length
 const train = allRows.filter(r => part(r) === 0), valid = allRows.filter(r => part(r) === 1), test = allRows.filter(r => part(r) === 2), nextRows = allRows.filter(r => part(r) === 3)
 process.stderr.write(`學 ${train.length / BALLS} 期、挑 ${valid.length / BALLS} 期、驗證 ${test.length / BALLS} 期\n`)
 
+if (MODE_TREE) { runTree(); process.exit(0) }
+
+// ---------- 第三輪：樹（每棵 3 層，一棵接一棵修正前面的錯） ----------
+function runTree(): void {
+  const NF = NUM.length, BINS = 24, DEPTH = 3, LR = 0.05, LAMBDA = 1, MIN_LEAF = 300, ROUNDS = 400
+  const tr = train, va = valid, te = test, nr = nextRows
+  const edges = NUM.map((_, f) => { const v = tr.map(r => r.nf[f]!).sort((a, c) => a - c); const e: number[] = []; for (let k = 1; k < BINS; k++) { const q = v[Math.floor(k * (v.length - 1) / BINS)]!; if (!e.length || q > e[e.length - 1]!) e.push(q) } return e })
+  const binOf = (f: number, x: number): number => { const e = edges[f]!; let lo = 0, hi = e.length; while (lo < hi) { const m = (lo + hi) >> 1; if (x > e[m]!) lo = m + 1; else hi = m } return lo }
+  const toBins = (rs: Row[]): Uint8Array => { const a = new Uint8Array(rs.length * NF); rs.forEach((r, k) => { for (let f = 0; f < NF; f++) a[k * NF + f] = binOf(f, r.nf[f]!) }); return a }
+  const Btr = toBins(tr), Bva = toBins(va), Bte = toBins(te), Bnx = toBins(nr)
+  interface Node { f: number, b: number, l: number, r: number, v: number }
+  const trees: Node[][] = []
+  const base = Math.log(5 / 34)
+  const Ftr = new Float64Array(tr.length).fill(base), Fva = new Float64Array(va.length).fill(base)
+  const predict = (tree: Node[], B: Uint8Array, k: number): number => { let n = 0; for (;;) { const nd = tree[n]!; if (nd.f < 0) return nd.v; n = B[k * NF + nd.f]! <= nd.b ? nd.l : nd.r } }
+  const groupOf = (rs: Row[]): number[][] => { const by = new Map<number, number[]>(); rs.forEach((r, k) => { const a = by.get(r.i); if (a) a.push(k); else by.set(r.i, [k]) }); return [...by.values()] }
+  const topHits = (rs: Row[], F: Float64Array): number[] => groupOf(rs).map(ks => [...ks].sort((a, c) => F[c]! - F[a]!).slice(0, TOP).reduce((x, k) => x + rs[k]!.y, 0))
+  let bestV = -1, bestN = 0
+  const curve: string[] = []
+  for (let round = 1; round <= ROUNDS; round++) {
+    const g = new Float64Array(tr.length), h = new Float64Array(tr.length)
+    for (let k = 0; k < tr.length; k++) { const p = 1 / (1 + Math.exp(-Ftr[k]!)); g[k] = p - tr[k]!.y; h[k] = p * (1 - p) }
+    const tree: Node[] = []
+    const grow = (idx: Int32Array, depth: number): number => {
+      let G = 0, H = 0
+      for (const k of idx) { G += g[k]!; H += h[k]! }
+      const me = tree.length
+      tree.push({ f: -1, b: 0, l: 0, r: 0, v: -LR * G / (H + LAMBDA) })
+      if (depth >= DEPTH || idx.length < 2 * MIN_LEAF) return me
+      let bg = 0, bf = -1, bb = 0
+      const hg = new Float64Array(NF * BINS), hh = new Float64Array(NF * BINS), hc = new Int32Array(NF * BINS)
+      for (const k of idx) for (let f = 0; f < NF; f++) { const q = f * BINS + Btr[k * NF + f]!; hg[q]! += g[k]!; hh[q]! += h[k]!; hc[q]!++ }
+      const parent = G * G / (H + LAMBDA)
+      for (let f = 0; f < NF; f++) {
+        let gl = 0, hl = 0, cl = 0
+        for (let b = 0; b < BINS - 1; b++) {
+          const q = f * BINS + b; gl += hg[q]!; hl += hh[q]!; cl += hc[q]!
+          const cr = idx.length - cl
+          if (cl < MIN_LEAF || cr < MIN_LEAF) continue
+          const gain = gl * gl / (hl + LAMBDA) + (G - gl) * (G - gl) / (H - hl + LAMBDA) - parent
+          if (gain > bg) { bg = gain; bf = f; bb = b }
+        }
+      }
+      if (bf < 0) return me
+      const L: number[] = [], R: number[] = []
+      for (const k of idx) (Btr[k * NF + bf]! <= bb ? L : R).push(k)
+      tree[me]!.f = bf; tree[me]!.b = bb
+      tree[me]!.l = grow(Int32Array.from(L), depth + 1)
+      tree[me]!.r = grow(Int32Array.from(R), depth + 1)
+      return me
+    }
+    grow(Int32Array.from({ length: tr.length }, (_, k) => k), 0)
+    trees.push(tree)
+    for (let k = 0; k < tr.length; k++) Ftr[k]! += predict(tree, Btr, k)
+    for (let k = 0; k < va.length; k++) Fva[k]! += predict(tree, Bva, k)
+    if (round % 20 === 0) {
+      const hv = topHits(va, Fva), v = mean(hv)
+      curve.push(`| ${round} | ${v.toFixed(3)} | ${(100 * ge3(hv)).toFixed(1)}% |`)
+      process.stderr.write(`樹 ${round} 棵 → 2020～2023 平均中 ${v.toFixed(3)}\n`)
+      if (v > bestV) { bestV = v; bestN = round }
+    }
+  }
+  const Fte = new Float64Array(te.length).fill(base), Fnx = new Float64Array(nr.length).fill(base)
+  for (let n = 0; n < bestN; n++) { for (let k = 0; k < te.length; k++) Fte[k]! += predict(trees[n]!, Bte, k); for (let k = 0; k < nr.length; k++) Fnx[k]! += predict(trees[n]!, Bnx, k) }
+  const hits = topHits(te, Fte)
+  const nx = nr.map((r, k) => [r.x, Fnx[k]!] as const).sort((a, c) => c[1] - a[1]).slice(0, TOP).map(([x]) => x).sort((a, c) => a - c)
+  const dist = [5, 4, 3, 2, 1, 0].map(k => hits.filter(x => x === k).length).join(' | ')
+  const out = ['# 每顆球打分數、每期取 20 顆（第三輪：樹，自己找交叉組合）', '', `> 由 \`scripts/ball-model.ts tree\` 產生。${NUM.length} 種線索直接用數字；每棵樹 3 層，2008～2019 學，2020～2023 決定用幾棵（${bestN} 棵），2024 起 ${hits.length} 期最後才驗證。`, '', '| 樹的棵數 | 2020～2023 平均中幾顆 | 中 3 顆以上 |', '|---|---|---|', ...curve, '', '## 2024 起驗證（每期 20 顆）', '', '| 中 5 | 中 4 | 中 3 | 中 2 | 中 1 | 中 0 | 中 3 顆以上 | 平均中幾顆 |', '|---|---|---|---|---|---|---|---|', `| ${dist} | ${(100 * ge3(hits)).toFixed(1)}% | ${mean(hits).toFixed(2)} |`, '', `## 第 ${rows[rows.length - 1]![0] + 1} 期`, '', `- ${nx.join(' ')}`]
+  writeFileSync('docs/ball-tree.md', out.join('\n') + '\n')
+  console.log(out.join('\n'))
+}
+
 // ---------- 一組一組加（只看 2020～2023 決定） ----------
 const L2 = 0.002
 let chosen = new Set<number>()
@@ -187,7 +293,7 @@ for (;;) {
     if (chosen.has(g)) continue
     const use = new Set([...chosen, g])
     const v = mean(evalTop(fit(train, use, L2, 3), valid, use))
-    if (v > pickV + 0.003) { pickV = v; pick = g }
+    if (v > pickV + 0.002) { pickV = v; pick = g }
   }
   if (pick < 0) break
   chosen = new Set([...chosen, pick]); best = pickV
@@ -213,7 +319,7 @@ const line = (name: string, a: number[]): string => `| ${name} | ${dist(a)} | ${
 const nx = [...nextRows].sort((a, c) => score(model, c, chosen) - score(model, a, chosen)).slice(0, TOP).map(r => r.x).sort((a, c) => a - c)
 
 const out: string[] = []
-out.push('# 每顆球打分數、每期取 20 顆')
+out.push('# 每顆球打分數、每期取 20 顆（第二輪：34 種線索）')
 out.push('')
 out.push(`> 由 \`scripts/ball-model.ts\` 產生。資料到第 ${rows[rows.length - 1]![0]} 期。2008～2019 學、2020～2023 挑線索、2024 起 ${test.length / BALLS} 期最後才驗證（挑線索時沒看過）。每期只用開獎前的資料。`)
 out.push('')
