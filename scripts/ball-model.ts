@@ -151,6 +151,7 @@ const NUM: [string, (c: Ctx) => number][] = [
   ['上期G離水位', c => c.lastG - c.gl], ['上期尾數有開', c => (draws[c.t - 1]!.some(y => y % 10 === c.x % 10) ? 1 : 0)]
 ]
 const MODE_TREE = process.argv.includes('tree')
+const MODE_MINE = process.argv.includes('mine')
 
 // ---------- 做表 ----------
 interface Row { i: number, x: number, y: number, f: string[], nf: number[] }
@@ -279,6 +280,65 @@ function runTree(): void {
   const dist = [5, 4, 3, 2, 1, 0].map(k => hits.filter(x => x === k).length).join(' | ')
   const out = ['# 每顆球打分數、每期取 20 顆（第三輪：樹，自己找交叉組合）', '', `> 由 \`scripts/ball-model.ts tree\` 產生。${NUM.length} 種線索直接用數字；每棵樹 3 層，2008～2019 學，2020～2023 決定用幾棵（${bestN} 棵），2024 起 ${hits.length} 期最後才驗證。`, '', '| 樹的棵數 | 2020～2023 平均中幾顆 | 中 3 顆以上 |', '|---|---|---|', ...curve, '', '## 2024 起驗證（每期 20 顆）', '', '| 中 5 | 中 4 | 中 3 | 中 2 | 中 1 | 中 0 | 中 3 顆以上 | 平均中幾顆 |', '|---|---|---|---|---|---|---|---|', `| ${dist} | ${(100 * ge3(hits)).toFixed(1)}% | ${mean(hits).toFixed(2)} |`, '', `## 第 ${rows[rows.length - 1]![0] + 1} 期`, '', `- ${nx.join(' ')}`]
   writeFileSync('docs/ball-tree.md', out.join('\n') + '\n')
+  console.log(out.join('\n'))
+}
+
+if (MODE_MINE) { runMine(); process.exit(0) }
+
+// ---------- 第四輪：自己找規則（一顆球在某兩種線索同時成立時，特別容易／特別不容易開） ----------
+function runMine(): void {
+  const BASE = 5 / BALLS
+  const UP = 1.35, DOWN = 0.6, MIN_TR = 300, MIN_VA = 100
+  interface Cell { n: number, h: number }
+  const parts = [train, valid, test]
+  /** 單一線索、兩種線索同時成立，每一格在三段裡各有幾次、開出幾次 */
+  const keysOf = (r: Row): string[] => {
+    const ks: string[] = [...r.f]
+    for (let a = 0; a < r.f.length; a++) for (let b = a + 1; b < r.f.length; b++) ks.push(`${r.f[a]}＋${r.f[b]}`)
+    return ks
+  }
+  const stat = parts.map(() => new Map<string, Cell>())
+  parts.forEach((rs, pi) => {
+    const m = stat[pi]!
+    for (const r of rs) for (const k of keysOf(r)) { const c = m.get(k); if (c) { c.n++; c.h += r.y } else m.set(k, { n: 1, h: r.y }) }
+    process.stderr.write(`第 ${pi + 1} 段統計完 ${m.size} 格\n`)
+  })
+  const rate = (c: Cell | undefined): number => (c && c.n ? c.h / c.n : NaN)
+  interface Rule { k: string, tr: Cell, va: Cell, te: Cell | undefined, up: boolean }
+  const found: Rule[] = []
+  let trOnly = 0
+  for (const [k, tr] of stat[0]!) {
+    if (tr.n < MIN_TR) continue
+    const r0 = tr.h / tr.n
+    const up = r0 >= BASE * UP, down = r0 <= BASE * DOWN
+    if (!up && !down) continue
+    trOnly++
+    const va = stat[1]!.get(k)
+    if (!va || va.n < MIN_VA) continue
+    const r1 = va.h / va.n
+    if (up ? r1 < BASE * UP : r1 > BASE * DOWN) continue
+    found.push({ k, tr, va, te: stat[2]!.get(k), up })
+  }
+  // 用留下的規則打分數：每條規則加上（2008～2023 這一格的開出比例 ÷ 平常）的對數
+  const w = new Map<string, number>()
+  for (const r of found) { const n = r.tr.n + r.va.n, h = r.tr.h + r.va.h; w.set(r.k, Math.log(((h + 1) / (n + 2)) / BASE)) }
+  const byI = new Map<number, Row[]>()
+  for (const r of test) { const a = byI.get(r.i); if (a) a.push(r); else byI.set(r.i, [r]) }
+  const sc = (r: Row): number => keysOf(r).reduce((s, k) => s + (w.get(k) ?? 0), 0)
+  const hits = [...byI.values()].map(rr => rr.map(r => [r, sc(r)] as const).sort((a, c) => c[1] - a[1]).slice(0, TOP).reduce((s, [r]) => s + r.y, 0))
+  // 規則在 2024 起還成立的比例
+  const held = found.filter(r => r.te && r.te.n >= 30 && (r.up ? rate(r.te) >= BASE * 1.15 : rate(r.te) <= BASE * 0.85))
+  const withTe = found.filter(r => r.te && r.te.n >= 30)
+  const pct = (x: number): string => `${(100 * x).toFixed(1)}%`
+  const show = (r: Rule): string => `| ${r.k.replace(/[a-z]+[0-9_]*/g, m => m)} | ${r.up ? '容易開' : '不容易開'} | ${pct(rate(r.tr))}（${r.tr.n}） | ${pct(rate(r.va))}（${r.va.n}） | ${r.te ? `${pct(rate(r.te))}（${r.te.n}）` : '—'} |`
+  const top = [...found].sort((a, b) => Math.abs(Math.log(rate(b.tr) / BASE)) - Math.abs(Math.log(rate(a.tr) / BASE))).slice(0, 30)
+  const nxRows = nextRows.map(r => [r.x, sc(r)] as const).sort((a, c) => c[1] - a[1]).slice(0, TOP).map(([x]) => x).sort((a, c) => a - c)
+  const out = ['# 第四輪：自己找規則', '', `> 由 \`scripts/ball-model.ts mine\` 產生。每顆球平常開出的比例是 ${pct(BASE)}。找「一種線索、或兩種線索同時成立」時，開出比例特別高（≥ 平常 × ${UP}）或特別低（≤ 平常 × ${DOWN}）的格。2008～2019 至少 ${MIN_TR} 次先找，2020～2023 至少 ${MIN_VA} 次再確認，2024 起最後才看。`, '',
+    `- 2008～2019 找到 ${trOnly} 格，2020～2023 也成立的剩 ${found.length} 格。`,
+    `- 這 ${found.length} 格在 2024 起有 30 次以上的 ${withTe.length} 格，還成立的 ${held.length} 格（${withTe.length ? pct(held.length / withTe.length) : '—'}）。`,
+    `- 用這些規則打分數、每期取 20 顆，2024 起 ${hits.length} 期：中 3 顆以上 ${pct(hits.filter(h => h >= 3).length / hits.length)}，平均中 ${mean(hits).toFixed(2)} 顆；中 5／4／3／2／1／0：${[5, 4, 3, 2, 1, 0].map(k => hits.filter(h => h === k).length).join('／')}`,
+    '', '## 最強的 30 格', '', '| 格 | 方向 | 2008～2019 | 2020～2023 | 2024 起 |', '|---|---|---|---|---|', ...top.map(show), '', `## 第 ${rows[rows.length - 1]![0] + 1} 期`, '', `- ${nxRows.join(' ')}`]
+  writeFileSync('docs/ball-rules.md', out.join('\n') + '\n')
   console.log(out.join('\n'))
 }
 
