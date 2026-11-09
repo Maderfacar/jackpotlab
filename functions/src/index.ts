@@ -4,6 +4,7 @@ import { logger } from 'firebase-functions/v2'
 import { onSchedule } from 'firebase-functions/v2/scheduler'
 import { scrapeAndStore } from './scraper.js'
 import { scrapeCaFantasy5 } from './ca-fantasy5.js'
+import { DIGIT_GAME_IDS, scrapeDigitGame } from './digit-games.js'
 
 initializeApp()
 
@@ -63,8 +64,17 @@ export const scrape539 = onSchedule({
   schedule: '30-58/2 20 * * 1-6',
   timeZone: 'Asia/Taipei'
 }, async () => {
-  const outcome = await scrapeAndStore('lotto539')
-  logger.info('scrape539 done', outcome)
+  // 三星彩、四星彩同一天同一時間開，掛在這裡（2026-11-09），不另開排程；539 失敗也照抓
+  const [main, ...digits] = await Promise.allSettled([
+    scrapeAndStore('lotto539'),
+    ...DIGIT_GAME_IDS.map(id => scrapeDigitGame(id))
+  ])
+  digits.forEach((r, i) => {
+    if (r.status === 'fulfilled') logger.info('scrapeDigitGame done', r.value)
+    else logger.error(`scrapeDigitGame ${DIGIT_GAME_IDS[i]} failed`, r.reason)
+  })
+  if (main!.status === 'rejected') throw main!.reason
+  logger.info('scrape539 done', main!.value)
 })
 
 /**
