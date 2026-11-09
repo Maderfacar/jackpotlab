@@ -35,6 +35,7 @@ const navItems: NavItem[] = [
   { label: '一頁總覽', icon: 'i-lucide-layout-dashboard', to: '/overview' },
   { label: '我的查找', icon: 'i-lucide-scan-search', to: '/scan' },
   { label: '隔期篩選', icon: 'i-lucide-list-filter', to: '/gapfilter' },
+  { label: '四星彩', icon: 'i-lucide-binary', to: '/4d' },
   { label: '開獎號碼', icon: 'i-lucide-list-checks', to: '/draws' },
   { label: '系統健康', icon: 'i-lucide-activity', to: '/admin/health' },
   // 2026-10-11 使用者要求放進選單：給 AI 讀的純文字隔期資料（第三版，v=3 只是讓快取換新）
