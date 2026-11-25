@@ -98,7 +98,8 @@ function streak(src: Src, group: string, title: (cur: number) => string, pred: (
     if (reach.length >= 2) lines.push(`平均每 ${Math.round((reach.at(-1)! - reach[0]!) / (reach.length - 1))} 期出現一次`)
   }
   lines.push(`下一期${nextName}：${follow(t => r[t]! >= cur, u => !pred(u))}`)
-  items.push({ src, group, title: title(cur), share: ge / n, force, lines })
+  // 使用者：列出來要附歷史最久，才知道天花板在哪
+  items.push({ src, group, title: `${title(cur)}（歷史最久 ${maxR} 期${cur > maxR ? '，已破紀錄' : ''}）`, share: ge / n, force, lines })
 }
 
 /** 數值型：s(LAST) 在歷史上偏高或偏低 */
@@ -108,11 +109,13 @@ function level(src: Src, group: string, name: string, s: (t: number) => number, 
   for (let t = from; t < LAST; t++) { n++; const v = s(t); if (v <= x) lo++; if (v >= x) hi++ }
   const low = lo <= hi
   const cond = (t: number): boolean => (low ? s(t) <= x : s(t) >= x)
-  let prev = -1
+  let prev = -1, ext = x, extAt = -1
   for (let t = LAST - 1; t >= from; t--) if (cond(t)) { prev = t; break }
+  for (let t = from; t < LAST; t++) { const v = s(t); if (low ? v < ext || (v === ext && extAt < 0) : v > ext || (v === ext && extAt < 0)) { ext = v; extAt = t } }
   const lines = [`歷史上${low ? '這麼低以下' : '這麼高以上'} ${low ? lo : hi} 次${prev >= 0 ? `；前一次第 ${term(prev)} 期（${dateOf(prev)}，${LAST - prev} 期前）` : ''}`]
   lines.push(`下一期${low ? '變大' : '變小'}：${follow(t => t >= from && cond(t), u => (low ? s(u) > s(u - 1) : s(u) < s(u - 1)))}`)
-  items.push({ src, group, title: `${name} ${x}（偏${low ? '低' : '高'}）`, share: (low ? lo : hi) / n, force: false, lines })
+  const extTxt = extAt >= 0 ? `歷史最${low ? '低' : '高'} ${ext}（第 ${term(extAt)} 期，${dateOf(extAt)}）` : `歷史最${low ? '低' : '高'}就是這次`
+  items.push({ src, group, title: `${name} ${x}（偏${low ? '低' : '高'}；${extTxt}）`, share: (low ? lo : hi) / n, force: false, lines })
 }
 const roll = (f: (t: number) => number, w: number) => (t: number): number => { let a = 0; for (let i = 0; i < w; i++) a += f(t - i); return a }
 
@@ -181,7 +184,7 @@ streak('你的', '整期 y', c => `已連 ${c} 期整期沒有 y=1`, t => yCnt[t
   const deep = Array.from({ length: 39 }, (_, i) => i + 1).filter(n => gapNow[n]! >= DEEP_NUM && gapNow[n]! < 999).sort((a, b) => gapNow[b]! - gapNow[a]!)
   for (const x of deep) {
     const g = gapNow[x]!
-    let n = 0, ge = 0, nx = 0, maxG = 0
+    let n = 0, ge = 0, nx = 0, maxG = 0, maxNum = 0, maxAt = -1, own = 0, ownAt = -1
     const last = new Array<number>(40).fill(-1)
     for (let t = 0; t < LAST; t++) {
       for (const m of nums[t]!) last[m] = t
@@ -189,11 +192,14 @@ streak('你的', '整期 y', c => `已連 ${c} 期整期沒有 y=1`, t => yCnt[t
       for (let m = 1; m <= 39; m++) {
         if (last[m]! < 0) continue
         const gm = t - last[m]!
-        n++; if (gm > maxG) maxG = gm
+        n++
+        if (gm > maxG) { maxG = gm; maxNum = m; maxAt = t }
+        if (m === x && gm > own) { own = gm; ownAt = t }
         if (gm >= g) { ge++; if (nums[t + 1]!.includes(m)) nx++ }
       }
     }
-    items.push({ src: '你的', group: '號碼隔很久', title: `${x} 已 ${g} 期沒開`, share: ge / n, force: true, lines: [`所有號碼隔到 ${g} 期以上歷史 ${ge} 次（2007 起最久 ${maxG} 期）`, `下一期開出：${ge ? pct(nx / ge) : '—'}（平常 12.8%）`] })
+    const ceil = `歷史最久：所有號碼 ${maxG} 期（${maxNum}，到 ${dateOf(maxAt)}）、${x} 自己 ${own} 期（到 ${ownAt >= 0 ? dateOf(ownAt) : '—'}）${g > own ? '，已破它自己的紀錄' : ''}`
+    items.push({ src: '你的', group: '號碼隔很久', title: `${x} 已 ${g} 期沒開（${ceil}）`, share: ge / n, force: true, lines: [`所有號碼隔到 ${g} 期以上歷史 ${ge} 次`, `下一期開出：${ge ? pct(nx / ge) : '—'}（平常 12.8%）`] })
   }
 }
 // 8～10. 隔期四段（你的；10～19 是我加的）
